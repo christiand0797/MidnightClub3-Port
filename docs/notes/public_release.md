@@ -1,4 +1,30 @@
-# Draft portable release uploads
+# Public portable release and upload maintenance
+
+## Published release
+
+[v0.3.0-dev.20261023](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.0-dev.20261023)
+was published as a public prerelease at **2026-10-23 09:09:17 UTC**, release ID `421585200`, with tag target
+`1428df367ded80796032fc0f6b208d5b356b278f`. All **13 assets** had their remote sizes and SHA-256 digests checked
+before and after publication/tag creation. The durable control state records `publication_status: published`.
+
+The [Windows runtime ZIP](https://github.com/christiand0797/MidnightClub3-Port/releases/download/v0.3.0-dev.20261023/MidnightClub3-Native-0.3.0-dev.20261023-win64.zip)
+is **9,688,808 bytes**, SHA-256 `c18c94213c37a76aae25b90856d427e60872a7b21c93fc11798ce9ecaccb80c3`.
+Its native `mc3.exe` has SHA-256 `72ade3b85ea2292c57867f5ae6d635a20304d83d9830742c1c96b85eca12c5ab`.
+The release also provides the pinned [content manifest](https://github.com/christiand0797/MidnightClub3-Port/releases/download/v0.3.0-dev.20261023/content-manifest.tsv),
+eight `.mc3c` parts, diagnostic per-file inventory, ZIP sidecar and
+[SHA256SUMS.txt](https://github.com/christiand0797/MidnightClub3-Port/releases/download/v0.3.0-dev.20261023/SHA256SUMS.txt).
+
+After publication, the actual native WinHTTP downloader fetched the 1,074-byte manifest and verified its pinned
+SHA-256. An unauthenticated download of the runtime ZIP matched the size/hash above. All eight public part URLs
+returned HTTP 200 with their expected byte lengths. The full 14.1 GB content download was not repeated over the
+network; its complete local parts, archive and 7,188 files had already passed authentication and actual clean
+offline first-launch installation. See [release validation](release_validation.md) for the separate scopes.
+
+This published tag is complete. Do not resume its uploader or replace its assets; the helper refuses published
+releases. Prepare a new version and a new owned draft for subsequent runtime/content changes. The maintenance
+workflow below describes draft staging and the earlier preparation history, not pending work for this tag.
+
+## Draft upload helper
 
 `tools/release/publish_portable.py` stages release assets in an owned public-repository **draft prerelease**. It has no publish operation. GitHub CLI supplies authentication from its existing credential store; the helper never asks for or prints a token.
 
@@ -18,19 +44,19 @@ The ownership marker is also embedded as an HTML comment in the draft body. The 
 
 Resume occurs at **asset boundaries**. An interrupted `.mc3c` upload may need to restart that part; completed matching assets are skipped. GitHub release uploads do not provide a partial-byte resume mechanism through this helper. Never start another helper invocation while the current upload is running.
 
-## Current content-only draft
+## Historical content-only draft (superseded)
 
-The first draft targets source `4d95d224e46f26ed10bc9306a65ee7d86468fb26` in `christiand0797/MidnightClub3-Port`, tag `v0.3.0-dev.20261023`. The original bootstrap ZIP is held for vehicle-control/tire-profile QA and is excluded from the upload plan. The unchanged content was verified using the native reader: 7,188 files, eight parts, 14,124,869,766 archive bytes; 7,081 PNGs and 106 MP4s accompany the ISO.
+The first draft targeted source `4d95d224e46f26ed10bc9306a65ee7d86468fb26` in `christiand0797/MidnightClub3-Port`, tag `v0.3.0-dev.20261023`. Its initial bootstrap ZIP was withheld for vehicle-control/tire-profile QA and excluded from that content-only plan. After the corrected runtime passed QA, the owned draft was updated to the final source and runtime identified above, then published. The unchanged content was verified using the native reader: 7,188 files, eight parts, 14,124,869,766 archive bytes; 7,081 PNGs and 106 MP4s accompany the ISO.
 
-From the repository root, this command creates or resumes only the content assets, metadata and content-only checksum list:
+For a **future, unpublished** version, use a new tag, reviewed source commit and separate control/content directories. From the repository root, the following template creates or resumes only that draft's content assets, metadata and content-only checksum list:
 
 ```powershell
 python .\tools\release\publish_portable.py `
-    --tag v0.3.0-dev.20261023 `
-    --target 4d95d224e46f26ed10bc9306a65ee7d86468fb26 `
-    --content 'G:\MC3_Backups\release-work\complete-0.3.0-dev.20261023' `
-    --control 'G:\MC3_Backups\release-work\public-release-control' `
-    --notes 'G:\MC3_Backups\release-work\public-release-control\release-notes.md' `
+    --tag '<new-version-tag>' `
+    --target '<reviewed full source commit>' `
+    --content '<new immutable content directory>' `
+    --control '<new external control directory>' `
+    --notes '<reviewed release-notes.md>' `
     --workers 2 --upload
 ```
 
@@ -38,12 +64,12 @@ Omit `--upload` for a local plan and read-only repository/commit check. The help
 
 The content manifest is 1,074 bytes, SHA-256 `26595f26e83354cc18b5351b12811d1e9f0564855ae8114500213f37094e3bed`. The archive SHA-256 is `3b3f311f7800430fd0b445952f2a8fffe86f58276f639bbb850e006d0848c1ab`.
 
-## Add the final approved runtime
+## Add an approved runtime to a future owned draft
 
-Wait for final runtime QA and the previous helper process to finish. Rebuild/package the corrected runtime, provide its exact reviewed ZIP SHA-256, and update `release-notes.md` to describe the final checked behavior and remaining limitations. Then repeat the command with the approved final source commit and these additional options:
+For a future release, finish runtime QA and the previous helper process first. Build/package the approved runtime, provide its exact reviewed ZIP SHA-256, and update `release-notes.md` to describe the checked behavior and remaining limitations. Then repeat that future draft's command with its approved final source commit and these additional options:
 
 ```powershell
---runtime-zip '<absolute path to the final MidnightClub3-Native-0.3.0-dev.20261023-win64.zip>' `
+--runtime-zip '<absolute path to the approved MidnightClub3-Native-<version>-win64.zip>' `
 --runtime-sha256 '<approved 64-character lowercase ZIP SHA-256>' `
 --update-owned-target --replace-owned-checksums
 ```
@@ -61,4 +87,4 @@ python -m py_compile .\tools\release\publish_portable.py
 python .\tools\release\test_publish_portable.py
 ```
 
-The tests make no GitHub calls. They check published/unowned release refusal, remote size-plus-digest matching, mismatched/older-empty-asset refusal, concurrent control-directory locking and skipping completed matching assets.
+The tests make no GitHub calls. The published source at `1428df367ded80796032fc0f6b208d5b356b278f` passed **7/7** publisher fixtures. Subsequent maintainer-tool hardening passes **9/9**, adding fixed-tag preservation during draft PATCH and retries for atomic state replacement on Windows. Those later changes affect the uploader only; they do not change the published runtime or package. Coverage also includes published/unowned release refusal, remote size-plus-digest matching, mismatched/older-empty-asset refusal, concurrent control-directory locking and skipping completed matching assets.

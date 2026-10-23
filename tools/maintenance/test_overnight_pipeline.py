@@ -1,6 +1,6 @@
 """Fixture-only backup/media-gate tests. No GPU, robocopy or PBR process is started."""
 import copy
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 import json
 import os
 from pathlib import Path
@@ -21,6 +21,83 @@ def valid_reports():
                                         "output_validated": True, "recorded_model": "realesrgan-x4plus"}
                                        for number in range(106)]}
     return texture, video
+
+
+class FakeMedia:
+    """A resumable child that acknowledges --stop-file only after its current item completes."""
+    def __init__(self, coordinator, phase="textures", drain_polls=0, boundary_code=2):
+        self.coordinator, self.phase = coordinator, phase
+        self.external_stop = coordinator.texture_stop if phase == "textures" else coordinator.video_stop
+        self.args = ["fixture-python", "fixture-worker", "--pass-id", "same-pass", "--stop-file", str(self.external_stop)]
+        self.completed, self.launches, self.events = [], [], []
+        self.game, self.clock = False, 0
+        self.drain_polls, self.boundary_code = drain_polls, boundary_code
+        self.on_first_poll = lambda: setattr(self, "game", True)
+        self.on_sleep = lambda _seconds: None
+
+    def workers(self):
+        return [{"Name": "mc3.exe", "ProcessId": 700, "CommandLine": "mc3.exe"}] if self.game else []
+
+    def sleep(self, seconds):
+        self.clock += seconds
+        self.events.append(("sleep", seconds))
+        self.on_sleep(seconds)
+        if seconds == 30 and self.game:
+            self.game = False
+            self.events.append(("game-closed",))
+
+    def popen(self, args, **_kwargs):
+        assert not self.game, "GPU child launched while the game was running"
+        self.launches.append(list(args))
+        number = len(self.launches)
+        self.events.append(("launch", number))
+        stop = Path(args[args.index("--stop-file") + 1])
+        assert stop != self.external_stop and stop.parent == self.coordinator.live
+        owner = self
+
+        class Process:
+            pid = 1000 + number
+            returncode = None
+            stop_polls = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_error):
+                assert self.returncode is not None, "coordinator abandoned a live child"
+
+            def poll(self):
+                if self.returncode is not None:
+                    return self.returncode
+                if stop.exists():
+                    self.stop_polls += 1
+                    if self.stop_polls <= owner.drain_polls:
+                        return None
+                    self.returncode = owner.boundary_code
+                    owner.events.append(("boundary-exit", number, self.returncode))
+                    return self.returncode
+                owner.completed.append("item" + str(len(owner.completed)))
+                owner.events.append(("completed", owner.completed[-1]))
+                if number == 1 and len(owner.completed) == 1:
+                    owner.on_first_poll()
+                if len(owner.completed) == 3:
+                    self.returncode = 0
+                return self.returncode
+
+            def terminate(self):
+                raise AssertionError("cooperative pause must never terminate a child")
+
+            kill = terminate
+
+        return Process()
+
+    @contextmanager
+    def installed(self):
+        with (patch.object(pipeline.subprocess, "Popen", side_effect=self.popen),
+              patch.object(pipeline, "active_workers", side_effect=self.workers),
+              patch.object(pipeline.time, "sleep", side_effect=self.sleep),
+              patch.object(pipeline.time, "monotonic", side_effect=lambda: self.clock)):
+            yield
 
 
 class CoordinatorTests(unittest.TestCase):
@@ -177,6 +254,157 @@ class CoordinatorTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "refused"):
             with pipeline.keep_awake(lambda _flags: 0):
                 self.fail("work started despite a failed wake request")
+
+    def test_game_arrival_drains_media_then_waits_and_resumes_remaining_items(self):
+        for phase in ("textures", "videos"):
+            with self.subTest(phase=phase):
+                coordinator = pipeline.Coordinator(self.source, self.backup)
+                media = FakeMedia(coordinator, phase)
+                with media.installed():
+                    coordinator.command(phase, media.args, child_stop=media.external_stop)
+                self.assertEqual(media.completed, ["item0", "item1", "item2"])
+                self.assertEqual(len(media.launches), 2)
+                self.assertLess(media.events.index(("boundary-exit", 1, 2)), media.events.index(("game-closed",)))
+                self.assertLess(media.events.index(("game-closed",)), media.events.index(("launch", 2)))
+                markers = [Path(args[-1]) for args in media.launches]
+                self.assertNotEqual(markers[0], markers[1])
+                self.assertTrue(all(not marker.exists() for marker in markers))
+                self.assertFalse(media.external_stop.exists())
+                self.assertFalse(coordinator.stop_file.exists())
+                self.assertEqual(media.launches[0][:-1], media.launches[1][:-1])
+
+    def test_existing_user_stop_flags_prevent_launch_and_are_preserved(self):
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        media = FakeMedia(coordinator)
+        media.external_stop.parent.mkdir(parents=True)
+        media.external_stop.write_text("user texture cancellation")
+        with media.installed(), self.assertRaisesRegex(pipeline.Paused, "child stop flag"):
+            coordinator.command("textures", media.args, child_stop=media.external_stop)
+        self.assertEqual(media.launches, [])
+        self.assertEqual(media.external_stop.read_text(), "user texture cancellation")
+        coordinator.stop_file.write_text("root cancellation")
+        with media.installed(), self.assertRaisesRegex(pipeline.Paused, "coordinator stop"):
+            coordinator.command("textures", media.args, child_stop=media.external_stop)
+        self.assertEqual(media.launches, [])
+        self.assertEqual(coordinator.stop_file.read_text(), "root cancellation")
+        self.assertEqual(media.external_stop.read_text(), "user texture cancellation")
+
+    def test_user_stop_has_priority_when_game_arrives_and_is_not_deleted(self):
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        media = FakeMedia(coordinator)
+        def arrivals():
+            media.game = True
+            coordinator.stop_file.write_text("user requested stop")
+            media.external_stop.write_text("external child stop")
+        media.on_first_poll = arrivals
+        with media.installed(), self.assertRaisesRegex(pipeline.Paused, "coordinator stop"):
+            coordinator.command("textures", media.args, child_stop=media.external_stop)
+        self.assertEqual(len(media.launches), 1)
+        self.assertNotIn(("game-closed",), media.events)
+        self.assertEqual(coordinator.stop_file.read_text(), "user requested stop")
+        self.assertEqual(media.external_stop.read_text(), "external child stop")
+        self.assertFalse(Path(media.launches[0][-1]).exists())
+
+    def test_cancel_observed_while_game_pause_drains_is_latched_after_flag_removal(self):
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        media = FakeMedia(coordinator, drain_polls=1)
+        sleeps = []
+        def cancellation(seconds):
+            sleeps.append(seconds)
+            if len(sleeps) == 1:
+                coordinator.stop_file.write_text("cancel while draining")
+            elif len(sleeps) == 2:
+                coordinator.stop_file.unlink()
+        media.on_sleep = cancellation
+        with media.installed(), self.assertRaisesRegex(pipeline.Paused, "coordinator stop"):
+            coordinator.command("textures", media.args, child_stop=media.external_stop)
+        self.assertFalse(coordinator.stop_file.exists())
+        self.assertEqual(len(media.launches), 1)
+        self.assertEqual(media.completed, ["item0"])
+        self.assertNotIn(30, sleeps) # An observed cancel cannot become wait-for-game/automatic resume.
+        self.assertFalse(Path(media.launches[0][-1]).exists())
+
+    def test_user_stop_while_waiting_for_game_prevents_resume(self):
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        media = FakeMedia(coordinator)
+        def stop_during_wait(seconds):
+            if seconds == 30:
+                media.external_stop.write_text("user stopped during game")
+        media.on_sleep = stop_during_wait
+        with media.installed(), self.assertRaisesRegex(pipeline.Paused, "child stop flag"):
+            coordinator.command("textures", media.args, child_stop=media.external_stop)
+        self.assertEqual(len(media.launches), 1)
+        self.assertEqual(media.external_stop.read_text(), "user stopped during game")
+
+    def test_replaced_private_marker_is_preserved_and_does_not_auto_resume(self):
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        media = FakeMedia(coordinator)
+        def replace_marker(_seconds):
+            Path(media.launches[0][-1]).write_text("foreign stop request")
+        media.on_sleep = replace_marker
+        with media.installed(), self.assertRaisesRegex(pipeline.Paused, "replaced; preserved"):
+            coordinator.command("textures", media.args, child_stop=media.external_stop)
+        self.assertEqual(len(media.launches), 1)
+        self.assertEqual(Path(media.launches[0][-1]).read_text(), "foreign stop request")
+
+    def test_child_failure_during_game_pause_is_not_retried_as_a_pause(self):
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        media = FakeMedia(coordinator, boundary_code=1)
+        with media.installed(), self.assertRaisesRegex(RuntimeError, "textures exited 1"):
+            coordinator.command("textures", media.args, child_stop=media.external_stop)
+        self.assertEqual(len(media.launches), 1)
+        self.assertFalse(Path(media.launches[0][-1]).exists())
+
+    def test_unrequested_boundary_exit_is_not_automatically_retried(self):
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        media = FakeMedia(coordinator)
+        media.on_first_poll = lambda: Path(media.launches[0][-1]).write_text("external boundary request")
+        with media.installed(), self.assertRaisesRegex(pipeline.Paused, "without a game-pause request"):
+            coordinator.command("textures", media.args, child_stop=media.external_stop)
+        self.assertEqual(len(media.launches), 1)
+        self.assertEqual(Path(media.launches[0][-1]).read_text(), "external boundary request")
+
+    def test_interrupt_during_monitoring_drains_owned_child_and_never_auto_resumes(self):
+        for location in ("process-inventory", "sleep"):
+            with self.subTest(location=location):
+                coordinator = pipeline.Coordinator(self.source, self.backup)
+                media = FakeMedia(coordinator)
+                interrupted = []
+                def interrupt_once():
+                    if not interrupted:
+                        interrupted.append(True)
+                        raise KeyboardInterrupt
+                if location == "sleep":
+                    media.on_sleep = lambda _seconds: interrupt_once()
+                else:
+                    workers = media.workers
+                    def interrupted_inventory():
+                        if media.launches:
+                            interrupt_once()
+                        return workers()
+                    media.workers = interrupted_inventory
+                with media.installed(), self.assertRaisesRegex(pipeline.Paused, "coordinator interrupted"):
+                    coordinator.command("textures", media.args, child_stop=media.external_stop)
+                self.assertEqual(len(media.launches), 1)
+                self.assertIn(("boundary-exit", 1, 2), media.events)
+                self.assertFalse(Path(media.launches[0][-1]).exists())
+
+    def test_private_marker_not_created_by_this_owner_is_never_removed(self):
+        marker = pipeline.OwnedChildStop(self.source)
+        marker.path.write_text(marker.content)
+        marker.clear()
+        self.assertTrue(marker.path.exists())
+        with self.assertRaisesRegex(pipeline.Paused, "replaced; preserved"):
+            marker.request()
+        self.assertEqual(marker.path.read_text(), marker.content)
+
+    def test_cooperative_child_requires_matching_explicit_stop_cli(self):
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        media = FakeMedia(coordinator)
+        for args in (["fixture-python", "worker"], ["worker", "--stop-file", "some-other-stop"]):
+            with media.installed(), self.assertRaisesRegex(ValueError, "cooperative child"):
+                coordinator.command("textures", args, child_stop=media.external_stop)
+        self.assertEqual(media.launches, [])
 
 
 if __name__ == "__main__":

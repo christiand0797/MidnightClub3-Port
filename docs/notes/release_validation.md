@@ -1,8 +1,9 @@
 # Release validation — v0.3.0-dev.20261023
 
-This records the native build and content tested locally on 2026-10-23. Consult the release notes for available
-assets and publication state; this validation record does not itself assert that the tag has been published.
-The target is `v0.3.0-dev.20261023` in `christiand0797/MidnightClub3-Port`.
+This records the native build, complete offline installation and public download checks performed on 2026-10-23.
+[v0.3.0-dev.20261023](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.0-dev.20261023)
+was published as a public prerelease at **09:09:17 UTC**, release ID `421585200`, targeting
+`1428df367ded80796032fc0f6b208d5b356b278f`. See [public release maintenance](public_release.md) for hashes and upload history.
 
 ## Tested native build
 
@@ -13,14 +14,34 @@ Canonical executable: `templates/game/out/native/mc3.exe`, SHA-256
 |---|---|
 | Runtime CTest | **19/19 pass**, including the original generated vehicle refresh/cache instructions |
 | Snapshot publisher regressions | **17/17 pass**; [fixtures](../../tools/maintenance/test_snapshot_publish.py) cover archive listing, metadata/coverage and publication safeguards |
-| Portable release publisher regressions | **7/7 pass**; [fixtures](../../tools/release/test_publish_portable.py) exercise draft ownership/collisions without contacting GitHub |
+| Portable release publisher regressions | **7/7 pass at the published source**; subsequent tools-only hardening passes **9/9** [fixtures](../../tools/release/test_publish_portable.py), without contacting GitHub |
 | Full content authentication | All eight parts, whole archive and **7,188 per-file** size/SHA-256 records verified |
 | Actual clean offline first launch | **Pass** through full installation, desktop shortcut, native D3D12 startup and automatic HD intro playback |
 | Native live vehicle update/retention | **Pass on the Golf R32**, with actual physics/cache/render readbacks before and after leaving the garage |
+| Public HTTPS checks | **Pass**: actual native manifest download/hash, unauthenticated complete runtime ZIP download/hash, and all eight part URL status/length checks |
 
 The local test outputs are `.local/final-refresh-tests.log`, `.local/final-snapshot-tests.log` and
-`.local/publisher-tests.log`. Fixture results are distinct from completed network publication or a full game
-compatibility sweep.
+`.local/publisher-tests.log` (the seven tagged-source publisher tests), with later nine-test output in
+`.local/final-publisher-tests.log`. The two later publisher fixtures check fixed-tag preservation during draft
+PATCH and retries for Windows atomic state replacement. These maintainer-tool changes do not alter the published
+runtime/package. Fixture results remain distinct from the live network checks and from a full game compatibility sweep.
+
+## Published assets and HTTPS checks
+
+All **13 remote assets** matched the planned sizes and SHA-256 digests before and after publication/tag creation.
+The [runtime ZIP](https://github.com/christiand0797/MidnightClub3-Port/releases/download/v0.3.0-dev.20261023/MidnightClub3-Native-0.3.0-dev.20261023-win64.zip)
+was downloaded without authentication: **9,688,808 bytes**, SHA-256
+`c18c94213c37a76aae25b90856d427e60872a7b21c93fc11798ce9ecaccb80c3`.
+The actual native WinHTTP download implementation fetched the public **1,074-byte** pinned manifest and matched
+SHA-256 `26595f26e83354cc18b5351b12811d1e9f0564855ae8114500213f37094e3bed`.
+All eight public `.mc3c` URLs returned HTTP 200 and correct lengths: 1,887,436,800 bytes for each of parts 001–007,
+and 912,812,166 bytes for part 008. Local evidence is in `.local/public-downloads.log`,
+`.local/native-public-download.log` and the external control directory's `publication-verification.json`.
+
+The complete **14,124,869,766-byte content archive was not downloaded again over HTTPS**. Its eight local parts,
+whole archive and per-file records were authenticated, followed by the actual clean offline installation below.
+Public URL accessibility and native manifest downloading passed; these checks do not claim a repeated full
+network installation or a measured 14.1 GB download/resume run.
 
 ## Full first-launch installation
 
@@ -54,8 +75,8 @@ The fresh-install UI check establishes automatic intro startup. Windows then dis
 dialog, which the agent left untouched. The user handles that Windows dialog; local installation and offline
 gameplay do not require allowing public inbound network connections. The test does not promise zero OS/admin
 prompts on every machine, and it does not claim a separate fresh-install menu/driving playthrough after the prompt.
-The first-launch proof uses the full offline part extraction path. Fetching the pinned metadata/content from the
-final public HTTPS URLs is a separate check after publication.
+The first-launch proof uses the full offline part extraction path. The separate post-publication HTTPS checks
+above passed for native manifest download, the complete runtime ZIP and all part URL status/lengths.
 
 ## Defaults, saves and vehicle scope
 

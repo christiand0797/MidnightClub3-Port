@@ -44,10 +44,48 @@ class DraftSafetyTests(unittest.TestCase):
         self.assertFalse(self.upload.remote_matches(remote | {"size": 124}, local))
         self.assertFalse(self.upload.remote_matches(remote | {"digest": "sha256:" + "b" * 64}, local))
 
+    def test_target_update_keeps_the_fixed_draft_tag(self):
+        notes = Path(self.temp.name) / "notes.md"
+        notes.write_text("Verified final build", encoding="utf-8")
+        self.upload.args.notes = notes
+        self.upload.args.target = "b" * 40
+        self.upload.args.update_owned_target = True
+        current = {"id": 10, "tag_name": "vfixture", "draft": True, "prerelease": True,
+                   "body": self.upload.marker, "target_commitish": "a" * 40,
+                   "html_url": "https://example.test/draft"}
+
+        def api(endpoint, *, method="GET", body=None):
+            if method == "PATCH":
+                self.assertEqual(body["tag_name"], "vfixture")
+                current.update(body)
+            return dict(current)
+
+        with patch.object(publisher, "gh_json", side_effect=api):
+            self.upload.ensure_draft()
+        self.assertEqual(current["tag_name"], "vfixture")
+        self.assertEqual(current["target_commitish"], "b" * 40)
+
     def test_control_directory_rejects_a_second_uploader(self):
         with publisher.ControlLock(Path(self.temp.name)):
             with self.assertRaises(RuntimeError):
                 publisher.ControlLock(Path(self.temp.name))
+
+    def test_state_publish_retries_transient_windows_sharing_failure(self):
+        original = Path.replace
+        calls = []
+
+        def replace(path, destination):
+            calls.append(path)
+            if len(calls) < 3:
+                raise PermissionError("file is being scanned")
+            return original(path, destination)
+
+        self.upload.state["retry_proof"] = True
+        with patch.object(Path, "replace", replace), patch.object(publisher.time, "sleep") as sleep:
+            self.upload.save()
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertIn('"retry_proof": true', self.upload.state_path.read_text(encoding="utf-8"))
 
     def test_old_empty_asset_is_not_adopted_as_this_attempt(self):
         local = {"name": "part.mc3c", "size": 123, "sha256": "a" * 64}

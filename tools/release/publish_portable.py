@@ -93,7 +93,16 @@ class DraftUploader:
             self.state["updated_utc"] = utc()
             temporary = self.state_path.with_suffix(".json.tmp")
             temporary.write_text(json.dumps(self.state, indent=2) + "\n", encoding="utf-8")
-            temporary.replace(self.state_path)
+            # Windows scanners/readers can briefly deny delete-sharing after inspecting the last state.
+            # Retain the complete temporary file and retry only that transient publication failure.
+            for attempt in range(8):
+                try:
+                    temporary.replace(self.state_path)
+                    break
+                except PermissionError:
+                    if attempt == 7:
+                        raise
+                    time.sleep(min(0.05 * 2 ** attempt, 1.0))
 
     def verify_repository(self):
         repo = gh_json(self.prefix)
@@ -170,7 +179,7 @@ class DraftUploader:
                 if not self.args.update_owned_target:
                     raise RuntimeError("Owned draft target changed; explicit --update-owned-target is required.")
                 release = gh_json(f"{self.prefix}/releases/{release['id']}", method="PATCH",
-                                  body={"target_commitish": self.args.target, "body": notes, "draft": True, "prerelease": True})
+                                  body={"tag_name": self.args.tag, "target_commitish": self.args.target, "body": notes, "draft": True, "prerelease": True})
             elif release["body"] != notes:
                 release = gh_json(f"{self.prefix}/releases/{release['id']}", method="PATCH", body={"body": notes})
         else:
@@ -196,7 +205,7 @@ class DraftUploader:
             if not self.args.update_owned_target:
                 raise RuntimeError("Recovered owned draft has another target; explicit --update-owned-target is required.")
             release = gh_json(f"{self.prefix}/releases/{release['id']}", method="PATCH",
-                              body={"target_commitish": self.args.target, "body": notes, "draft": True, "prerelease": True})
+                              body={"tag_name": self.args.tag, "target_commitish": self.args.target, "body": notes, "draft": True, "prerelease": True})
         self.state["target"] = self.args.target
         self.save()
         self.owned_draft()

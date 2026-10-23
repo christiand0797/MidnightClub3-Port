@@ -75,9 +75,15 @@ not promise that every PC will show zero OS/admin prompts. The same canonical EX
 garage-to-street check passed; see [live vehicle tuning](live_vehicle_tuning.md).
 
 The complete [release validation record](release_validation.md) includes the 19 CTest checks, snapshot/publisher
-fixture coverage and remaining scope. This was the actual EXE's full offline extraction path, not a live HTTPS
-download from the final public tag. The public manifest/download URL check follows publication. These local
-results do not themselves assert GitHub publication.
+fixture coverage and remaining scope. This was the actual EXE's full offline extraction path. The
+[public prerelease](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.0-dev.20261023)
+was subsequently published at **2026-10-23 09:09:17 UTC**, targeting source
+`1428df367ded80796032fc0f6b208d5b356b278f`. Its actual native WinHTTP manifest download passed the pinned
+1,074-byte SHA-256 check. An unauthenticated complete runtime ZIP download matched **9,688,808 bytes** and SHA-256
+`c18c94213c37a76aae25b90856d427e60872a7b21c93fc11798ce9ecaccb80c3`; all eight public part URLs returned HTTP 200
+with their expected lengths. The full 14.1 GB content transfer was not repeated over the network. See
+[public release maintenance](public_release.md) for the published hashes and the distinction between the seven
+publisher fixtures in the tagged source and nine passing tests after tools-only hardening.
 
 ## Prepare complete content
 

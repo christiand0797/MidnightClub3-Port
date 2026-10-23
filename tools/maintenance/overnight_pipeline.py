@@ -4,7 +4,7 @@
 Inventory only (default): py -3.12 tools/maintenance/overnight_pipeline.py --dry-run
 Execute authorized work: py -3.12 tools/maintenance/overnight_pipeline.py --run
 
-No process is killed. Existing game/media workers must exit before GPU work starts.
+No process is killed. GPU children yield at a batch/movie boundary if the game starts, then resume when idle.
 Create .local/stop-overnight-pipeline to stop children at a batch/movie boundary.
 PBR never runs unless both media audits and an all-file SHA-256 backup verify.
 """
@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 PASS_ID = "2026-10-22-originals-pass"
@@ -290,6 +291,31 @@ class Paused(Exception):
     pass
 
 
+class OwnedChildStop:
+    """A private cooperative request; shared user stop flags are never written or removed."""
+    def __init__(self, directory):
+        token = uuid.uuid4().hex
+        self.path = directory / ("child-stop-" + token)
+        self.content = "overnight-pipeline:" + token + "\n"
+        self.created = False
+
+    def request(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with self.path.open("x", encoding="utf-8", newline="\n") as stream:
+                stream.write(self.content)
+            self.created = True
+        except FileExistsError:
+            if not self.created or self.path.read_text(encoding="utf-8") != self.content:
+                raise Paused(f"private child stop marker was replaced; preserved: {self.path}")
+
+    def clear(self):
+        if self.created and self.path.exists():
+            if self.path.read_text(encoding="utf-8") != self.content:
+                raise Paused(f"private child stop marker was replaced; preserved: {self.path}")
+            self.path.unlink()
+
+
 class Coordinator:
     def __init__(self, root, backup_root, python=sys.executable, pass_id=PASS_ID):
         self.root = Path(root).resolve()
@@ -317,20 +343,31 @@ class Coordinator:
                 "all106 x4plus movies; both complete audits; full project copy and all-file SHA-256 verification; "
                 "verified backup gate; offline starter PBR regeneration. Runtime PBR is unchanged.\n\n"
                 f"Current details:\n\n```json\n{json.dumps(self.state, indent=2)}\n```\n\n"
-                "Stop gracefully: create `.local/stop-overnight-pipeline`. The current GPU batch/movie completes first. "
-                "Remove that flag and the child stop flags named in state to resume the same command.\n\n"
+                "GPU children also pause at a batch/movie boundary when MC3 starts, wait for it to close, and resume "
+                "the same phase automatically. No game process or input is stopped.\n\n"
+                "Stop gracefully: create `.local/stop-overnight-pipeline`, or the texture/video user stop flag. "
+                "The current GPU batch/movie completes first. User cancellation takes priority over game resume, "
+                "even if its flag is removed while the child finishes. Remove user stop flags yourself and rerun "
+                "the same command to resume. Only this coordinator's unique private child markers are cleared.\n\n"
                 "Backup exclusions are only the live coordinator directory, this generated checkpoint document and "
                 "its publication temporaries, plus explicitly listed file/directory links excluded without dereferencing. "
                 "The external verification manifest records every exclusion and every included file hash.\n")
         atomic_text(self.root / LIVE_NOTE, note)
 
-    def check_stop(self):
+    def stop_reason(self, child_stop=None):
         if self.stop_file.exists():
-            raise Paused("coordinator stop file exists")
+            return "coordinator stop file exists"
+        if child_stop and child_stop.exists():
+            return f"child stop flag already exists: {child_stop}"
 
-    def wait_idle(self):
+    def check_stop(self, child_stop=None):
+        reason = self.stop_reason(child_stop)
+        if reason:
+            raise Paused(reason)
+
+    def wait_idle(self, child_stop=None):
         while True:
-            self.check_stop()
+            self.check_stop(child_stop)
             workers = active_workers()
             if not workers:
                 return
@@ -338,43 +375,86 @@ class Coordinator:
             time.sleep(30)
 
     def command(self, phase, args, success=(0,), child_stop=None):
-        self.check_stop()
-        if child_stop and child_stop.exists():
-            raise Paused(f"child stop flag already exists: {child_stop}")
-        self.checkpoint(phase, command=args, child_stop=str(child_stop) if child_stop else None)
+        self.check_stop(child_stop)
+        if child_stop:
+            if args.count("--stop-file") != 1:
+                raise ValueError("cooperative child requires one explicit --stop-file")
+            stop_index = args.index("--stop-file") + 1
+            if stop_index >= len(args) or Path(args[stop_index]).resolve() != child_stop.resolve():
+                raise ValueError("cooperative child stop argument differs from its user cancellation flag")
+        while True:
+            request = OwnedChildStop(self.live) if child_stop else None
+            command = list(args)
+            if request:
+                self.wait_idle(child_stop)
+                command[stop_index] = str(request.path)
+            code, game_pause = self.command_once(phase, command, child_stop, request)
+            if code == 2 and request and game_pause:
+                self.checkpoint(phase + "-waiting-for-game", resume_phase=phase)
+                self.wait_idle(child_stop)
+                continue  # Both children already resume from their durable completed-batch/movie records.
+            if code == 2 and child_stop:
+                raise Paused(f"child stopped without a game-pause request; inspect {self.live / (phase + '.log')}")
+            if code not in success:
+                raise RuntimeError(f"{phase} exited {code}; see {self.live / (phase + '.log')}")
+            return
+
+    def command_once(self, phase, args, child_stop, request):
+        self.checkpoint(phase, command=args, child_stop=str(request.path) if request else None,
+                        user_child_stop=str(child_stop) if child_stop else None, resume_phase=None)
         self.live.mkdir(parents=True, exist_ok=True)
-        with (self.live / (phase + ".log")).open("a", encoding="utf-8") as log:
-            log.write(f"\n{utc()} {subprocess.list2cmdline(args)}\n")
-            log.flush()
-            with subprocess.Popen(args, cwd=self.root, stdout=log, stderr=subprocess.STDOUT,
-                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)) as process:
-                self.checkpoint(phase, child_pid=process.pid)
-                heartbeat = time.monotonic()
-                while process.poll() is None:
-                    if self.stop_file.exists() and child_stop:
-                        child_stop.parent.mkdir(parents=True, exist_ok=True)
-                        child_stop.touch(exist_ok=True)
-                    if time.monotonic() - heartbeat >= 60:
-                        details = {}
-                        progress_path = self.work / "video-progress.json"
-                        if phase == "videos" and progress_path.exists():
-                            progress = json.loads(progress_path.read_text(encoding="utf-8"))
-                            details = {key: progress.get(key) for key in ("verified", "movies", "failed", "remaining_frames")}
-                        if phase == "textures":
-                            progress_path = self.root / "templates/game/out/native/textures/upscale_passes.json"
-                            if progress_path.exists():
-                                progress = json.loads(progress_path.read_text(encoding="utf-8"))
-                                details["named_pass_completed"] = len(progress.get("passes", {}).get(self.pass_id, {}).get("completed", {}))
-                        self.checkpoint(phase, progress=details)
-                        heartbeat = time.monotonic()
-                    time.sleep(5)
-                code = process.returncode
-        self.checkpoint(phase + "-exited", child_exit_code=code, child_pid=None)
-        self.check_stop()
-        if code == 2 and child_stop:
-            raise Paused(f"child stopped at a safe boundary; inspect {child_stop}")
-        if code not in success:
-            raise RuntimeError(f"{phase} exited {code}; see {self.live / (phase + '.log')}")
+        cancelled, game_pause = None, False
+        try:
+            with (self.live / (phase + ".log")).open("a", encoding="utf-8") as log:
+                log.write(f"\n{utc()} {subprocess.list2cmdline(args)}\n")
+                log.flush()
+                with subprocess.Popen(args, cwd=self.root, stdout=log, stderr=subprocess.STDOUT,
+                                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)) as process:
+                    self.checkpoint(phase, child_pid=process.pid)
+                    heartbeat = time.monotonic()
+                    while True:
+                        try:
+                            if process.poll() is not None:
+                                break
+                            # Latch cancellation before inspecting the game. Removing a user flag while this child
+                            # drains must not silently turn that cancellation into an automatic game-pause resume.
+                            cancelled = cancelled or self.stop_reason(child_stop)
+                            if cancelled and request:
+                                request.request()
+                            elif request and not game_pause:
+                                games = [row for row in active_workers() if row["Name"].lower() == "mc3.exe"]
+                                if games:
+                                    game_pause = True
+                                    request.request()
+                                    self.checkpoint(phase + "-pausing-for-game", waiting=games)
+                            if time.monotonic() - heartbeat >= 60:
+                                details = {}
+                                progress_path = self.work / "video-progress.json"
+                                if phase == "videos" and progress_path.exists():
+                                    progress = json.loads(progress_path.read_text(encoding="utf-8"))
+                                    details = {key: progress.get(key) for key in ("verified", "movies", "failed", "remaining_frames")}
+                                if phase == "textures":
+                                    progress_path = self.root / "templates/game/out/native/textures/upscale_passes.json"
+                                    if progress_path.exists():
+                                        progress = json.loads(progress_path.read_text(encoding="utf-8"))
+                                        details["named_pass_completed"] = len(progress.get("passes", {}).get(self.pass_id, {}).get("completed", {}))
+                                current = phase + ("-stopping" if cancelled else "-pausing-for-game" if game_pause else "")
+                                self.checkpoint(current, progress=details)
+                                heartbeat = time.monotonic()
+                            time.sleep(5)
+                        except KeyboardInterrupt:
+                            cancelled = cancelled or "coordinator interrupted"
+                            if request:
+                                request.request()
+                    code = process.returncode
+            self.checkpoint(phase + "-exited", child_exit_code=code, child_pid=None, child_stop=None)
+            if cancelled:
+                raise Paused(cancelled)
+            self.check_stop(child_stop)
+            return code, game_pause
+        finally:
+            if request:
+                request.clear()
 
     def media_gate(self):
         signature = media_signature(self.root)
