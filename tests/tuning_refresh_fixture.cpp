@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <limits>
+#include <unordered_set>
 #include <vector>
 
 #undef X86_FUNC
@@ -23,6 +25,8 @@
 #define __imp__sub_000A65D0 UnusedOriginalWheelDisplacement
 #define __imp__sub_000FB760 UnusedOriginalModelParser
 #define __imp__sub_00103C50 UnusedOriginalUpgradeInterpolation
+#define __imp__sub_00121440 UnusedOriginalBodyFloor
+#define __imp__sub_00105A40 UnusedOriginalResourceRelocation
 #include "x86_recomp.17.cpp"
 #include "x86_recomp.18.cpp"
 #include "x86_recomp.26.cpp"
@@ -40,6 +44,8 @@
 #undef __imp__sub_000A65D0
 #undef __imp__sub_000FB760
 #undef __imp__sub_00103C50
+#undef __imp__sub_00121440
+#undef __imp__sub_00105A40
 
 namespace {
 std::vector<uint8_t> guest(0x600000);
@@ -52,6 +58,7 @@ constexpr std::array<uint32_t, 4> kWheels = {0x44000, 0x45000, 0x46000, 0x47000}
 constexpr uint32_t kVtable = 0x49000, kGlobals = 0x4A000, kStack = 0x70000;
 unsigned cache_updates = 0, cfg_updates = 0, axle_updates = 0, upgrade_updates = 0, body_updates = 0;
 float body_clearance = 0;
+std::unordered_set<uint32_t> uncommitted_pages;
 
 void F(uint32_t p, float v) { std::memcpy(guest.data() + p, &v, 4); }
 float F(uint32_t p) { float v; std::memcpy(&v, guest.data() + p, 4); return v; }
@@ -72,7 +79,7 @@ void Invoke(X86Func* fn, uint32_t self, std::initializer_list<uint32_t> args = {
 }
 
 namespace kernel { uint8_t* g_base = guest.data(); }
-namespace mem { bool IsCommitted(uint32_t va) { return va < guest.size(); } }
+namespace mem { bool IsCommitted(uint32_t va) { return va < guest.size() && !uncommitted_pages.count(va & ~0xFFFu); } }
 namespace logx { void Write(Level, const char*, ...) {} }
 namespace app {
 Settings& Get() { static Settings settings; return settings; }
@@ -86,6 +93,8 @@ void TuningCarCfgApplied(uint32_t);
 // garage_test covers recovery from the concrete human controller. This fixture explicitly binds that car so
 // it can compare the native cache behavior before and after ownership without simulating another factory.
 void GarageRefreshPlayerCar(uint32_t) {}
+// The profile mesh fixture owns resource aliases; this test isolates numeric cache refresh.
+void GarageNormalizeProfileMeshes(uint32_t, uint32_t) {}
 
 extern "C" void __imp__sub_000FFD90(X86Context& c, uint8_t* b) { OriginalCarUpdate(c, b); }
 extern "C" void __imp__sub_000F32A0(X86Context& c, uint8_t* b) { OriginalRenderApply(c, b); }
@@ -124,7 +133,10 @@ extern "C" void __imp__sub_00103C50(X86Context& c, uint8_t*) {
     c.esp += 12;
 }
 extern "C" void sub_00120A80(X86Context& c, uint8_t*) { c.eax = kSim; c.esp += 4; }
-extern "C" void sub_00121440(X86Context& c, uint8_t*) { body_clearance = F(c.esp + 4); c.esp += 8; }
+// The standalone chassis_floor fixture executes the actual geometry writer/rebuild. This boundary records
+// exactly what the production ownership/extent wrapper passes through the real 105450 refresh.
+extern "C" void __imp__sub_00121440(X86Context& c, uint8_t*) { body_clearance = F(c.esp + 4); c.esp += 8; }
+extern "C" void __imp__sub_00105A40(X86Context& c, uint8_t*) { c.esp += 4; } // cdecl relocation boundary
 
 void x86_icall(X86Context& c, uint8_t*, uint32_t address) {
     assert(c.ecx == kBody);
@@ -151,6 +163,114 @@ UNUSED_IMPORT(000A3CA0) UNUSED_IMPORT(000FB760) UNUSED_IMPORT(0032F490) UNUSED_I
 UNUSED_IMPORT(000A7250) UNUSED_IMPORT(000A65D0)
 #undef UNUSED_IMPORT
 extern "C" void __imp__sub_001284F0(X86Context& c, uint8_t* b) { OriginalAirbagMove(c, b); }
+
+void FloorArgumentRegression() {
+    constexpr uint32_t root = 0x80000, bytes = 0x2000, bound = root + 0x100;
+    constexpr uint32_t vertices = root + 0x300, faces = root + 0x400;
+    constexpr uint32_t instance = 0x90000, level = 0x91000, archetype = 0x92000, cache = 0x93000;
+    constexpr uint32_t other_root = 0x94000, other_bound = other_root + 0x100;
+    auto relocate = [&](uint32_t payload_bytes = bytes) {
+        X86Context c{}; c.esp = kStack;
+        W(kStack, 0x105B5C); W(kStack + 4, root); W(kStack + 8, 0x12340000); W(kStack + 12, payload_bytes);
+        sub_00105A40(c, guest.data());
+        assert(c.esp == kStack + 4); // The native caller, not relocation, pops the three arguments.
+    };
+    auto direct = [&](float argument, uint32_t caller = 0x10570C) {
+        X86Context c{}; c.ecx = kBody; c.esp = kStack;
+        uint32_t value; std::memcpy(&value, &argument, 4);
+        W(kStack, caller); W(kStack + 4, value);
+        sub_00121440(c, guest.data());
+        assert(c.esp == kStack + 8 && c.top == 0);
+        return body_clearance;
+    };
+    auto native = [&](float front, float rear, float stock = .35f, float current = .35f) {
+        F(kFront + 0x48, front); F(kRear + 0x48, rear);
+        F(kFront + 4, current); F(kRear + 4, current);
+        F(kRender + 0x12D4, current * 2); F(kRender + 0x12CC, current * 2);
+        F(kInfoF + 0x14, stock); F(kInfoR + 0x14, stock);
+        Invoke(sub_00105450, 0, {kCar});
+        return body_clearance;
+    };
+    W(kCar + 0x4C, root); W(root + 8, kResources); W(root + 0xC, bound);
+    W(kBody + 4, instance); W(instance + 0x1C, level); W(level + 4, archetype); W(archetype + 0xC, bound);
+    W(kBody + 0xB4, kSim); guest[kCar + 0x5E] = 0;
+    // Actual canonical Golf R32 bound positions and polygon index words (assets_x.dat_2, payload vertex
+    // offset 299456, original bundle SHA-256 75653a62cd134db1e01edd119a33dce136751794b3be98ce8b00ffbd03358a8b).
+    constexpr float golf_vertices[14][3] = {
+        {-.703324020f,.300000012f,2.00872588f}, {.702557027f,.300000012f,2.00872588f},
+        {-.582126021f,1.36608303f,1.58623505f}, {.581359029f,1.36608303f,1.58623505f},
+        {-.582126021f,1.36608303f,-.252440006f}, {.581359029f,1.36608303f,-.252440006f},
+        {-.703324020f,.300000012f,-1.28447104f}, {.702557027f,.300000012f,-1.28447104f},
+        {-.883744001f,.704999983f,2.07986689f}, {.882977009f,.704999983f,2.07986689f},
+        {.882977009f,.704999983f,-1.56909001f}, {-.883744001f,.704999983f,-1.56909001f},
+        {-.733366013f,.704999983f,-2.13666010f}, {.732599020f,.704999983f,-2.13666010f}};
+    constexpr uint16_t golf_faces[14][4] = {{9,3,2,8},{3,5,4,2},{12,11,4,0},{7,1,0,6},
+        {10,5,3,9},{8,2,4,11},{0,1,9,8},{7,10,9,1},{12,6,11,0},{0,8,11,6},
+        {5,13,12,4},{12,13,7,6},{5,10,13,0},{13,10,7,0}};
+    std::memcpy(guest.data() + vertices, golf_vertices, sizeof(golf_vertices));
+    for (unsigned i = 0; i < 14; ++i)
+        std::memcpy(guest.data() + faces + i * 0x20 + 0x10, golf_faces[i], sizeof(golf_faces[i]));
+    guest[bound + 4] = 3; W(bound + 0x4C, 14); W(bound + 0x50, 14);
+    W(bound + 0x68, vertices); W(bound + 0x6C, faces);
+    // The original pinned bound count is deliberately 65001 plus padding, not a uniqueness count of one.
+    W(bound + 0x48, 0xCDCDFDE9);
+    F(kBody + 0x1A0, .3f); F(kBody + 0x1A4, .65f); F(kBody + 0x1A8, .9f);
+    F(kSim + 0xD8, .05f); F(kSim + 0xDC, 0);
+    for (unsigned i = 0; i < 4; ++i) W(kBody + 0x190 + 4 * i, std::array{0u, 1u, 6u, 7u}[i]);
+    W(0x50A08C, cache);
+    for (unsigned i = 0; i < 16; ++i) W(cache + 16 * i, UINT32_MAX);
+    W(cache, 3); W(cache + 4, root); guest[cache + 8] = 0; guest[cache + 9] = 1; guest[cache + 0xA] = 0;
+    // No authoritative relocation capture yet: even an otherwise private cache entry passes through.
+    assert(Near(native(-.35f, -.35f), .35f));
+    relocate();
+    assert(Near(native(-.35f, -.35f), 0));
+    assert(Near(native(-.35f, 0), 0) && Near(native(0, -.35f), 0));
+    assert(Near(native(-.35f, -.35f, .35f, .25f), .1f)); // Preserve smaller-tire compensation.
+    assert(Near(native(-.35f, -.35f, .35f, .45f), 0));
+    assert(Near(native(0, 0, .35f, .25f), .1f));
+    assert(Near(native(.04f, .04f, .35f, .25f), .06f));
+    assert(Near(native(.5f, -.2f), 0)); // Mixed axles with nonnegative mean retain the original argument.
+    assert(Near(native(-.1f, -.1f), 0)); // Continuous through original retail lowering; no -.15 switch.
+    F(kWheels[0] + 0x10C, -.35f); F(kWheels[1] + 0x10C, -.35f);
+    assert(Near(direct(.35f), 0));
+    assert(Near(direct(.35f, 0x10570D), .35f));
+    guest[cache + 8] = 1; assert(Near(direct(.35f), .35f)); guest[cache + 8] = 0;
+    guest[cache + 9] = 2; assert(Near(direct(.35f), .35f)); guest[cache + 9] = 1;
+    guest[cache + 0xA] = 1; assert(Near(direct(.35f), .35f)); guest[cache + 0xA] = 0;
+    guest[cache + 9] = 0; assert(Near(direct(.35f), .35f)); guest[cache + 9] = 1;
+    guest[kCar + 0x5E] = 1; assert(Near(direct(.35f), .35f)); guest[kCar + 0x5E] = 0;
+    TuningSetPlayerSim(kSim, false); assert(Near(direct(.35f), .35f)); TuningSetPlayerSim(kSim, true);
+    W(kCar + 0x64, kCfg + 0x1000); assert(Near(direct(.35f), .35f)); W(kCar + 0x64, kCfg);
+    W(kBody + 0xB4, kSim + 0x1000); assert(Near(direct(.35f), .35f)); W(kBody + 0xB4, kSim);
+    W(archetype + 0xC, other_bound); assert(Near(direct(.35f), .35f)); W(archetype + 0xC, bound);
+    W(kBody + 0x18, 2); assert(Near(direct(.35f), .35f)); W(kBody + 0x18, 0);
+    W(kBody + 0x190, 14); assert(Near(direct(.35f), .35f)); W(kBody + 0x190, 0);
+    W(kBody + 0x194, 0); assert(Near(direct(.35f), .35f)); W(kBody + 0x194, 1);
+    F(kWheels[0] + 0x10C, std::numeric_limits<float>::quiet_NaN());
+    assert(Near(direct(.35f), .35f)); F(kWheels[0] + 0x10C, -.35f);
+    assert(Near(direct(-.1f), -.1f));
+    assert(std::isnan(direct(std::numeric_limits<float>::quiet_NaN())));
+    // Another live slot sharing the shape, or only its vertex array, invalidates private geometry.
+    W(cache + 16, 4); W(cache + 20, other_root); guest[cache + 25] = 1;
+    W(other_root + 0xC, bound); assert(Near(direct(.35f), .35f));
+    W(other_root + 0xC, other_bound); W(other_bound + 0x68, vertices);
+    assert(Near(direct(.35f), .35f));
+    W(cache + 20, root); assert(Near(direct(.35f), .35f)); // Duplicate owner entry.
+    W(cache + 16, UINT32_MAX);
+    assert(Near(direct(.35f), 0));
+    // Payload identity, full u32 counts, polygon indices and extent are independent of committed-page checks.
+    W(bound + 0x4C, 0x1000E); assert(Near(direct(.35f), .35f)); W(bound + 0x4C, 14);
+    W(bound + 0x68, root + bytes + 0x100); assert(Near(direct(.35f), .35f)); W(bound + 0x68, vertices);
+    W(bound + 0x6C, root + bytes + 0x100); assert(Near(direct(.35f), .35f)); W(bound + 0x6C, faces);
+    guest[faces + 0x10] = 14; assert(Near(direct(.35f), .35f)); guest[faces + 0x10] = 9;
+    uncommitted_pages.insert(root); assert(Near(direct(.35f), .35f)); uncommitted_pages.clear();
+    relocate(0x170); assert(Near(direct(.35f), .35f)); // Bad reload erases old extent identity.
+    relocate(); assert(Near(direct(.35f), 0));
+    TuningForgetSim(kSim); assert(Near(direct(.35f), .35f));
+    TuningSetPlayerSim(kSim, true); TuningBindCar(kCar, kSim, kCfg, true);
+    assert(Near(direct(.35f), 0));
+    std::cout << "production private chassis-floor argument/extent/cache guards: PASS\n";
+}
 
 int main() {
     W(kCar + 8, kBody); W(kCar + 0xC, kManager); W(kCar + 0x4C, kFactory);
@@ -261,5 +381,6 @@ int main() {
     assert(Near(F(airbag + 0x28), 0.280f) && Near(F(airbag + 0x2C), 0.280f));
     assert(Near(F(kWheels[0] + 0x10C), 0.270f) && Near(F(kWheels[1] + 0x10C), 0.280f));
     assert(Near(F(kWheels[2] + 0x10C), 0.270f) && Near(F(kWheels[3] + 0x10C), 0.280f));
+    FloorArgumentRegression();
     std::cout << "actual FFD90 / 121970 / F32A0 / FF220 / 105450 / A6560 refresh: PASS\n";
 }

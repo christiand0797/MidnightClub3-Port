@@ -89,6 +89,10 @@ void TuningCarCfgApplied(uint32_t sim);
 void TuningBindCar(uint32_t car, uint32_t sim, uint32_t cfg, bool player);
 // Concrete human-controller ownership and stack factory recovery are exercised in garage_test.
 void GarageRefreshPlayerCar(uint32_t) {}
+void GarageNormalizeProfileMeshes(uint32_t, uint32_t) {}
+// Native floor argument/ownership behavior is exercised by tuning_refresh and chassis_floor.
+X86_FUNC(__imp__sub_00121440) { ctx.esp += 8; }
+X86_FUNC(__imp__sub_00105A40) { ctx.esp += 4; }
 
 namespace {
 using Hook = void (*)(X86Context&, uint8_t*);

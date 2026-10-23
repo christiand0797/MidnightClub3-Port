@@ -33,6 +33,7 @@
 #include "core/log.h"
 #include "kernel/memory.h"
 #include "xdk/hle.h"
+#include "garage.h"
 
 using kernel::R32;
 using kernel::W32;
@@ -89,6 +90,11 @@ struct CarTuning {
     bool initialized = false;
 };
 std::unordered_map<uint32_t, CarTuning> g_player_cars;
+struct BoundPayload {
+    uint32_t bytes, bound, vertices, polygons, vertex_count, polygon_count;
+    bool operator==(const BoundPayload&) const = default;
+};
+std::unordered_map<uint32_t, BoundPayload> g_bound_payloads; // 105A40 relocation generation -> live pointer identity
 struct ContactSample { uint32_t owner = 0, offset = 0, stop = 0, extent = 0, calls = 0; };
 std::unordered_map<uint32_t, ContactSample> g_contact_samples; // runtime wheel -> bounded diagnostic sampling
 
@@ -270,7 +276,157 @@ void ApplyRender(uint32_t car, CarTuning& c, const app::Settings::Tuning& s, boo
         if (std::isfinite(angle)) WF32(render + 0x12E8 + 4 * axle, angle);
     }
 }
+
+bool ReadBoundPayload(uint32_t root, uint32_t bytes, BoundPayload& out) {
+    const uint64_t end = uint64_t(root) + bytes;
+    auto contains = [&](uint32_t address, uint64_t size) {
+        return size && address >= root && uint64_t(address) + size <= end && size <= UINT32_MAX &&
+               Committed(address, uint32_t(size));
+    };
+    if (!Plausible(root) || end > (uint64_t(1) << 32) || !contains(root, 0x10)) return false;
+    const uint32_t bound = R32(root + 0xC);
+    if (!Plausible(bound) || !contains(bound, 0x70) || kernel::G<uint8_t>(bound + 4) != 3) return false;
+    const uint32_t vertices = R32(bound + 0x68), polygons = R32(bound + 0x6C);
+    const uint32_t count = R32(bound + 0x4C), faces = R32(bound + 0x50);
+    // Count loads are u32, not masked words. Original polygon indices are u16; reject impossible/corrupt
+    // geometry before multiplication or a long committed-range scan.
+    if (!count || count > 0x10000 || !faces || !Plausible(vertices) || !Plausible(polygons) ||
+        !contains(vertices, uint64_t(count) * 12) || !contains(polygons, uint64_t(faces) * 0x20)) return false;
+    auto overlaps = [](uint32_t a, uint64_t as, uint32_t b, uint64_t bs) {
+        return uint64_t(a) < uint64_t(b) + bs && uint64_t(b) < uint64_t(a) + as;
+    };
+    if (overlaps(bound, 0x70, vertices, uint64_t(count) * 12) ||
+        overlaps(bound, 0x70, polygons, uint64_t(faces) * 0x20) ||
+        overlaps(vertices, uint64_t(count) * 12, polygons, uint64_t(faces) * 0x20)) return false;
+    for (uint32_t i = 0; i < faces; ++i)
+        for (unsigned corner = 0; corner < 4; ++corner)
+            if (kernel::G<uint16_t>(polygons + i * 0x20 + 0x10 + 2 * corner) >= count) return false;
+    out = {bytes, bound, vertices, polygons, count, faces};
+    return true;
+}
+
+// Caller holds g_lock. Human driving construction requests a fresh resource-cache slot (105B80 key 0), while
+// garage previews may request shared resources. The cache, not bound+48's pinned 16-bit reference count,
+// establishes whether changing this shape can affect another car. Reject any uncertainty and keep retail.
+bool PrivateFloorArgument(uint32_t body, float argument, float& corrected) {
+    if (!Plausible(body) || !Committed(body, 0x1AC) || R32(body + 0x18) == 2 ||
+        !std::isfinite(argument) || argument < 0) return false;
+    uint32_t car = 0, sim = 0;
+    for (const auto& [candidate, c] : g_player_cars) {
+        if (!g_player_sims.count(c.sim) || !Plausible(candidate) || !Committed(candidate + 8, 0x60) ||
+            !Plausible(c.cfg) || !Committed(c.cfg, 0x24) ||
+            R32(candidate + 8) != body || R32(candidate + 0x50) != c.sim ||
+            R32(candidate + 0x64) != c.cfg || R32(body + 0xB4) != c.sim ||
+            kernel::G<uint8_t>(candidate + 0x5E) != 0) continue;
+        if (car) return false;
+        car = candidate; sim = c.sim;
+    }
+    if (!car || !Plausible(sim) || !Committed(sim, 0xE0)) return false;
+    const uint32_t root = R32(car + 0x4C);
+    if (!Plausible(root) || !Committed(root, 0x10)) return false;
+    const auto captured = g_bound_payloads.find(root);
+    BoundPayload live{};
+    if (captured == g_bound_payloads.end() || !ReadBoundPayload(root, captured->second.bytes, live) ||
+        live != captured->second) return false;
+    const uint32_t bound = live.bound;
+    // Match the actual A2450 pointer chain, rather than assuming the resource supplied at construction is
+    // still installed on this body after a rebind/reset.
+    uint32_t link = body;
+    for (const uint32_t offset : {4u, 0x1Cu, 4u, 0xCu}) {
+        if (!Plausible(link) || !Committed(link + offset, 4)) return false;
+        link = R32(link + offset);
+    }
+    if (link != bound) return false;
+    const uint32_t vertices = live.vertices, count = live.vertex_count;
+    bool has_floor = false;
+    for (unsigned i = 0; i < 4; ++i) {
+        const uint32_t index = R32(body + 0x190 + 4 * i);
+        if (index == UINT32_MAX) continue;
+        if (index >= count) return false;
+        for (unsigned j = 0; j < i; ++j)
+            if (R32(body + 0x190 + 4 * j) == index) return false;
+        for (unsigned axis = 0; axis < 3; ++axis)
+            if (!std::isfinite(F32(vertices + 12 * index + 4 * axis))) return false;
+        has_floor = true;
+    }
+    const float minimum = F32(body + 0x1A0), cap = F32(body + 0x1A4);
+    if (!has_floor || !std::isfinite(minimum) || !std::isfinite(cap) || cap < minimum ||
+        !std::isfinite(F32(body + 0x1A8)) || !std::isfinite(F32(sim + 0xD8)) ||
+        !std::isfinite(F32(sim + 0xDC))) return false;
+    if (!Committed(0x50A08C, 4)) return false;
+    const uint32_t manager = R32(0x50A08C);
+    if (!Plausible(manager) || !Committed(manager, 16 * 0x10)) return false;
+    bool private_slot = false;
+    for (unsigned i = 0; i < 16; ++i) {
+        const uint32_t entry = manager + 0x10 * i;
+        if (R32(entry) == UINT32_MAX) continue;
+        const uint8_t refs = kernel::G<uint8_t>(entry + 9), pending = kernel::G<uint8_t>(entry + 0xA);
+        if (!refs && !pending) continue;
+        const uint32_t other_root = R32(entry + 4);
+        if (other_root == root) {
+            if (private_slot || kernel::G<uint8_t>(entry + 8) != 0 || refs != 1 || pending) return false;
+            private_slot = true;
+            continue;
+        }
+        if (!Plausible(other_root) || !Committed(other_root + 0xC, 4)) return false;
+        const uint32_t other_bound = R32(other_root + 0xC);
+        if (!Plausible(other_bound) || !Committed(other_bound, 0x70) || other_bound == bound ||
+            R32(other_bound + 0x68) == vertices) return false;
+        const uint32_t other_vertices = R32(other_bound + 0x68), other_count = R32(other_bound + 0x4C);
+        if (other_count && uint64_t(vertices) < uint64_t(other_vertices) + uint64_t(other_count) * 12 &&
+            uint64_t(other_vertices) < uint64_t(vertices) + uint64_t(count) * 12) return false;
+    }
+    if (!private_slot) return false;
+    const uint32_t front = R32(body + 0xD8), rear = R32(body + 0xDC);
+    if (!Plausible(front) || !Plausible(rear) || !Committed(front + 0x10C, 4) ||
+        !Committed(rear + 0x10C, 4)) return false;
+    const float mean = (F32(front + 0x10C) + F32(rear + 0x10C)) * .5f;
+    if (!std::isfinite(mean) || mean >= 0) return false;
+    // 105450 supplied max(0, stockRadius-currentRadius-mean). Adding the negative mean back, then
+    // clamping again, removes only the lowering term; no model getter or duplicate radius read is needed.
+    corrected = std::max(0.0f, argument + mean);
+    return std::isfinite(corrected);
+}
 }  // namespace
+
+// Common synchronous/asynchronous relocation boundary. The original loader supplies the checked payload
+// length; root-80 and root+7C are not reliable length sources. A fresh relocation replaces stale identity
+// at a reused address. A cache entry must still independently prove current private ownership below.
+X86_EXTERN_FUNC(__imp__sub_00105A40);
+X86_FUNC(sub_00105A40) {
+    const bool readable = Committed(ctx.esp + 4, 12);
+    const uint32_t root = readable ? R32(ctx.esp + 4) : 0;
+    const uint32_t bytes = readable ? R32(ctx.esp + 0xC) : 0;
+    __imp__sub_00105A40(ctx, base);
+    if (!readable) return;
+    BoundPayload payload{};
+    const bool valid = ReadBoundPayload(root, bytes, payload);
+    std::lock_guard<std::mutex> lock(g_lock);
+    if (valid) g_bound_payloads[root] = payload;
+    else g_bound_payloads.erase(root);
+}
+
+// The original refresh raises its four lowest chassis-bound vertices by negative mean ride height. Preserve
+// their normal tire-size compensation and native 5 cm skin, so lowering can bring the chassis onto the road.
+// Shared previews and anything without a proven private human cache slot retain the complete original path.
+X86_EXTERN_FUNC(__imp__sub_00121440);
+X86_FUNC(sub_00121440) {
+    if (Committed(ctx.esp, 8) && R32(ctx.esp) == 0x10570C) {
+        const float original = F32(ctx.esp + 4);
+        float corrected = original;
+        bool changed = false, report = false;
+        {
+            std::lock_guard<std::mutex> lock(g_lock);
+            changed = PrivateFloorArgument(ctx.ecx, original, corrected) && corrected != original;
+            static unsigned reports = 0;
+            report = changed && reports++ < 8;
+        }
+        if (changed) WF32(ctx.esp + 4, corrected);
+        if (report) LOGR("garage: private chassis %08X retains its contact floor (clearance %.3f -> %.3f)",
+                         ctx.ecx, original, corrected);
+    }
+    __imp__sub_00121440(ctx, base);
+}
 
 // Diagnose the real contact solver at extended-low settings. This calls the original solver unchanged; sampling
 // its requested and retained compression distinguishes a travel clamp from body/bound geometry in a playtest.
@@ -497,6 +653,7 @@ X86_FUNC(sub_000F32A0) {
     const bool rebuilt_wheels = Committed(ctx.esp + 8, 4) &&
                                 ((R32(ctx.esp + 8) & 0xFFu) || (Committed(cfg + 8, 4) && (R32(cfg + 8) & 5u)));
     __imp__sub_000F32A0(ctx, base);
+    GarageNormalizeProfileMeshes(render, cfg);
     const auto settings = SettingsSnapshot();
     std::lock_guard<std::mutex> lock(g_lock);
     for (auto& [car, c] : g_player_cars)

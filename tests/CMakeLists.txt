@@ -23,6 +23,8 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../templates/game/generated/game/x86_reco
 endif()
 target_include_directories(tuning_test PRIVATE ../templates/game/generated/game)
 include(tuning_refresh.cmake)
+include(chassis_floor.cmake)
+include(profile_mesh.cmake)
 target_sources(garage_test PRIVATE ../templates/game/src/game/garage.cpp)
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../templates/game/generated/game/x86_recomp.25.cpp")
     target_sources(garage_test PRIVATE garage_strings_fixture.cpp)

@@ -31,7 +31,7 @@ Original diameter is `T[rim] / P[profile]`: `T` at `0x4B3910`, `P` at `0x471958`
 `T` is calibrated to nominal rim inches plus three (20 uses 0.5842 m), so calling `P` a conventional physical
 sidewall aspect ratio would be misleading. The extension reads this original calibrated table directly.
 
-All five original table readers were audited:
+The five original numeric table readers were audited:
 
 | Function | Extended behavior |
 |---|---|
@@ -45,6 +45,33 @@ Original getters still run for stock codes. Unknown signed/positive profile code
 instead of indexing unrelated memory. Added codes stay below 127, preserving the signed-byte contract.
 The existing `CarCfg::Set` branch at `0x2723A6` accepts these codes unchanged and requests the original
 wheel/suspension refresh with dirty flags `0x81`.
+
+## Mesh resource lookup correction
+
+A later source/asset audit found a separate eight-entry mesh table that the diameter-only tests did not cover.
+Both original `resources/vehicle/decal.xbck` and `decal_g.xbck` have rendering-root `+0x44 = 8` and the eight
+profile resource-array pointers at `+0x2C` (file offset `0x5DB0`). Profile codes 8 onward previously read
+adjacent descriptors/data in the original `0xF6A20`, `0xFBA90` and `0xFCF20` mesh lookups. This is a correction
+after the frozen `v0.3.0-dev.20261023` package; the published package does not acquire source changes automatically.
+
+After original resource loading (`0xF5E70`), a separate **136-byte system-owned pointer table** retains the eight
+stock entries and adds aliases for codes 8–33. Each new code selects the original sidewall mesh whose ratio is
+nearest its requested ratio. Every alias points at an existing descriptor; none takes ownership of its meshes
+or textures. The original rendering count remains **8**, preserving relocation and descriptor teardown semantics.
+Before original resource unloading (`0xF5270`), the original pointer is restored. The separately allocated alias
+table is released after original teardown, including exception unwinding. Reload/reused-root checks compare
+the current root and table identity before restoration, preventing writes into a replacement resource image.
+
+The saved profile bytes, render profile codes and diameter calculations keep their full appended values.
+`0xF11C0` is a **numeric ratio getter** used by drawing matrices, so reducing all render codes to a stock mesh
+index would incorrectly change those matrices. It remains unchanged on the normal alias path.
+
+If the small alias allocation fails, the post-`0xF32A0` helper maps mesh slots to stock indices before any direct
+resource read. A checked fallback retains the exact extended ratio in `0xF11C0`, requiring matching saved profile
+bytes, current mesh slot and calibrated rim/diameter. Independent render objects retain independent ratios;
+stale cfg/diameter bindings are rejected. Allocation recovery restores the full mesh codes at the next refresh.
+Malformed signed/unknown render codes normalize to stock profile 7. Saved bytes are never rewritten by this helper,
+and decoding remains active when extended garage choices are hidden.
 
 ## Garage allocation and labels
 
@@ -69,3 +96,10 @@ Flash fixtures verify atomic name/status/price growth, rejection one symbol belo
 sorted labels, no duplicate members on refresh and restoration of VM globals. The real generated string-table
 destruction path runs across repeated purchase/save exits and reused table addresses, including all new labels
 and a failed allocation/retry. These tests do not replace the parent's native UI purchase/drive checks.
+
+The separate `profile_mesh` fixture executes the **actual original `0xF6A20` resource loads and `0xF11C0` ratio
+getter** with the production hooks: all 34 profiles on both axles across 11 tire brands (**748 resource reads**,
+plus 68 exact ratio checks). It covers original pointer/count preservation, unload-before-free ownership,
+repeated loads and reused resource addresses, allocation failure across two independent renders, recovery without
+another purchase, malformed codes, stale cfg and mismatched-diameter rejection. These prove safe lookup and
+numeric preservation; native visual purchase/drive QA of the corrected executable remains a separate check.

@@ -29,7 +29,9 @@
 //  - Human players' cars (mcPlayerFactory 0x2CBDE0, vs the other factory 0x1FAE10) told to tuning.cpp, so the F1 ride
 //    height offsets apply to them alone, and the garage value is re-based whenever ApplyCarCfg runs.
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <initializer_list>
@@ -43,6 +45,7 @@
 #include "core/log.h"
 #include "kernel/memory.h"
 #include "xdk/hle.h"
+#include "garage.h"
 
 using kernel::CallGuest;
 using kernel::G;
@@ -144,6 +147,77 @@ float ProfileRatio(unsigned index) {
 float TireDiameter(unsigned rim, unsigned profile) {
     if (rim < 12 || rim > 28) rim = 20; // only the original verified rim table is supported
     return G<float>(kRimDiameterTable + rim * 4) / ProfileRatio(profile);
+}
+
+// The separate, serialized rendering database has only eight profile-to-mesh arrays. Its +0x44 count is
+// used by resource relocation, not the garage catalogue. Keep that original count and every owned descriptor
+// intact; only a separately owned pointer table gains aliases to the nearest existing sidewall mesh.
+constexpr uint32_t kRenderCustomDb = 0x509E1C, kMeshProfiles = 0x2C, kMeshProfileCount = 0x44;
+constexpr unsigned kAllProfiles = kStockProfiles + kExtraProfiles;
+struct ProfileAlias { uint32_t root = 0, original = 0, table = 0; };
+struct FallbackProfiles {
+    uint32_t cfg;
+    std::array<uint32_t, 2> full, mesh;
+};
+std::mutex g_profile_mesh_lock;
+ProfileAlias g_profile_alias;
+std::unordered_map<uint32_t, FallbackProfiles> g_profile_fallbacks;
+bool g_profile_alias_warned = false;
+
+unsigned NearestMeshProfile(unsigned profile) {
+    if (profile < kStockProfiles) return profile;
+    if (profile >= kAllProfiles) return kStockProfiles - 1;
+    const float ratio = ProfileRatio(profile);
+    unsigned nearest = 0;
+    float distance = std::fabs(ratio - ProfileRatio(0));
+    for (unsigned i = 1; i < kStockProfiles; ++i) {
+        const float d = std::fabs(ratio - ProfileRatio(i));
+        if (d < distance) { distance = d; nearest = i; }
+    }
+    return nearest;
+}
+
+// Caller holds g_profile_mesh_lock. Restore before the game's resource teardown sees the root. This check
+// also avoids writing into an old address whose allocation has since been reused for a different object.
+uint32_t DetachProfileAliases() {
+    if (g_profile_alias.table && Committed(kRenderCustomDb, 4) && R32(kRenderCustomDb) == g_profile_alias.root &&
+        Committed(g_profile_alias.root + kMeshProfiles, 4) &&
+        R32(g_profile_alias.root + kMeshProfiles) == g_profile_alias.table)
+        W32(g_profile_alias.root + kMeshProfiles, g_profile_alias.original);
+    const uint32_t owned = g_profile_alias.table;
+    g_profile_alias = {};
+    g_profile_fallbacks.clear();
+    g_profile_alias_warned = false;
+    return owned;
+}
+
+bool InstallProfileAliases() {
+    if (!Committed(kRenderCustomDb, 4)) return false;
+    const uint32_t root = R32(kRenderCustomDb);
+    if (g_profile_alias.table && root == g_profile_alias.root && Committed(root + kMeshProfiles, 4) &&
+        R32(root + kMeshProfiles) == g_profile_alias.table) return true;
+    // A resource reload can replace the root without retaining its old address. The alias allocation belongs
+    // to the host system allocator, never the serialized image or the game's new[]/delete[] descriptors.
+    if (g_profile_alias.table)
+        if (const uint32_t old = DetachProfileAliases()) mem::FreeSystem(old);
+    if (!Committed(root, kMeshProfileCount + 4) || R32(root + kMeshProfileCount) != kStockProfiles) return false;
+    const uint32_t original = R32(root + kMeshProfiles);
+    if (!Committed(original, kStockProfiles * 4)) return false;
+    for (unsigned i = 0; i < kStockProfiles; ++i)
+        if (!Committed(R32(original + 4 * i), 8)) return false;
+    const uint32_t table = mem::AllocSystem(kAllProfiles * 4);
+    if (!table || !Committed(table, kAllProfiles * 4)) {
+        if (table) mem::FreeSystem(table);
+        if (!g_profile_alias_warned)
+            LOGR("garage: profile mesh alias allocation unavailable; using checked numeric-preserving fallback");
+        g_profile_alias_warned = true;
+        return false;
+    }
+    for (unsigned i = 0; i < kAllProfiles; ++i) W32(table + 4 * i, R32(original + 4 * NearestMeshProfile(i)));
+    g_profile_alias = {root, original, table};
+    W32(root + kMeshProfiles, table); // Publish only the completely initialized pointer table.
+    LOGR("garage: %u profile mesh lookups mapped to %u original resource arrays", kAllProfiles, kStockProfiles);
+    return true;
 }
 
 // Guest memory for retained database/Flash names and source labels. String table entries receive separately owned
@@ -698,6 +772,89 @@ X86_FUNC(sub_00270C10) {
     Register(ctx, db, g_ride);
     Register(ctx, db, g_width);
     Register(ctx, db, g_profile);
+}
+
+// Serialized tire resources are loaded independently of the garage part-name database.
+X86_EXTERN_FUNC(__imp__sub_000F5E70);
+X86_FUNC(sub_000F5E70) {
+    {
+        std::lock_guard<std::mutex> lock(g_profile_mesh_lock);
+        if (const uint32_t old = DetachProfileAliases()) mem::FreeSystem(old);
+    }
+    __imp__sub_000F5E70(ctx, base);
+    std::lock_guard<std::mutex> lock(g_profile_mesh_lock);
+    InstallProfileAliases();
+}
+
+X86_EXTERN_FUNC(__imp__sub_000F5270);
+X86_FUNC(sub_000F5270) {
+    uint32_t owned;
+    {
+        std::lock_guard<std::mutex> lock(g_profile_mesh_lock);
+        owned = DetachProfileAliases();
+    }
+    struct ReleaseOwnedTable {
+        uint32_t table;
+        ~ReleaseOwnedTable() { if (table) mem::FreeSystem(table); }
+    } release{owned};
+    __imp__sub_000F5270(ctx, base); // Sees its original table/count and owns only its original allocations.
+}
+
+void GarageNormalizeProfileMeshes(uint32_t render, uint32_t cfg) {
+    if (!Committed(render, 0x12DC)) return;
+    std::lock_guard<std::mutex> lock(g_profile_mesh_lock);
+    const bool aliased = InstallProfileAliases();
+    FallbackProfiles fallback{cfg, {}, {}};
+    bool needs_fallback = false;
+    for (unsigned axle = 0; axle < 2; ++axle) {
+        uint32_t profile = R32(render + 0x11B4 + 4 * axle);
+        // Recover a full saved code when an earlier allocation failure temporarily selected a retail mesh.
+        // Automatic 0xFF still uses the original resolved profile already written by F32A0.
+        if (Committed(cfg, kCfgTireProfile + 2)) {
+            const unsigned saved = G<uint8_t>(cfg + kCfgTireProfile + axle);
+            if (saved >= kStockProfiles && saved < kAllProfiles) profile = saved;
+        }
+        if (profile >= kAllProfiles) profile = kStockProfiles - 1;
+        const uint32_t mesh = aliased ? profile : NearestMeshProfile(profile);
+        W32(render + 0x11B4 + 4 * axle, mesh);
+        fallback.full[axle] = profile;
+        fallback.mesh[axle] = mesh;
+        needs_fallback |= profile != mesh;
+    }
+    if (needs_fallback) g_profile_fallbacks[render] = fallback;
+    else g_profile_fallbacks.erase(render);
+}
+
+// F11C0 is a numeric ratio getter used by the draw matrices, not a mesh getter. On allocation failure the
+// mesh slot is normalized, but its exact numeric profile survives here. Matching cfg, mesh and diameter
+// reject stale bindings after destruction/address reuse; a fresh F32A0 also replaces or erases the binding.
+X86_EXTERN_FUNC(__imp__sub_000F11C0);
+X86_FUNC(sub_000F11C0) {
+    const uint32_t render = ctx.ecx, axle = R32(ctx.esp + 4);
+    if (axle < 2) {
+        std::lock_guard<std::mutex> lock(g_profile_mesh_lock);
+        const auto it = g_profile_fallbacks.find(render);
+        if (it != g_profile_fallbacks.end()) {
+            const auto& f = it->second;
+            const unsigned full = f.full[axle];
+            if (full >= kStockProfiles && full < kAllProfiles &&
+                Committed(f.cfg, kCfgTireProfile + 2) &&
+                G<uint8_t>(f.cfg + kCfgTireProfile + axle) == full &&
+                Committed(render + 0x11B4, 0x128) && R32(render + 0x11B4 + 4 * axle) == f.mesh[axle]) {
+                const unsigned rim = R32(render + 0x11BC + 4 * axle);
+                const float diameter = G<float>(render + (axle ? 0x12CC : 0x12D4));
+                const float expected = TireDiameter(rim, full);
+                if (rim >= 12 && rim <= 28 && std::isfinite(diameter) &&
+                    std::fabs(diameter - expected) <= std::max(0.00001f, expected * 0.00001f)) {
+                    ctx.eax = full; ctx.ecx = full;
+                    x87_push(ctx, double(ProfileRatio(full)));
+                    ctx.esp += 8;
+                    return;
+                }
+            }
+        }
+    }
+    __imp__sub_000F11C0(ctx, base);
 }
 
 // CarCfg::GetRideHeight(axle), thiscall, ret 4, metres on the x87 stack: the added steps

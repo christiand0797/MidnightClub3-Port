@@ -39,6 +39,9 @@ std::map<std::string, uint32_t> text_entries;
 uint32_t next_allocation = 0x300000;
 unsigned frees = 0;
 bool fail_label_allocation = false;
+bool fail_profile_allocation = false;
+void (*profile_resource_load)() = nullptr;
+void (*profile_resource_unload)() = nullptr;
 
 uint32_t Allocate(uint32_t bytes, uint32_t reuse = 0) {
     const uint32_t va = reuse ? reuse : next_allocation;
@@ -138,6 +141,12 @@ namespace mem { bool IsCommitted(uint32_t va) {
 #endif
     return va >= 0x10000 && va < fixture::memory.size();
 } }
+namespace mem {
+uint32_t AllocSystem(uint32_t size, uint32_t) {
+    return fixture::fail_profile_allocation ? 0 : fixture::Allocate(size);
+}
+void FreeSystem(uint32_t va) { fixture::Free(va); }
+}
 namespace kernel {
 uint8_t* g_base = fixture::memory.data();
 std::string ReadCString(uint32_t va, size_t max) {
@@ -215,6 +224,17 @@ namespace app { void GarageTuningActive() {} }
 void TuningCarCfgApplied(uint32_t) { ++fixture::cfg_applied_calls; }
 
 X86_FUNC(__imp__sub_00270C10) { ctx.esp += 4; }
+X86_FUNC(__imp__sub_000F5E70) {
+    if (fixture::profile_resource_load) fixture::profile_resource_load();
+    ctx.esp += 4;
+}
+X86_FUNC(__imp__sub_000F5270) {
+    if (fixture::profile_resource_unload) fixture::profile_resource_unload();
+    ctx.esp += 4;
+}
+#ifndef MC3_TEST_PROFILE_MESH_FIXTURE
+X86_FUNC(__imp__sub_000F11C0) { x87_push(ctx, 0); ctx.esp += 8; }
+#endif
 X86_FUNC(__imp__sub_00270BE0) { ++fixture::stock_ride_calls; x87_push(ctx, 0.025); ctx.esp += 8; }
 X86_FUNC(__imp__sub_00272FC0) { x87_push(ctx, 0.195); ctx.esp += 8; }
 X86_FUNC(__imp__sub_00270C00) { x87_push(ctx, 0.195); ctx.esp += 4; }
@@ -600,4 +620,5 @@ int main() {
     sparse_guest = false; kernel::g_base = memory.data();
     assert(VirtualFree(sparse, 0, MEM_RELEASE));
 #endif
+    return 0;
 }
