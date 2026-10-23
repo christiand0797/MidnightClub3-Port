@@ -21,6 +21,7 @@
 // wheel and tire size limit is per car model data used by the garage's fit check, so it still applies to every model.
 // See docs/notes/garage_tuning.md.
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <mutex>
@@ -74,6 +75,13 @@ struct Tuned {
 std::mutex g_lock;
 std::unordered_map<uint32_t, Tuned> g_tuned;
 std::unordered_set<uint32_t> g_player_sims;  // vehSims of human players' cars (garage.cpp)
+struct CarTuning {
+    uint32_t sim = 0, cfg = 0, render = 0, model = 0;
+    std::array<float, 2> offset_original{}, offset_written{};
+    std::array<float, 15> settings{};
+    bool initialized = false;
+};
+std::unordered_map<uint32_t, CarTuning> g_player_cars;
 struct ContactSample { uint32_t owner = 0, offset = 0, stop = 0, extent = 0, calls = 0; };
 std::unordered_map<uint32_t, ContactSample> g_contact_samples; // runtime wheel -> bounded diagnostic sampling
 
@@ -161,6 +169,15 @@ float Target(uint32_t va, const Tuned& t, const app::Settings::Tuning& s) {
         const float excess = -Target(offset->first, offset->second, s) - kFreeLowering;
         return excess > 0 ? t.original + excess : t.original;
     }
+    case 7: return g_player_sims.count(t.owner) ? t.original * s.engine_power : t.original;
+    case 8: return g_player_sims.count(t.owner) ? t.original * s.spring_front : t.original;
+    case 9: return g_player_sims.count(t.owner) ? t.original * s.spring_rear : t.original;
+    case 10: return g_player_sims.count(t.owner) ? t.original * s.damper_front : t.original;
+    case 11: return g_player_sims.count(t.owner) ? t.original * s.damper_rear : t.original;
+    case 12: return g_player_sims.count(t.owner) ? t.original * s.brake_front : t.original;
+    case 13: return g_player_sims.count(t.owner) ? t.original * s.brake_rear : t.original;
+    case 14: case 16: return g_player_sims.count(t.owner) ? t.original * s.grip_front : t.original;
+    case 15: case 17: return g_player_sims.count(t.owner) ? t.original * s.grip_rear : t.original;
     default: return t.original * s.wheel_limit;
     }
 }
@@ -196,6 +213,54 @@ void TravelFields(const Pending offsets[2], Pending out[4]) {
         out[i].kind = 3 + i;
         out[2 + i].va = offsets[i].va - kWheelSuspensionOffset + kWheelTravelExtent;
         out[2 + i].kind = 5 + i;
+    }
+}
+
+// These are the original vehWheel/vehEngine fields, not UI-only values. The same per-instance ownership and
+// lifetime checks used for ride height apply. Garage upgrades rebuild them; the setup hook below re-bases them.
+std::vector<Pending> ParameterFields(uint32_t sim) {
+    Pending offsets[2];
+    if (!SimFields(sim, offsets)) return {};
+    std::vector<Pending> fields;
+    for (int axle = 0; axle < 2; ++axle) {
+        const uint32_t wheel = offsets[axle].va - kWheelSuspensionOffset;
+        for (const auto [off, kind] : {std::pair{0x58u, 8}, {0x5Cu, 10}, {0x34u, 12}, {0x68u, 14}, {0x00u, 16}})
+            fields.push_back({wheel + off, offsets[axle].check_a, offsets[axle].check_b, kind + axle, sim});
+    }
+    if (Committed(sim + 0x5C, 4)) {
+        const uint32_t engine = R32(sim + 0x5C);
+        if (Plausible(engine)) fields.push_back({engine + 4, engine + 8, engine + 0x0C, 7, sim});
+    }
+    return fields;
+}
+
+std::array<float, 15> SettingsKey(const app::Settings::Tuning& s) {
+    return {s.ride_front, s.ride_rear, s.camber_front, s.camber_rear, s.offset_front, s.offset_rear,
+            s.spring_front, s.spring_rear, s.damper_front, s.damper_rear, s.brake_front, s.brake_rear,
+            s.grip_front, s.grip_rear, s.engine_power};
+}
+
+// Caller holds g_lock. A positive offset extends the wheel: the retail renderer subtracts its hub offset along
+// the wheel's outward basis at 0xF76E5..0xF76F9, so our additional outward distance has the opposite sign here.
+void ApplyRender(uint32_t car, CarTuning& c, const app::Settings::Tuning& s, bool freshly_applied = false) {
+    if (!Committed(car + 0x50, 0x1C) || R32(car + 0x50) != c.sim || R32(car + 0x64) != c.cfg ||
+        !Committed(c.cfg + 0x0C, 8)) return;
+    const uint32_t render = R32(car + 0x68);
+    if (!Plausible(render) || !Committed(render + 0x12C8, 0x28) || !Committed(render + 0x1800, 4)) return;
+    const uint32_t model = R32(render + 0x1800);
+    if (!Plausible(model)) return;
+    const bool reset = freshly_applied || c.render != render || c.model != model;
+    c.render = render; c.model = model;
+    for (int axle = 0; axle < 2; ++axle) {
+        const uint32_t off = render + 0x12D8 + 4 * axle;
+        const float current = F32(off), camber = F32(c.cfg + 0x0C + 4 * axle);
+        if (!std::isfinite(current) || !std::isfinite(camber)) continue;
+        if (reset || current != c.offset_written[axle]) c.offset_original[axle] = current;
+        const float extra = axle ? s.offset_rear : s.offset_front;
+        const float angle = camber + (axle ? s.camber_rear : s.camber_front);
+        const float want = c.offset_original[axle] - extra;
+        if (std::isfinite(want)) WF32(off, want), c.offset_written[axle] = want;
+        if (std::isfinite(angle)) WF32(render + 0x12E8 + 4 * axle, angle);
     }
 }
 }  // namespace
@@ -236,7 +301,7 @@ X86_FUNC(sub_000A7250) {
 
 // The car renderer enforces a second, visual wheel/arch envelope at 0xF74D5/0xF7525. At extreme lowering it
 // pushes a correctly grounded tire DOWN to fit the original wheel arch (0xF7543..0xF7572), through the road.
-// These two callers use the displacement query only to calculate that cosmetic correction. Suppress the
+// These three callers use the displacement query only to calculate that cosmetic correction. Suppress the
 // correction for deliberately tucked player wheels; all physical and other visual displacement queries remain
 // original. The user's extended tuck permits fender intersection, never a tire translated through the ground.
 X86_EXTERN_FUNC(__imp__sub_000A65D0);
@@ -244,10 +309,12 @@ X86_FUNC(sub_000A65D0) {
     const uint32_t wheel = ctx.ecx;
     const uint32_t caller = Committed(ctx.esp, 4) ? R32(ctx.esp) : 0;
     __imp__sub_000A65D0(ctx, base);
-    if ((caller != 0xF74D5 && caller != 0xF7525) || !Plausible(wheel) || !Committed(wheel, 0x148) ||
-        !Committed(ctx.esp + 0x58, 4)) return;
+    const bool normal = caller == 0xF7525 || caller == 0xF7B7D;
+    const uint32_t limit_va = ctx.esp + (caller == 0xF7B7D ? 0x18u : 0x58u);
+    if ((!normal && caller != 0xF74D5) || !Plausible(wheel) || !Committed(wheel, 0x148) ||
+        !Committed(limit_va, 4)) return;
     const uint32_t tune = R32(wheel + 4);
-    const float limit = F32(ctx.esp + 0x58), radius = F32(wheel + 0x100);
+    const float limit = F32(limit_va), radius = F32(wheel + 0x100);
     // The ordinary-tire envelope is a signed model-space height, not a positive radius. Negative values are
     // valid on low arches and still participate in limit-query-radius. Only the symmetric special-tire branch
     // needs a nonnegative half-extent.
@@ -257,7 +324,7 @@ X86_FUNC(sub_000A65D0) {
     {
         std::lock_guard<std::mutex> lock(g_lock);
         auto offset = g_tuned.find(tune + kWheelSuspensionOffset);
-        if (offset == g_tuned.end() || !g_player_sims.count(offset->second.owner) ||
+        if (!app::Get().tuning.wheel_tuck || offset == g_tuned.end() || !g_player_sims.count(offset->second.owner) ||
             F32(offset->first) >= -kFreeLowering) return;
         static unsigned reported = 0;
         report = reported++ < 8;
@@ -265,7 +332,7 @@ X86_FUNC(sub_000A65D0) {
     const double original = ctx.st[ctx.top];
     // Normal tire: correction = min(0, limit - query - radius). A tiny margin avoids a negative rounding ulp.
     // Special tire: correction is zero for a query inside [-limit,+limit]. Neither caller otherwise uses it.
-    ctx.st[ctx.top] = caller == 0xF7525 ? double(limit) - radius - 0.00001 : 0.0;
+    ctx.st[ctx.top] = normal ? double(limit) - radius - 0.00001 : 0.0;
     if (report) LOGR("garage: tucked wheel %08X keeps contact position (render fit %.3f -> %.3f, radius %.3f, limit %.3f)",
                      wheel, original, ctx.st[ctx.top], radius, limit);
 }
@@ -275,14 +342,27 @@ void TuningSetPlayerSim(uint32_t sim, bool player) {
     std::lock_guard<std::mutex> lock(g_lock);
     if (player)
         g_player_sims.insert(sim);
-    else
+    else {
+        const app::Settings defaults;
+        for (auto& [car, c] : g_player_cars)
+            if (c.sim == sim) ApplyRender(car, c, defaults.tuning);
         g_player_sims.erase(sim);
+    }
+}
+
+void TuningBindCar(uint32_t car, uint32_t sim, uint32_t cfg, bool player) {
+    std::lock_guard<std::mutex> lock(g_lock);
+    if (!player) { g_player_cars.erase(car); return; }
+    auto& c = g_player_cars[car];
+    if (c.sim != sim || c.cfg != cfg) c = CarTuning{};
+    c.sim = sim; c.cfg = cfg;
 }
 
 // garage.cpp: the car owning this vehSim is being destroyed; never touch its fields again
 void TuningForgetSim(uint32_t sim) {
     std::lock_guard<std::mutex> lock(g_lock);
     g_player_sims.erase(sim);
+    std::erase_if(g_player_cars, [sim](const auto& entry) { return entry.second.sim == sim; });
     std::erase_if(g_contact_samples, [sim](const auto& entry) { return entry.second.owner == sim; });
     for (auto it = g_tuned.begin(); it != g_tuned.end();)
         if (it->second.owner == sim && it->second.kind != 2)
@@ -314,6 +394,9 @@ void TuningCarCfgApplied(uint32_t sim) {
         if (Tuned* t = Track(p))
             if (!Apply(p.va, *t, s)) g_tuned.erase(p.va);
     }
+    for (const Pending& p : ParameterFields(sim))
+        if (Tuned* t = Track(p))
+            if (!Apply(p.va, *t, s)) g_tuned.erase(p.va);
 }
 
 // vehSim's visitor registers the two wheel blocks under nested parsers. Completing the outer parser also completes
@@ -327,6 +410,7 @@ X86_FUNC(sub_000A3CA0) {
     if (!SimFields(self, fields)) return;
     for (const Pending& p : fields)
         if (Plausible(p.va - kWheelSuspensionOffset)) Queue(parser, p);
+    for (const Pending& p : ParameterFields(self)) Queue(parser, p);
 }
 
 // vehModel's visitor: the wheel and tire size limits
@@ -369,4 +453,83 @@ void ApplyVehicleTuning() {
         else
             ++it;
     }
+    for (auto& [car, c] : g_player_cars)
+        if (g_player_sims.count(c.sim)) ApplyRender(car, c, s);
+}
+
+// The original component's per-frame update already has the complete "CarCfg dirty" refresh path. Request that
+// path once when a live PC tuning control changes, so cached wheel offsets, engine and suspension coefficients
+// update together. Do not rebuild the car every frame or write its purchased parts.
+X86_EXTERN_FUNC(__imp__sub_000FFD90);
+X86_FUNC(sub_000FFD90) {
+    const uint32_t car = ctx.ecx;
+    {
+        std::lock_guard<std::mutex> lock(g_lock);
+        auto it = g_player_cars.find(car);
+        if (it != g_player_cars.end() && g_player_sims.count(it->second.sim)) {
+            auto& c = it->second;
+            const auto key = SettingsKey(app::Get().tuning);
+            if ((!c.initialized || key != c.settings) && Committed(car + 0x64, 4) && R32(car + 0x64) == c.cfg &&
+                Committed(c.cfg + 8, 4)) {
+                W32(c.cfg + 8, R32(c.cfg + 8) | 0x81u);
+                c.settings = key; c.initialized = true;
+            }
+        }
+    }
+    __imp__sub_000FFD90(ctx, base);
+}
+
+X86_EXTERN_FUNC(__imp__sub_000F32A0);
+X86_FUNC(sub_000F32A0) {
+    const uint32_t render = ctx.ecx;
+    const uint32_t cfg = Committed(ctx.esp + 4, 8) ? R32(ctx.esp + 4) : 0;
+    const bool rebuilt_wheels = Committed(ctx.esp + 8, 4) &&
+                                ((R32(ctx.esp + 8) & 0xFFu) || (Committed(cfg + 8, 4) && (R32(cfg + 8) & 5u)));
+    __imp__sub_000F32A0(ctx, base);
+    std::lock_guard<std::mutex> lock(g_lock);
+    for (auto& [car, c] : g_player_cars)
+        if (g_player_sims.count(c.sim) && Committed(car + 0x68, 4) && R32(car + 0x68) == render)
+            ApplyRender(car, c, app::Get().tuning, rebuilt_wheels);
+}
+
+// Purchased performance upgrades interpolate base/mods physics in this routine. Re-record only the fields that
+// interpolation just replaced, then apply the PC multipliers once; ride-height baselines remain garage-owned.
+X86_EXTERN_FUNC(__imp__sub_00103C50);
+X86_FUNC(sub_00103C50) {
+    const uint32_t car = Committed(ctx.esp + 4, 4) ? R32(ctx.esp + 4) : 0;
+    __imp__sub_00103C50(ctx, base);
+    if (!Committed(car + 0x50, 4)) return;
+    const uint32_t sim = R32(car + 0x50);
+    std::lock_guard<std::mutex> lock(g_lock);
+    for (const Pending& p : ParameterFields(sim)) {
+        g_tuned.erase(p.va);
+        if (Tuned* t = Track(p))
+            if (!Apply(p.va, *t, app::Get().tuning)) g_tuned.erase(p.va);
+    }
+}
+
+// AirRide::MoveWheel(float*, state, low, high, neutral). The original 0x1288C0 supplies each axle's baseline as
+// neutral, while its original low/high values are absolute and ignore a deep garage selection. Use the actual
+// per-axle baseline for both endpoints: fully low H, fully high -H for a lowered H. Keep its transition rates,
+// four-wheel sequencing, original state machine and installed-equipment checks unchanged.
+X86_EXTERN_FUNC(__imp__sub_001284F0);
+X86_FUNC(sub_001284F0) {
+    const uint32_t control = ctx.ecx, stack = ctx.esp;
+    if (app::Get().tuning.airbag_match_ride && Committed(control + 8, 4) && Committed(stack + 4, 20)) {
+        const uint32_t car = R32(control + 8), target = R32(stack + 4);
+        bool owned = false;
+        {
+            std::lock_guard<std::mutex> lock(g_lock);
+            const auto it = g_player_cars.find(car);
+            owned = it != g_player_cars.end() && g_player_sims.count(it->second.sim) &&
+                    target >= control + 0x20 && target <= control + 0x2C && ((target - control) & 3) == 0;
+        }
+        const float baseline = F32(stack + 0x14);
+        if (owned && std::isfinite(baseline) && baseline < 0) {
+            // State +1 moves down toward arg4; state -1 moves up toward arg3 in the retail body.
+            WF32(stack + 0x0C, -baseline);
+            WF32(stack + 0x10, baseline);
+        }
+    }
+    __imp__sub_001284F0(ctx, base);
 }

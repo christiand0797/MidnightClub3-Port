@@ -23,7 +23,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_REPO = "christiand0797/MidnightClub3-Port"
+DEFAULT_REPO = "christiand0797/MidnightClub3-Port-Backups"
 DEFAULT_BACKUPS = Path(r"G:\MC3_Backups")
 PART_BYTES = 1900 * 1024 * 1024
 VOLATILE_PREFIXES = (".local/", "templates/game/out/native/logs/")

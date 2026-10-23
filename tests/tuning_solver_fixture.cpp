@@ -16,6 +16,11 @@
 extern "C" void __imp__sub_000A7250(X86Context& ctx, uint8_t* base) { FixtureWheelSolver(ctx, base); }
 extern "C" void __imp__sub_000A65D0(X86Context& ctx, uint8_t* base) { FixtureWheelDisplacement(ctx, base); }
 
+#define __imp__sub_001284F0 FixtureAirbagMove
+#include "x86_recomp.33.cpp"
+#undef __imp__sub_001284F0
+extern "C" void __imp__sub_001284F0(X86Context& ctx, uint8_t* base) { FixtureAirbagMove(ctx, base); }
+
 // These are bottom-out impulse paths, disabled in the fixture exactly as selected by the guest flags. Entering
 // either would need a full rigid body fixture; fail loudly instead of quietly pretending a physical response.
 extern "C" void sub_00341B20(X86Context&, uint8_t*) { assert(false && "unexpected bottom-out impulse query"); }

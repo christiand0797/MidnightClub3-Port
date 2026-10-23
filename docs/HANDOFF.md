@@ -1,6 +1,6 @@
 # MC3 port — handoff (read this first)
 
-Last updated 2026-10-22 by the Codex continuation. Read [AUTONOMOUS_RUN.md](AUTONOMOUS_RUN.md) for the latest active work,
+Last updated 2026-10-23 by the Codex continuation. Read [AUTONOMOUS_RUN.md](AUTONOMOUS_RUN.md) for the latest active work,
 then section 0 and docs/REANALYSIS.md. This is the state of the work, how
 to continue it, and everything learned, written so another agent can pick up without the conversation.
 `PORT_DOCUMENTATION.md` (repo root) has the long-form history; this file is the current picture. Agent research
@@ -12,9 +12,11 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 **2026-10-22 continuation:** the user now explicitly authorizes unattended game control, driving/menu checks,
 parallel agents and downloads. This supersedes the older "don't launch/drive" preference recorded in section 1.
-Source has been pushed to the new private repository `christiand0797/MidnightClub3-Port` (`github` remote); `origin`
+Source has been pushed to the now-public repository `christiand0797/MidnightClub3-Port` (`github` remote); `origin`
 still points at the upstream framework. The local checkout was shallow; fetching upstream history fixed its initial
-empty-repository push failure. Full-project archive publication is separate from the Git source tree.
+empty-repository push failure. Full-project saves/configuration backups use the private companion
+`christiand0797/MidnightClub3-Port-Backups`. The latest user request also includes supplied game data in the source
+repository and complete playable public releases; packaging and verification are in progress.
 
 Current native build and all **13 C++ checks pass**. Tire widths now have **38 selections, 105–755 mm**, preserving
 all prior indices. Direct-to-garage preview cars bypass mcPlayerFactory; explicit selected-preview ownership now lets

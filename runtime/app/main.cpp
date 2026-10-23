@@ -129,7 +129,6 @@ void ApplyNow() {
         ChangeDisplaySettingsExW(mi.szDevice, nullptr, nullptr, 0, nullptr);
         g_mode_changed = false;
     }
-    Mode out = Output();
     LONG_PTR visible = IsWindowVisible(g_hwnd) ? WS_VISIBLE : 0;  // a window held back for a splash or handover stays so
     DEVMODEW desktop{};
     desktop.dmSize = sizeof(desktop);
@@ -142,14 +141,29 @@ void ApplyNow() {
         dm.dmPelsWidth = s.width;
         dm.dmPelsHeight = s.height;
         dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
-        g_mode_changed = ChangeDisplaySettingsExW(mi.szDevice, &dm, nullptr, CDS_FULLSCREEN, nullptr) == DISP_CHANGE_SUCCESSFUL;
+        LONG result = ChangeDisplaySettingsExW(mi.szDevice, &dm, nullptr, CDS_TEST, nullptr);
+        if (result == DISP_CHANGE_SUCCESSFUL)
+            result = ChangeDisplaySettingsExW(mi.szDevice, &dm, nullptr, CDS_FULLSCREEN, nullptr);
+        g_mode_changed = result == DISP_CHANGE_SUCCESSFUL;
+        if (!g_mode_changed) {
+            // A copied settings file or a disconnected monitor can make an old fullscreen mode unavailable.
+            Get().display_mode = DisplayMode::Borderless;
+            Get().width = Get().height = 0;
+            ReportGraphicsFailure("The monitor rejected that fullscreen mode. Display settings were restored; choose a supported monitor mode.");
+        }
         GetMonitorInfoW(mon, &mi);
     }
+    Mode out = Output();
     if (s.display_mode == DisplayMode::Windowed) {
-        RECT r{0, 0, LONG(out.width), LONG(out.height)};
-        AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
-        int w = r.right - r.left, h = r.bottom - r.top;
         const RECT& a = mi.rcWork;
+        RECT frame{0, 0, 0, 0};
+        AdjustWindowRectExForDpi(&frame, WS_OVERLAPPEDWINDOW, FALSE, 0, GetDpiForWindow(g_hwnd));
+        Mode available{uint32_t(std::max(1L, a.right - a.left - (frame.right - frame.left))),
+                       uint32_t(std::max(1L, a.bottom - a.top - (frame.bottom - frame.top)))};
+        Mode client = resolution::FitWindow(out, available);
+        RECT r{0, 0, LONG(client.width), LONG(client.height)};
+        AdjustWindowRectExForDpi(&r, WS_OVERLAPPEDWINDOW, FALSE, 0, GetDpiForWindow(g_hwnd));
+        int w = r.right - r.left, h = r.bottom - r.top;
         SetWindowLongPtrW(g_hwnd, GWL_STYLE, WS_OVERLAPPEDWINDOW | visible);
         SetWindowPos(g_hwnd, HWND_NOTOPMOST, a.left + (a.right - a.left - w) / 2, a.top + (a.bottom - a.top - h) / 2, w, h,
                      SWP_FRAMECHANGED);
@@ -167,6 +181,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     if (intptr_t result = 0; kGame.message && kGame.message(hwnd, msg, wp, lp, &result)) return result;
     switch (msg) {
+        case WM_GETMINMAXINFO: {
+            auto* size = reinterpret_cast<MINMAXINFO*>(lp);
+            RECT r{0, 0, 320, 240};
+            AdjustWindowRectExForDpi(&r, WS_OVERLAPPEDWINDOW, FALSE, 0, GetDpiForWindow(hwnd));
+            size->ptMinTrackSize = {r.right - r.left, r.bottom - r.top};
+            return 0;
+        }
         case WM_KEYDOWN:
             if (wp == VK_F3) DumpThreads();
             if (wp == VK_F4 && !(lp & (1 << 30))) {  // the next frame saved to captures/<time>/ (frame.txt, targets)
@@ -174,6 +195,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 gpu::g_capture = true;
             }
             if (wp == VK_F1 && !(lp & (1 << 30))) ToggleMenu();  // not on key repeat
+            if (wp == VK_F2 && !(lp & (1 << 30))) OpenVehicleMenu();
             return 0;
         case WM_ACTIVATE:
             if (LOWORD(wp) == WA_INACTIVE) {

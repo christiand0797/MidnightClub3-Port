@@ -1,0 +1,186 @@
+{
+  "format": 1,
+  "source": "user-supplied original Xbox USA disc",
+  "filename": "Midnight Club 3 - DUB Edition Remix (USA).xiso.iso",
+  "size": 4840554496,
+  "sha256": "d58490dc8e1837e9f47716268b52ae1f1ac8578e5a5e42e061fa7f1c4b068b52",
+  "archive": "7z multipart; extract .001 with every volume present",
+  "verified_decompressed_sha256": "d58490dc8e1837e9f47716268b52ae1f1ac8578e5a5e42e061fa7f1c4b068b52",
+  "volumes": [
+    {
+      "path": "mc3-original-usa.7z.001",
+      "size": 99614720,
+      "sha256": "fa7b4bad08f235306a472bf77d15335f6333fe67438542eab15d0d437c1092c6"
+    },
+    {
+      "path": "mc3-original-usa.7z.002",
+      "size": 99614720,
+      "sha256": "ed291f607d78896deb0b68dd6db28c7d91ae60c409634508d88b0992b316ff11"
+    },
+    {
+      "path": "mc3-original-usa.7z.003",
+      "size": 99614720,
+      "sha256": "f0b69d49be8093fed96837e1e97b0fde7f1a4828c1762104ccde3753d3d6e68f"
+    },
+    {
+      "path": "mc3-original-usa.7z.004",
+      "size": 99614720,
+      "sha256": "913e49a8b0de37a316e42659859701a0f36f9e2eb00d3b1e8f986dc168e84ddf"
+    },
+    {
+      "path": "mc3-original-usa.7z.005",
+      "size": 99614720,
+      "sha256": "c8a669d8cd34155f03d610bb641fa39bdef691893ca87913ba13246562ca659c"
+    },
+    {
+      "path": "mc3-original-usa.7z.006",
+      "size": 99614720,
+      "sha256": "d38ea201adebc8627c1b1477a66fe50c449b0c61019c9a19fb89fef2b69d39b5"
+    },
+    {
+      "path": "mc3-original-usa.7z.007",
+      "size": 99614720,
+      "sha256": "0ea69f9e0aa24af44af50c58c3fdfb4910406399f7104244b6d4ebeed9c30337"
+    },
+    {
+      "path": "mc3-original-usa.7z.008",
+      "size": 99614720,
+      "sha256": "c7d2b36f989499d3190ab834a71b4e41259151fe832e36ec7edb46018fe46fc0"
+    },
+    {
+      "path": "mc3-original-usa.7z.009",
+      "size": 99614720,
+      "sha256": "8b45d379dbe7339d3a5d89546da922503bbc0106a88565c002f851cb6031472c"
+    },
+    {
+      "path": "mc3-original-usa.7z.010",
+      "size": 99614720,
+      "sha256": "73fa7c2d14ce6a2afa294cf9c6aee5fb4dcbc14ace33ae9f3d6af6dfb735581a"
+    },
+    {
+      "path": "mc3-original-usa.7z.011",
+      "size": 99614720,
+      "sha256": "41652dc11ed0e0c814c6992a53cc6201057ab858ea3882f845a71ec5e1bf1936"
+    },
+    {
+      "path": "mc3-original-usa.7z.012",
+      "size": 99614720,
+      "sha256": "be9b8d46e5571cdae053ed869fc63327fe2b7dedb3c4129906aba0a3401bc902"
+    },
+    {
+      "path": "mc3-original-usa.7z.013",
+      "size": 99614720,
+      "sha256": "20c027d5880160a5a730153183c644cb3407cee10067074285249ee14e23983a"
+    },
+    {
+      "path": "mc3-original-usa.7z.014",
+      "size": 99614720,
+      "sha256": "033a0a61ca86ecf89e829fe3e127226063d3836706c23de3123d2489c2595f72"
+    },
+    {
+      "path": "mc3-original-usa.7z.015",
+      "size": 99614720,
+      "sha256": "3ea34a559c4f6760ec4defad2b6ceebc1e6409549ad5f2488bfd31e7d2557544"
+    },
+    {
+      "path": "mc3-original-usa.7z.016",
+      "size": 99614720,
+      "sha256": "dfd89f99a04e8f08b7a6ff0073c9487e75e501b4612332dd8e9c5ffdde344598"
+    },
+    {
+      "path": "mc3-original-usa.7z.017",
+      "size": 99614720,
+      "sha256": "919bd7056c1a740a5a53ae7e157d46b115af4b712f967880c8bf1c6398b75bdb"
+    },
+    {
+      "path": "mc3-original-usa.7z.018",
+      "size": 99614720,
+      "sha256": "e3ce11fdf559970692bafdf676f350557f9ade6b3253bdbcaccbfe07a5eb8edc"
+    },
+    {
+      "path": "mc3-original-usa.7z.019",
+      "size": 99614720,
+      "sha256": "86721283cffe9f8ae0cc83dc57a198bf10a15d1c40ba39518cbd6801f2c2bd0c"
+    },
+    {
+      "path": "mc3-original-usa.7z.020",
+      "size": 99614720,
+      "sha256": "d1398af38c2121e08859ab4562757ed01d92a7f1fc6c3b3d227ebf6ade4bd092"
+    },
+    {
+      "path": "mc3-original-usa.7z.021",
+      "size": 99614720,
+      "sha256": "371241667e97a143ae714a4b31eb45d8b0616e678c6be4387a961215afcacc0f"
+    },
+    {
+      "path": "mc3-original-usa.7z.022",
+      "size": 99614720,
+      "sha256": "6a8baa354dccb7af976bcd4390f15ec2fff1377aba410c233e5a7e1e99d26ed8"
+    },
+    {
+      "path": "mc3-original-usa.7z.023",
+      "size": 99614720,
+      "sha256": "664d9dc90672cad76ff198496b012c97d7214d55e481e8e80e44b028e1b347be"
+    },
+    {
+      "path": "mc3-original-usa.7z.024",
+      "size": 99614720,
+      "sha256": "a398b461500fb825edd8049e3eb6f551c6fb84e6c57c8dfcf94389619cf1c805"
+    },
+    {
+      "path": "mc3-original-usa.7z.025",
+      "size": 99614720,
+      "sha256": "2b63a530925b6aeb07bd93a7b0cbd21714f2a79a86c6d04abad6091777c22839"
+    },
+    {
+      "path": "mc3-original-usa.7z.026",
+      "size": 99614720,
+      "sha256": "e6ecda07dda39fa812e0636cfb06c2610a582dba8647ede28e15eb9e68665b38"
+    },
+    {
+      "path": "mc3-original-usa.7z.027",
+      "size": 99614720,
+      "sha256": "ed21c41cb7522db7f99c7fce3593979dd375ada7b78f80f6d6ca246cbd6541ba"
+    },
+    {
+      "path": "mc3-original-usa.7z.028",
+      "size": 99614720,
+      "sha256": "b2d9747e79edb6b7df7f17cb0e61a9c855d3e04f5a008b3552f189e97fce3c5e"
+    },
+    {
+      "path": "mc3-original-usa.7z.029",
+      "size": 99614720,
+      "sha256": "79ce96544d4b004c33ec637f9d682f9261a25160500b8cf73a9921cdd85295a1"
+    },
+    {
+      "path": "mc3-original-usa.7z.030",
+      "size": 99614720,
+      "sha256": "2049b88931f39cb914a6925909f81c4b845efb25be693524bad044542ac78a98"
+    },
+    {
+      "path": "mc3-original-usa.7z.031",
+      "size": 99614720,
+      "sha256": "3428c92f74b5ac7677a36ca7f5c83e9d1e0ec1e02f494fd4b2675baba3681322"
+    },
+    {
+      "path": "mc3-original-usa.7z.032",
+      "size": 99614720,
+      "sha256": "ce481dfd093a079b99a6b7dc049d21885446741520756965b89dd5cfccee5972"
+    },
+    {
+      "path": "mc3-original-usa.7z.033",
+      "size": 99614720,
+      "sha256": "7d617ac63a9f9bd91420627d34333e4299bfad81e25ceff87eebda08a19268e8"
+    },
+    {
+      "path": "mc3-original-usa.7z.034",
+      "size": 99614720,
+      "sha256": "2e46565b1b46108203f42c205463791119f390d3de5f226eb58c70d9fdf54c6e"
+    },
+    {
+      "path": "mc3-original-usa.7z.035",
+      "size": 27192794,
+      "sha256": "749f93880192d888564418b63578e7959013aec01e1f93835fd4d6c8b9fef768"
+    }
+  ]
+}

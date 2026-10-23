@@ -83,7 +83,6 @@ void LoadPadScript() {
 // from the moment it is read, on top of the player's controller and keyboard. Lets a run be driven step by step
 // without window focus or a fixed timeline, and without taking the controls away from the player.
 std::filesystem::path g_live_path;
-bool g_live_exclusive = false; // opt-in unattended runs; ordinary launches still merge all player inputs
 std::vector<PadScriptPress> g_live;
 const auto g_live_start = std::chrono::steady_clock::now();
 uintmax_t g_live_read = 0;
@@ -94,12 +93,9 @@ void LoadPadLive() {
     const wchar_t* value = _wgetenv(L"XBE_PAD_LIVE");
     if (!value || !*value) return;
     g_live_path = value;
-    const wchar_t* exclusive = _wgetenv(L"XBE_PAD_LIVE_EXCLUSIVE");
-    g_live_exclusive = exclusive && std::wcscmp(exclusive, L"1") == 0;
     std::error_code ec;
     g_live_read = std::filesystem::exists(g_live_path, ec) ? std::filesystem::file_size(g_live_path, ec) : 0;
     LOGR("input: live controller file %s, its presses add to port 0", g_live_path.string().c_str());
-    if (g_live_exclusive) LOGR("input: live controller exclusively owns port 0 for this run");
 }
 
 // caller holds g_lock; the presses held now
@@ -264,12 +260,7 @@ Pad Poll(int port) {
         std::lock_guard lock(g_lock);
         UpdatePads();
         SDL_Gamepad* pad = port >= 0 && port < 4 ? g_pads[port] : nullptr;
-        if (port == 0 && g_script_enabled) {
-            const auto now = std::chrono::steady_clock::now();
-            if (!g_script_start) g_script_start = now;
-            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - *g_script_start).count();
-            p = ScriptPad(g_script, elapsed);
-        } else if (pad && !(port == 0 && g_live_exclusive)) {
+        if (pad) {
             p.connected = true;
             constexpr SDL_GamepadButton kButtons[] = {
                 SDL_GAMEPAD_BUTTON_DPAD_UP,   SDL_GAMEPAD_BUTTON_DPAD_DOWN,  SDL_GAMEPAD_BUTTON_DPAD_LEFT,
@@ -295,19 +286,30 @@ Pad Poll(int port) {
             Deadzone(p.rx, p.ry);
         }
         // Keyboard remains usable while a controller is paired. Neutral keys preserve its analog sticks/triggers.
-        if (port == 0 && !g_script_enabled && !g_live_exclusive) p = MergeKeyboard(p, PollKeyboard());
-        if (port == 0 && !g_script_enabled && !g_live_path.empty()) p = MergeKeyboard(p, LivePad());
+        if (port == 0) {
+            p = MergeKeyboard(p, PollKeyboard());
+            if (g_script_enabled) {
+                const auto now = std::chrono::steady_clock::now();
+                if (!g_script_start) g_script_start = now;
+                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - *g_script_start).count();
+                p = MergeKeyboard(p, ScriptPad(g_script, elapsed));
+            }
+            if (!g_live_path.empty()) p = MergeKeyboard(p, LivePad());
+        }
     }
+    bool toggle_menu = false;
     {
         std::lock_guard lock(g_lock);
         if (port >= 0 && port < 4) g_raw[port] = p;
         // Back + Y on the first controller opens and closes the settings menu
         if (port == 0) {
             bool combo = (p.buttons & 32) && p.analog[3] > 128;
-            if (combo && !g_menu_combo) app::ToggleMenu();
+            toggle_menu = combo && !g_menu_combo;
             g_menu_combo = combo;
         }
     }
+    // The UI samples RawPad while holding UiLock; never acquire that lock while g_lock is held.
+    if (toggle_menu) app::ToggleMenu();
     // the menu has the controls: the game sees a pad with nothing held
     if (app::MenuOpen()) {
         Pad idle;

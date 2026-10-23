@@ -390,7 +390,7 @@ std::string TexUv(const TexInfo& t, int i, const std::string& uv) {
     if (t.rect) n += F(" / texsize[%d].xy", i);
     n += F(" + texsize[%d].zw", i);
     if (!(t.flags & kTexTarget)) return n;
-    std::string step = "ddx(" + n + ") + ddy(" + n + ")";
+    std::string step = "ddx(" + n + F(") + spread[%d].w * ddy(", i) + n + ")";
     return n + F(" + rtshift[%d] * (", i) + step + ")";
 }
 
@@ -983,7 +983,7 @@ std::string PointHlsl() {
 void main(point VOut v[1], inout TriangleStream<VOut> strip) {
     float2 half_pixel = v[0].pos.w / surf.xy;  // in clip units, the target spans 2 across surf.xy pixels
     // a target is read half a host pixel back (surf.w host pixels per console pixel): left and top reach that far
-    float2 back = (0.5 - 1e-3) * 2 * half_pixel / surf.w;
+    float2 back = (0.5 - 1e-3) * 2 * half_pixel / float2(surf.w, surf.w * spread[0].w);
     for (int i = 0; i < 4; i++) {
         VOut o = v[0];
         o.pos.x += (i & 1) ? half_pixel.x : -half_pixel.x - back.x;

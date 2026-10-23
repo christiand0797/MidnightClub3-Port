@@ -52,6 +52,7 @@ using kernel::W32;
 void TuningSetPlayerSim(uint32_t sim, bool player);  // tuning.cpp
 void TuningForgetSim(uint32_t sim);
 void TuningCarCfgApplied(uint32_t sim);
+void TuningBindCar(uint32_t car, uint32_t sim, uint32_t cfg, bool player);
 
 namespace {
 // game
@@ -265,6 +266,7 @@ void RegisterCar(uint32_t car, bool player) {
         if (player && cfg) g_player_cfgs.insert(cfg);
     }
     if (sim) TuningSetPlayerSim(sim, player);
+    TuningBindCar(car, sim, cfg, player);
     LOGR("garage: %s car %08X vehSim %08X CarCfg %08X", player ? "player" : "computer", car, sim, cfg);
 }
 
@@ -649,6 +651,14 @@ X86_FUNC(sub_001465E0) {
     __imp__sub_001465E0(ctx, base);
 }
 
+// The garage's regular update, shared by every vehicle movie. A short-lived native button makes the extra PC
+// tuning discoverable without consuming any of Flash's scarce symbols or changing its saved part categories.
+X86_EXTERN_FUNC(__imp__sub_001519D0);
+X86_FUNC(sub_001519D0) {
+    app::GarageTuningActive();
+    __imp__sub_001519D0(ctx, base);
+}
+
 // vehSim::ApplyCarCfg(CarCfg*, model), thiscall, ret 8: the garage ride height has just replaced SuspensionOffset
 X86_EXTERN_FUNC(__imp__sub_00121970);
 X86_FUNC(sub_00121970) {
@@ -656,6 +666,7 @@ X86_FUNC(sub_00121970) {
     const uint32_t cfg = Committed(ctx.esp + 4, 4) ? R32(ctx.esp + 4) : 0;
     __imp__sub_00121970(ctx, base);
     bool player = false;
+    uint32_t known_car = 0;
     {
         std::lock_guard<std::mutex> lock(g_cars_lock);
         RemoveSimAssociations(sim);
@@ -664,14 +675,22 @@ X86_FUNC(sub_00121970) {
             player = g_player_cfgs.count(cfg) != 0;
             // A shared CarCfg also appears on garage previews, but it must never turn a known computer-driven
             // car into a player car. Its concrete owner takes precedence over the preview fallback.
-            for (const auto& [car, owner] : g_cars)
+            for (auto& [car, owner] : g_cars)
                 if (owner.sim == sim) {
                     player = owner.player;
+                    const uint32_t old_cfg = owner.cfg;
+                    owner.cfg = cfg;
+                    known_car = car;
+                    if (player) g_player_cfgs.insert(cfg);
+                    if (old_cfg != cfg && std::none_of(g_cars.begin(), g_cars.end(), [old_cfg](const auto& entry) {
+                            return entry.second.player && entry.second.cfg == old_cfg;
+                        })) g_player_cfgs.erase(old_cfg);
                     break;
                 }
         }
     }
     TuningSetPlayerSim(sim, player);
+    if (known_car) TuningBindCar(known_car, sim, cfg, player);
     TuningCarCfgApplied(sim);
     if (player) LogSuspension(sim, cfg);
 }

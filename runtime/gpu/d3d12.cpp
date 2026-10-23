@@ -836,6 +836,9 @@ private:
     uint32_t bb_w_ = 0;
     uint32_t bb_h_ = 0;
     float scale_ = 1.0f;
+    app::Mode scene_{640, 480};
+    bool allocation_failed_ = false;  // one allocation failure per selection; UI continues on the swap chain
+    bool post_failed_ = false;
     // surfaces locked without a wait: copies in flight, the newest finished one goes to guest memory
     struct Late {
         ComPtr<ID3D12Resource> rb[kFrames];
@@ -1027,6 +1030,7 @@ void D3D12Backend::CreateGammaLut() {
 }
 
 void D3D12Backend::LoadSettings() {
+    scene_ = app::RenderResolution();
     scale_ = app::EnhancedRenderScale(guest_h_);
     ext_ = g_extension.get();
     if (ext_) {
@@ -1138,10 +1142,14 @@ void D3D12Backend::ReleaseTarget(std::unordered_map<uint64_t, Target>::iterator 
 
 // the host texture of a new target, at render scale or the extension's
 bool D3D12Backend::CreateTargetResource(Target& t, const Surface& s) {
+    if (allocation_failed_) return false;
     float sc = scale_;
     if (ext_) ext_->MakeTarget(s, t.depth, t.gw, t.gh, sc, t.fmt);
-    t.w = std::max(1u, uint32_t(std::lround(t.gw * sc)));
-    t.h = std::max(1u, uint32_t(std::lround(t.gh * sc)));
+    app::Mode size = std::fabs(sc - scale_) > 1e-4f
+                         ? app::resolution::Scale({t.gw, t.gh}, sc)
+                         : app::resolution::Target({t.gw, t.gh}, {guest_w_, guest_h_}, scene_, sc);
+    t.w = size.width;
+    t.h = size.height;
     D3D12_HEAP_PROPERTIES hp{D3D12_HEAP_TYPE_DEFAULT};
     D3D12_RESOURCE_DESC td = Texture2DDesc(DXGI_FORMAT_UNKNOWN, t.w, t.h);
     D3D12_CLEAR_VALUE cv{};
@@ -1157,8 +1165,14 @@ bool D3D12Backend::CreateTargetResource(Target& t, const Surface& s) {
         cv.Format = td.Format;
         t.state = D3D12_RESOURCE_STATE_RENDER_TARGET;
     }
-    return SUCCEEDED(dev_->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &td, t.state, &cv,
-                                                   IID_PPV_ARGS(&t.res)));
+    HRESULT result = dev_->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &td, t.state, &cv, IID_PPV_ARGS(&t.res));
+    if (FAILED(result)) {
+        allocation_failed_ = true;
+        LOGE("d3d12: target allocation %ux%u failed (%08lX); restoring display selection", t.w, t.h, result);
+        app::ReportGraphicsFailure("The GPU could not allocate that scene resolution. Previous display settings were restored. Try a lower scene resolution or render scale.");
+        return false;
+    }
+    return true;
 }
 
 // a view from the free pool, cleared; false when the pool is empty
@@ -1728,7 +1742,7 @@ ID3D12Resource* D3D12Backend::BindTargetTexture(const State& s, int stage, const
     info.kind = kTex2D;
     // a pass shrinking it averages each tap over a console texel, else upscaled taps skip texels and ghost
     Target* rt = FindTarget(s.rt, false);
-    float k = float(t.w) / (t.gw * stages.k[stage]);
+    float k = std::max(float(t.w) / t.gw, float(t.h) / t.gh) / stages.k[stage];
     if (!t.depth && box && k > kUpscaledMin && rt && rt != &t && (t.gw > rt->gw || t.gh > rt->gh)) {
         stages.wide[stage] = k;
         info.flags |= kTexWide;
@@ -2312,6 +2326,10 @@ void D3D12Backend::FillTextureConstants(const State& s, const DrawShaders& sh, c
         TextureDesc d;
         if (s.textures[size_t(i)] && Describe(s.textures[size_t(i)], d)) FillTexelConstants(i, d, stages, c);
         if (stages.rt[i]) c.rtshift[i] = RenderTargetShift(s, sh);
+        // Existing unused spread.w carries the Y/X shift ratio; the shared constant-buffer layout stays exact.
+        const Target* target = bound_rt_ ? bound_rt_ : bound_ds_;
+        c.spread[i][3] = target && target->gw && target->gh && target->w
+                             ? (float(target->h) / target->gh) / (float(target->w) / target->gw) : 1.0f;
         const auto& t = s.tss[size_t(i)];
         c.bump[i][0] = Bits(t[kTssBumpEnvMat00]);
         c.bump[i][1] = Bits(t[kTssBumpEnvMat01]);
@@ -2683,16 +2701,17 @@ void D3D12Backend::SetViewportScissor(const State& s, uint32_t gw) {
     float H = float(bound_rt_ ? bound_rt_->h : bound_ds_->h);
     D3D12_VIEWPORT vp{0, 0, W, H, 0, 1};
     cl_->RSSetViewports(1, &vp);
-    float sc = W / gw;
-    LONG x0 = LONG(s.viewport.x * sc);
-    LONG y0 = LONG(s.viewport.y * sc);
-    LONG x1 = LONG((s.viewport.x + s.viewport.w) * sc);
-    LONG y1 = LONG((s.viewport.y + s.viewport.h) * sc);
+    const Target* target = bound_rt_ ? bound_rt_ : bound_ds_;
+    float sx = W / gw, sy = H / target->gh;
+    LONG x0 = LONG(s.viewport.x * sx);
+    LONG y0 = LONG(s.viewport.y * sy);
+    LONG x1 = LONG((s.viewport.x + s.viewport.w) * sx);
+    LONG y1 = LONG((s.viewport.y + s.viewport.h) * sy);
     if (s.scissor_count) {
-        x0 = std::max(x0, LONG(s.scissors[0] * sc));
-        y0 = std::max(y0, LONG(s.scissors[1] * sc));
-        x1 = std::min(x1, LONG(s.scissors[2] * sc));
-        y1 = std::min(y1, LONG(s.scissors[3] * sc));
+        x0 = std::max(x0, LONG(s.scissors[0] * sx));
+        y0 = std::max(y0, LONG(s.scissors[1] * sy));
+        x1 = std::min(x1, LONG(s.scissors[2] * sx));
+        y1 = std::min(y1, LONG(s.scissors[3] * sy));
     }
     D3D12_RECT rect{std::clamp<LONG>(x0, 0, LONG(W)), std::clamp<LONG>(y0, 0, LONG(H)),
                     std::clamp<LONG>(x1, 0, LONG(W)), std::clamp<LONG>(y1, 0, LONG(H))};
@@ -2964,9 +2983,8 @@ bool D3D12Backend::ScaleTextureEffect(const PsoKey& k, const DrawTextures& stage
 
 // a guest rect scaled to the target and clamped to it
 D3D12_RECT ScaledRect(const Target& t, int x0, int y0, int x1, int y1) {
-    float sc = float(t.w) / t.gw;
-    return {std::clamp<LONG>(LONG(x0 * sc), 0, t.w), std::clamp<LONG>(LONG(y0 * sc), 0, t.h),
-            std::clamp<LONG>(LONG(x1 * sc), 0, t.w), std::clamp<LONG>(LONG(y1 * sc), 0, t.h)};
+    auto r = app::resolution::MapRect({t.gw, t.gh}, {t.w, t.h}, {x0, y0, x1, y1});
+    return {r.left, r.top, r.right, r.bottom};
 }
 
 // rs: the rects buffer, reused across targets
@@ -3135,8 +3153,8 @@ void D3D12Backend::CopyByDraw(const Target& src_t, ID3D12Resource* src_res, D3D1
     Transition(dst_t.res.Get(), dst_t.state, D3D12_RESOURCE_STATE_RENDER_TARGET);
     D3D12_CPU_DESCRIPTOR_HANDLE rh = Cpu(rtv_heap_.Get(), dst_t.view, rtv_inc_);
     cl_->OMSetRenderTargets(1, &rh, FALSE, nullptr);
-    float src_scale = float(src_t.w) / src_t.gw;
-    float dst_scale = float(dst_t.w) / dst_t.gw;
+    float src_sx = float(src_t.w) / src_t.gw, src_sy = float(src_t.h) / src_t.gh;
+    float dst_sx = float(dst_t.w) / dst_t.gw, dst_sy = float(dst_t.h) / dst_t.gh;
     bool listed = l.count && l.src_rects;
     uint32_t n = listed ? l.count : 1;
     for (uint32_t i = 0; i < n; i++) {
@@ -3145,7 +3163,7 @@ void D3D12Backend::CopyByDraw(const Target& src_t, ID3D12Resource* src_res, D3D1
         DrawnRect r{.x0 = 0, .y0 = 0, .x1 = whole_w, .y1 = whole_h};
         if (listed) r = ReadDrawnRect(l.src_rects, l.dst_points, i);
         if (r.x1 <= r.x0 || r.y1 <= r.y0) continue;
-        D3D12_VIEWPORT vp{r.dx * dst_scale, r.dy * dst_scale, (r.x1 - r.x0) * dst_scale, (r.y1 - r.y0) * dst_scale,
+        D3D12_VIEWPORT vp{r.dx * dst_sx, r.dy * dst_sy, (r.x1 - r.x0) * dst_sx, (r.y1 - r.y0) * dst_sy,
                           0, 1};
         LONG right = std::min(LONG(vp.TopLeftX + vp.Width), LONG(dst_t.w));
         LONG bottom = std::min(LONG(vp.TopLeftY + vp.Height), LONG(dst_t.h));
@@ -3154,7 +3172,7 @@ void D3D12Backend::CopyByDraw(const Target& src_t, ID3D12Resource* src_res, D3D1
         cl_->RSSetViewports(1, &vp);
         cl_->RSSetScissorRects(1, &scissor);
         float uv[4] = {r.x0 / src_t.gw, r.y0 / src_t.gh, (r.x1 - r.x0) / src_t.gw, (r.y1 - r.y0) / src_t.gh};
-        uint32_t taps = uint32_t(std::ceil(std::max(src_scale / dst_scale, 1.0f) - kTapsSlack));
+        uint32_t taps = uint32_t(std::clamp(std::ceil(std::max({src_sx / dst_sx, src_sy / dst_sy, 1.0f}) - kTapsSlack), 1.0f, 8.0f));
         float mul = 1 / dst_t.range;
         BlitOptions o{.alpha = true, .taps = taps, .mul = mul, .rtv = dst_t.fmt};
         Blit(src_res, src_t.fmt, uv, o);
@@ -3170,7 +3188,8 @@ void D3D12Backend::CopyByRegion(const Target& src_t, ID3D12Resource* src_res, D3
     Transition(dst_t.res.Get(), dst_t.state, D3D12_RESOURCE_STATE_COPY_DEST);
     D3D12_TEXTURE_COPY_LOCATION dl{dst_t.res.Get(), D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX};
     D3D12_TEXTURE_COPY_LOCATION sl{src_res, D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX};
-    float dst_scale = float(dst_t.w) / dst_t.gw;
+    float sx = float(src_t.w) / src_t.gw, sy = float(src_t.h) / src_t.gh;
+    float dx_scale = float(dst_t.w) / dst_t.gw, dy_scale = float(dst_t.h) / dst_t.gh;
     bool listed = l.count && l.src_rects;
     uint32_t n = listed ? l.count : 1;
     for (uint32_t i = 0; i < n; i++) {
@@ -3179,16 +3198,16 @@ void D3D12Backend::CopyByRegion(const Target& src_t, ID3D12Resource* src_res, D3
         uint32_t dy = 0;
         if (listed) {
             GuestRect r = ReadGuestRect(l.src_rects, i);
-            b.left = ScaleUnsigned(r.left, dst_scale);
-            b.top = ScaleUnsigned(r.top, dst_scale);
-            b.right = std::min(ScaleUnsigned(r.right, dst_scale), src_t.w);
-            b.bottom = std::min(ScaleUnsigned(r.bottom, dst_scale), src_t.h);
+            b.left = ScaleUnsigned(r.left, sx);
+            b.top = ScaleUnsigned(r.top, sy);
+            b.right = std::min(ScaleUnsigned(r.right, sx), src_t.w);
+            b.bottom = std::min(ScaleUnsigned(r.bottom, sy), src_t.h);
             dx = b.left;
             dy = b.top;
             if (l.dst_points) {
                 GuestPoint p = ReadGuestPoint(l.dst_points, i);
-                dx = ScaleUnsigned(p.x, dst_scale);
-                dy = ScaleUnsigned(p.y, dst_scale);
+                dx = ScaleUnsigned(p.x, dx_scale);
+                dy = ScaleUnsigned(p.y, dy_scale);
             }
         }
         if (b.right <= b.left || b.bottom <= b.top || dx >= dst_t.w || dy >= dst_t.h) continue;
@@ -3222,7 +3241,9 @@ void D3D12Backend::Copy(const Surface& src, const Surface& dst, uint32_t count, 
     Target* dst_t = EnsureTarget(dst, false);
     if (!dst_t || src_t == dst_t) return;
     CopyList l{.count = count, .src_rects = src_rects, .dst_points = dst_points};
-    if (src_t->fmt != dst_t->fmt) {
+    if (src_t->fmt != dst_t->fmt ||
+        !app::resolution::SameScale({src_t->gw, src_t->gh}, {src_t->w, src_t->h},
+                                   {dst_t->gw, dst_t->gh}, {dst_t->w, dst_t->h})) {
         // formats differ: drawn across
         CopyByDraw(*src_t, src_t->res.Get(), src_t->state, *dst_t, l);
         return;
@@ -3247,10 +3268,17 @@ void D3D12Backend::ResizeSwap() {
         if (f.fence) WaitFence(f.fence);
     }
     for (auto& b : bb_) b.Reset();
-    swap_->ResizeBuffers(kFrames, w, h, DXGI_FORMAT_B8G8R8A8_UNORM, tearing_ ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0);
+    HRESULT resized = swap_->ResizeBuffers(kFrames, w, h, DXGI_FORMAT_B8G8R8A8_UNORM, tearing_ ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0);
+    if (FAILED(resized)) {
+        // ResizeBuffers preserves its old buffers on failure. Reacquire their views and keep the settings UI usable.
+        CreateBackBufferViews();
+        app::ReportGraphicsFailure("The GPU could not resize the display buffers. Previous display settings were restored.");
+        return;
+    }
     CreateBackBufferViews();
     bb_w_ = w;
     bb_h_ = h;
+    post_failed_ = false;
 }
 
 void D3D12Backend::FinishCapture(const Surface& front) {
@@ -3310,6 +3338,7 @@ void D3D12Backend::UploadGammaRamp() {
 }
 
 bool D3D12Backend::EnsurePostTargets(uint32_t w, uint32_t h) {
+    if (post_failed_) return false;
     if (post_[0] && post_w_ == w && post_h_ == h) return true;
     for (int i = 0; i < 2; i++) {
         if (post_[i]) Release(std::move(post_[i]));
@@ -3334,6 +3363,8 @@ bool D3D12Backend::EnsurePostTargets(uint32_t w, uint32_t h) {
                                                  IID_PPV_ARGS(&post_[i])))) {
             LOGE("d3d12: picture chain targets %ux%u failed", w, h);
             post_[0].Reset();
+            post_failed_ = true;
+            app::ReportGraphicsFailure("The GPU could not allocate the picture effects. Previous display settings were restored. Try a lower scene resolution.");
             return false;
         }
         dev_->CreateRenderTargetView(post_[i].Get(), nullptr, Cpu(rtv_heap_.Get(), post_rtv_[i], rtv_inc_));
@@ -3532,6 +3563,7 @@ void D3D12Backend::Present(const Surface& front) {
     }
     ResizeSwap();
     Target* t = EnsureTarget(front, false);
+    if (t) app::ReportRenderResolution({t->w, t->h});
     if (t && LatchCpuWrite(*t)) UploadTarget(*t, front);
     if (t) Resolve(*t);
     if (ramp_dirty_) UploadGammaRamp();
@@ -3557,15 +3589,22 @@ void D3D12Backend::Present(const Surface& front) {
 }
 
 void D3D12Backend::ApplySettings() {
+    std::lock_guard lock(app::UiLock());
+    app::Mode scene = app::RenderResolution();
     float want = app::EnhancedRenderScale(guest_h_);
     bool remake = ext_ && ext_->Settings();
-    if (std::fabs(want - scale_) > 1e-4f || remake) {
+    if (scene != scene_ || std::fabs(want - scale_) > 1e-4f || remake) {
         Flush();
         for (auto& [key, tg] : targets_) (tg.depth ? free_dsv_ : free_rtv_).push_back(tg.view);
         targets_.clear();
         scale_ = want;
+        scene_ = scene;
+        allocation_failed_ = false;
+        post_failed_ = false;
+        app::ReportRenderResolution({});
         if (ext_) ext_->Reset(*this);
         bound_rt_ = bound_ds_ = nullptr;
+        LOGR("d3d12: native scene selection %ux%u (UI %ux%u)", scene_.width, scene_.height, bb_w_, bb_h_);
     }
 }
 

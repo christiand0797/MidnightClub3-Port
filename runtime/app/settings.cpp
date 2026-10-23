@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 
@@ -39,11 +40,28 @@ std::vector<GraphicsField> TuningFields(Settings::Tuning& v) {
         {"ride_height_front", &v.ride_front, nullptr, nullptr, -0.5f, 0.5f},
         {"ride_height_rear", &v.ride_rear, nullptr, nullptr, -0.5f, 0.5f},
         {"wheel_size_limit", &v.wheel_limit, nullptr, nullptr, 1, 3},
+        {"camber_front", &v.camber_front, nullptr, nullptr, -30, 20},
+        {"camber_rear", &v.camber_rear, nullptr, nullptr, -30, 20},
+        {"offset_front", &v.offset_front, nullptr, nullptr, -0.3f, 0.3f},
+        {"offset_rear", &v.offset_rear, nullptr, nullptr, -0.3f, 0.3f},
+        {"spring_front", &v.spring_front, nullptr, nullptr, 0.25f, 3},
+        {"spring_rear", &v.spring_rear, nullptr, nullptr, 0.25f, 3},
+        {"damper_front", &v.damper_front, nullptr, nullptr, 0.25f, 3},
+        {"damper_rear", &v.damper_rear, nullptr, nullptr, 0.25f, 3},
+        {"brake_front", &v.brake_front, nullptr, nullptr, 0.25f, 3},
+        {"brake_rear", &v.brake_rear, nullptr, nullptr, 0.25f, 3},
+        {"grip_front", &v.grip_front, nullptr, nullptr, 0.5f, 2},
+        {"grip_rear", &v.grip_rear, nullptr, nullptr, 0.5f, 2},
+        {"engine_power", &v.engine_power, nullptr, nullptr, 0.5f, 3},
+        {"airbag_match_ride", nullptr, &v.airbag_match_ride, nullptr, 0, 1},
+        {"wheel_tuck", nullptr, &v.wheel_tuck, nullptr, 0, 1},
     };
 }
 
 std::vector<GraphicsField> GraphicsFields(Settings::Graphics& g) {
     return {
+        {"scene_width", nullptr, nullptr, &g.scene_width, 0, resolution::kMaxDimension},
+        {"scene_height", nullptr, nullptr, &g.scene_height, 0, resolution::kMaxDimension},
         {"post", nullptr, &g.post, nullptr, 0, 1},
         {"anti_aliasing", nullptr, nullptr, &g.aa, 0, 1},
         {"anti_aliasing_strength", &g.aa_strength, nullptr, nullptr, 0, 1},
@@ -140,17 +158,29 @@ void Load() {
     if (kGame.load) kGame.load(&t);
     if (const toml::table* g = t["tuning"].as_table())
         for (const GraphicsField& f : TuningFields(s.tuning)) {
-            if (f.f) *f.f = std::clamp((*g)[f.key].value_or(*f.f), f.lo, f.hi);
+            if (f.f) {
+                float v = (*g)[f.key].value_or(*f.f);
+                if (std::isfinite(v)) *f.f = std::clamp(v, f.lo, f.hi);
+            }
             if (f.b) *f.b = (*g)[f.key].value_or(*f.b);
         }
     if (const toml::table* g = t["graphics"].as_table()) {
         for (const GraphicsField& f : GraphicsFields(s.graphics)) {
-            if (f.f) *f.f = std::clamp((*g)[f.key].value_or(*f.f), f.lo, f.hi);
+            if (f.f) {
+                float v = (*g)[f.key].value_or(*f.f);
+                if (std::isfinite(v)) *f.f = std::clamp(v, f.lo, f.hi);
+            }
             if (f.b) *f.b = (*g)[f.key].value_or(*f.b);
             if (f.u) *f.u = std::min<uint32_t>((*g)[f.key].value_or(*f.u), uint32_t(f.hi));
         }
     }
     LoadEnhancements(s, t["graphics"].as_table());
+    s.render_percent = std::clamp(s.render_percent, 25u, 400u);
+    s.width = std::min(s.width, resolution::kMaxDimension);
+    s.height = std::min(s.height, resolution::kMaxDimension);
+    if (!s.width || !s.height) s.width = s.height = 0;
+    if (!resolution::ValidScene({s.graphics.scene_width, s.graphics.scene_height}))
+        s.graphics.scene_width = s.graphics.scene_height = 0;
 }
 
 namespace {
@@ -232,22 +262,41 @@ Mode Output() {
     return Desktop();
 }
 
+Mode RenderResolution() {
+    const Settings& s = Get();
+    return resolution::Scene({s.graphics.scene_width, s.graphics.scene_height}, Output(), s.render_percent);
+}
+
+namespace { std::atomic<uint64_t> g_actual_scene{0}; }
+Mode ActualRenderResolution() {
+    uint64_t v = g_actual_scene.load(std::memory_order_relaxed);
+    return {uint32_t(v >> 32), uint32_t(v)};
+}
+void ReportRenderResolution(Mode m) {
+    g_actual_scene.store(uint64_t(m.width) << 32 | m.height, std::memory_order_relaxed);
+}
+
 bool Widescreen() {
     // asked per frame and per HUD quad: the desktop mode lookup only runs when the resolution setting changes
     static std::atomic<uint64_t> key{~0ull};
+    static std::atomic<uint64_t> scene_key{~0ull};
     static std::atomic<bool> wide{true};
     const Settings& s = Get();
     // the two force switches are in the key too: they change from the settings menu while the game runs
     uint64_t k = uint64_t(s.width) << 34 | uint64_t(s.height) << 2 | uint64_t(s.force_widescreen) << 1 | uint64_t(s.force_1080p);
-    if (key.exchange(k) != k) {
-        Mode m = Output();
+    uint64_t sk = uint64_t(s.graphics.scene_width) << 32 | s.graphics.scene_height;
+    bool changed = key.exchange(k) != k;
+    changed |= scene_key.exchange(sk) != sk;
+    if (changed) {
+        Mode explicit_scene{s.graphics.scene_width, s.graphics.scene_height};
+        Mode m = resolution::ValidScene(explicit_scene) ? explicit_scene : Output();
         wide = s.force_widescreen || m.width * 2 >= m.height * 3;  // 3:2 or wider
     }
     return wide;
 }
 
 float RenderScale(uint32_t guest_height) {
-    float h = Output().height * (Get().render_percent / 100.0f);
+    float h = float(RenderResolution().height);
     return guest_height ? std::max(h / guest_height, 0.1f) : 1.0f;
 }
 

@@ -5,6 +5,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "app/resolution.h"
 
 namespace input {
 struct Pad;
@@ -18,7 +19,7 @@ enum class DisplayMode : uint32_t { Fullscreen, Borderless, Windowed };
 struct Settings {
     DisplayMode display_mode = DisplayMode::Borderless;
     uint32_t width = 0, height = 0;  // 0 is the desktop mode
-    uint32_t render_percent = 100;   // of the output height
+    uint32_t render_percent = 100;   // of the scene dimensions, independently of the desktop-sized settings UI
     uint32_t fps_cap = 60;           // 0 unlimited
     bool vsync = true;
     uint32_t aniso = 0;              // 0 as the game asks
@@ -26,6 +27,7 @@ struct Settings {
 
     // [graphics] in the settings file, changed live from the settings menu (settings_menu.cpp)
     struct Graphics {
+        uint32_t scene_width = 0, scene_height = 0;  // 0/0 follows output; explicit scene can exceed the monitor
         bool post = true;           // the present runs the chain below; off: the console's picture as it was
         uint32_t aa = 1;            // 0 off, 1 FXAA
         float aa_strength = 1.0f;   // 0..1
@@ -57,6 +59,15 @@ struct Settings {
         bool garage_extended = true;          // extended choices in the game's wheel/suspension menus
         float ride_front = 0, ride_rear = 0;  // metres added to each axle's suspension offset, + raises
         float wheel_limit = 1.6f;             // the largest wheel and tire each car takes, times the car's own
+        float camber_front = 0, camber_rear = 0;  // additional visual camber, degrees; negative tucks the top in
+        float offset_front = 0, offset_rear = 0;  // additional wheel offset per side, metres; positive moves out
+        float spring_front = 1, spring_rear = 1;  // spring stiffness multipliers
+        float damper_front = 1, damper_rear = 1;  // suspension damping multipliers
+        float brake_front = 1, brake_rear = 1;    // brake coefficient multipliers
+        float grip_front = 1, grip_rear = 1;      // static/sliding tire friction multipliers
+        float engine_power = 1;                  // engine horsepower multiplier
+        bool airbag_match_ride = true;           // bag endpoints follow the selected per-axle ride height
+        bool wheel_tuck = true;                  // permit body intersection without the cosmetic wheel-down fit
     } tuning;
 
     // config/mc3_enhancements.toml beside the exe (settings.cpp), changed live from the settings menu
@@ -74,11 +85,13 @@ void Save();
 void LogSettings();  // every setting, as the settings file has them
 void LogSystem();    // the machine and the settings, at a run's start
 void ApplyDisplay();  // any thread
-struct Mode {
-    uint32_t width, height;
-};
+using Mode = resolution::Extent;
 Mode Desktop();
 Mode Output();
+Mode RenderResolution();
+Mode ActualRenderResolution();
+void ReportRenderResolution(Mode extent);  // renderer telemetry for the settings UI
+void ReportGraphicsFailure(const char* reason);  // restore the previous display selection, or safe startup defaults
 float RenderScale(uint32_t guest_height);
 // the output is 3:2 or wider: the console reports a widescreen TV and the frame is shown 16:9, else 4:3 as on a 4:3 TV
 bool Widescreen();
@@ -110,6 +123,8 @@ std::recursive_mutex& UiLock();
 // game's controllers read neutral and the menu takes the input.
 bool MenuOpen();
 void ToggleMenu();
+void OpenVehicleMenu();  // F2: show the live vehicle tuning page, including while in the garage
+void GarageTuningActive();  // the garage's update refreshes the visible PC tuning button
 void DrawSettingsMenu(float fps);  // the renderer, inside its ImGui frame, under UiLock
 
 // what the game repo defines once

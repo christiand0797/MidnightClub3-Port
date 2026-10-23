@@ -124,6 +124,8 @@ uint32_t CallGuest(X86Context& ctx, uint32_t fn, const uint32_t* a, size_t count
 }
 void TuningSetPlayerSim(uint32_t sim, bool player) { fixture::players[sim] = player; }
 void TuningForgetSim(uint32_t sim) { fixture::players.erase(sim); }
+void TuningBindCar(uint32_t, uint32_t, uint32_t, bool) {}
+namespace app { void GarageTuningActive() {} }
 void TuningCarCfgApplied(uint32_t) { ++fixture::cfg_applied_calls; }
 
 X86_FUNC(__imp__sub_00270C10) { ctx.esp += 4; }
@@ -132,6 +134,7 @@ X86_FUNC(__imp__sub_00272FC0) { x87_push(ctx, 0.195); ctx.esp += 8; }
 X86_FUNC(__imp__sub_00270C00) { x87_push(ctx, 0.195); ctx.esp += 4; }
 X86_FUNC(__imp__sub_00145DC0) { ++fixture::stock_available_calls; ctx.eax = 0; ctx.esp += 12; }
 X86_FUNC(__imp__sub_001465E0) { ctx.esp += 8; }
+X86_FUNC(__imp__sub_001519D0) { ctx.esp += 4; }
 X86_FUNC(__imp__sub_00121970) { ctx.ecx = 0; ctx.esp += 12; }
 X86_FUNC(__imp__sub_002CBDE0) { ctx.ecx = 0; ctx.esp += 4; }
 X86_FUNC(__imp__sub_001FAE10) { ctx.ecx = 0; ctx.esp += 4; }

@@ -1,15 +1,16 @@
 # Full private GitHub project checkpoint
 
-Updated 2026-10-22/23, Codex snapshot agent. This file describes a prepared
-checkpoint-copy/archive/upload tool. At this update, no actual project snapshot
-or release upload has been started by this agent.
+Updated 2026-10-23. The full checkpoint is copied and SHA-256 verified: 38,043 files,
+28,281,848,318 bytes. Archive/upload is running from the frozen verified copy.
+State: `G:/MC3_Backups/github_checkpoint_2026-10-23.control/state.json`.
 
 ## Destination and scope
 
-The parent created the private repository
-`christiand0797/MidnightClub3-Port` and pushed source commit `abc4caf` to `main`.
-The original upstream remote remains available; the new repository is the
-`github` remote. A read-only repository query confirmed `isPrivate: true`.
+The source repository `christiand0797/MidnightClub3-Port` is now public at the user's request.
+Full checkpoints containing personal saves/configuration use the separate private companion
+`christiand0797/MidnightClub3-Port-Backups`, seeded with main `8bc7f42`.
+The publisher defaults to that private companion and verifies its visibility before every upload/publication.
+The original upstream remote remains available; the public source repository is the `github` remote.
 
 The user's request includes the entire project, not just Git-tracked source.
 The checkpoint includes `.git`, the original ISO in the project folder,

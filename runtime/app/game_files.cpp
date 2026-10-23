@@ -14,6 +14,8 @@
 #include <fstream>
 
 #include "app/app.h"
+#include "app/portable.h"
+#include "app/portable_content.h"
 #include "core/log.h"
 #include "image_symbols.h"
 #include "kernel/crypto.h"
@@ -56,6 +58,8 @@ std::string Sha1(const std::vector<uint8_t>& data) {
 bool ReadHostFile(const fs::path& path, std::vector<uint8_t>& out) {
     std::ifstream f(path, std::ios::binary);
     if (!f) return false;
+    std::error_code ec;
+    if (std::filesystem::file_size(path, ec) > (64u << 20) || ec) return false;
     out.assign(std::istreambuf_iterator<char>(f), {});
     return true;
 }
@@ -63,14 +67,14 @@ bool ReadHostFile(const fs::path& path, std::vector<uint8_t>& out) {
 }  // namespace
 
 bool FindGame(GameFiles& game) {
-    // An explicit image permits a native build to read the user's original disc in place.
-    // Parse Windows quoting rules so paths containing spaces and non-ASCII text are preserved.
+    // Explicit command-line paths are strict; ordinary double-clicks discover an image or show the picker.
     int argc = 0;
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     fs::path requested_disc;
-    bool explicit_disc = false;
+    bool explicit_disc = false, choose_disc = false;
     if (argv) {
         for (int i = 1; i < argc; i++) {
+            if (std::wstring_view(argv[i]) == L"--choose-disc") choose_disc = true;
             if (std::wstring_view(argv[i]) != L"--disc") continue;
             explicit_disc = true;
             if (i + 1 < argc) requested_disc = argv[++i];
@@ -78,84 +82,75 @@ bool FindGame(GameFiles& game) {
         }
         LocalFree(argv);
     }
-    if (explicit_disc) {
-        auto disc = std::make_unique<kernel::Disc>();
+    const fs::path exe_dir = ExeDir();
+    auto mount = [&](const fs::path& path, std::string& error) {
+        std::unique_ptr<kernel::Disc> disc;
         std::vector<uint8_t> xbe;
-        std::string error;
-        if (requested_disc.empty()) error = "--disc requires the path to an Xbox disc image.";
-        else if (!disc->Open(requested_disc, error)) {}
-        else if (!disc->Load(IMAGE_XBE, xbe)) error = "The disc does not contain " IMAGE_XBE ".";
-        else if (Sha1(xbe) != kImageSha1) error = "The disc's XBE does not match this native build. Rebuild from this disc first.";
-        else {
-            LOGR("Game: %s in %s, sha1 %s", IMAGE_XBE, requested_disc.string().c_str(), kImageSha1);
-            game = {requested_disc.parent_path(), std::move(xbe)};
-            kernel::MountDisc(std::move(disc));
-            return true;
-        }
-        LOGE("game: --disc: %s", error.c_str());
+        if (!portable::OpenDisc(path, kImageSha1, xbe, disc, error)) return false;
+        LOGR("Game: %s in %s, sha1 %s", IMAGE_XBE, path.string().c_str(), kImageSha1);
+        game = {path.parent_path(), std::move(xbe)};
+        kernel::MountDisc(std::move(disc));
+        if (!portable::RememberDiscPath(exe_dir, path)) LOGW("setup: disc location could not be saved beside the executable");
+        portable::EnsureDesktopShortcut();
+        return true;
+    };
+    auto show_error = [&](const std::string& error) {
         std::wstring message(error.begin(), error.end());
         MessageBoxW(nullptr, message.c_str(), kGame.short_title, MB_ICONERROR);
-        return false;
-    }
-    fs::path assets = FindAssets();
-    std::vector<fs::path> isos;
-    std::error_code ec;
-    if (!assets.empty())
-        for (auto& e : fs::directory_iterator(assets, ec)) {
-            std::wstring ext = e.path().extension().wstring();
-            std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c) { return wchar_t(std::towlower(c)); });
-            if (ext == L".iso" && e.is_regular_file(ec)) isos.push_back(e.path());
-        }
-    std::sort(isos.begin(), isos.end());
-
-    // the first copy with this xbe wins, the extracted files before any image; another release is kept to offer
-    GameFiles other;
-    std::unique_ptr<kernel::Disc> other_disc;
-    fs::path other_name;
-    auto consider = [&](const fs::path& name, std::vector<uint8_t> xbe, std::unique_ptr<kernel::Disc> disc) {
-        std::string sha = Sha1(xbe);
-        bool match = sha == kImageSha1;
-        LOGR("Game: %s in %s, sha1 %s%s", IMAGE_XBE, name.string().c_str(), sha.c_str(), match ? "" : ", another release");
-        if (match) {
-            game = {assets, std::move(xbe)};
-            kernel::MountDisc(std::move(disc));
-            return true;
-        }
-        if (other_name.empty()) {
-            other = {assets, std::move(xbe)};
-            other_disc = std::move(disc);
-            other_name = name;
-        }
-        return false;
     };
-
-    std::vector<uint8_t> xbe;
-    if (!assets.empty() && ReadHostFile(assets / IMAGE_XBE, xbe) && consider(assets, std::move(xbe), nullptr)) return true;
-    for (const fs::path& iso : isos) {
-        auto disc = std::make_unique<kernel::Disc>();
+    if (explicit_disc) {
         std::string error;
-        if (!disc->Open(iso, error)) {
-            LOGW("game: %s: %s", iso.string().c_str(), error.c_str());
-            continue;
-        }
-        if (!disc->Load(IMAGE_XBE, xbe)) {
-            LOGW("game: %s has no %s", iso.string().c_str(), IMAGE_XBE);
-            continue;
-        }
-        if (consider(iso, std::move(xbe), std::move(disc))) return true;
-    }
-
-    if (other_name.empty()) {
-        MessageBoxW(nullptr, kGame.missing, kGame.short_title, MB_ICONERROR);
+        if (requested_disc.empty()) error = "--disc requires the path to an Xbox disc image.";
+        else if (mount(requested_disc, error)) return true;
+        LOGE("game: --disc: %s", error.c_str());
+        show_error(error);
         return false;
     }
-    std::wstring text = other_name.filename().wstring() +
-                        L" is a different release of the game than this build was made from, and will most likely "
-                        L"crash.\n\nStart it anyway?";
-    if (MessageBoxW(nullptr, text.c_str(), kGame.short_title, MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2) != IDYES) return false;
-    game = std::move(other);
-    kernel::MountDisc(std::move(other_disc));
-    return true;
+
+    if (!choose_disc) {
+        std::string setup_error;
+        if (!portable::InstallBundledContent(exe_dir, setup_error)) { show_error(setup_error); return false; }
+        // A portable ISO beside mc3.exe takes precedence, then a previously selected external disc.
+        auto candidates = portable::DiscCandidates(exe_dir);
+        auto bundled = portable::DiscCandidates(exe_dir / "game");
+        candidates.insert(candidates.end(), bundled.begin(), bundled.end());
+        const fs::path remembered = portable::ReadDiscPath(exe_dir);
+        if (!remembered.empty()) candidates.push_back(remembered);
+        for (const auto& path : candidates) {
+            std::string error;
+            if (mount(path, error)) return true;
+            LOGW("game: candidate disc skipped: %s", error.c_str());
+        }
+
+        // Developer builds and manually extracted disc folders retain their existing assets path.
+        const fs::path assets = FindAssets();
+        std::vector<uint8_t> xbe;
+        if (!assets.empty() && ReadHostFile(assets / IMAGE_XBE, xbe)) {
+            if (Sha1(xbe) == kImageSha1) {
+                LOGR("Game: %s in %s, sha1 %s", IMAGE_XBE, assets.string().c_str(), kImageSha1);
+                game = {assets, std::move(xbe)};
+                kernel::MountDisc(nullptr);
+                portable::EnsureDesktopShortcut();
+                return true;
+            }
+            LOGW("game: extracted XBE is a different release; select the matching original disc");
+        }
+        for (const auto& path : portable::DiscCandidates(assets)) {
+            std::string error;
+            if (mount(path, error)) return true;
+            LOGW("game: candidate disc skipped: %s", error.c_str());
+        }
+    }
+
+    // No Python, compiler, extraction utility, administrator rights, or separate setup application is needed.
+    for (;;) {
+        const fs::path selected = portable::PickDisc(exe_dir, L"Select Midnight Club 3: DUB Edition Remix (USA) — original Xbox ISO");
+        if (selected.empty()) return false;
+        std::string error;
+        if (mount(selected, error)) return true;
+        LOGE("game: selected disc: %s", error.c_str());
+        show_error(error);
+    }
 }
 
 }  // namespace app
