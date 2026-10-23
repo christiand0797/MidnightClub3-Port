@@ -1,5 +1,20 @@
 # Texture refresh and material taxonomy audit
 
+## Fresh pass completed — 2026-10-23
+
+The original-derived `2026-10-22-originals-pass` finished all **7,081 eligible textures**. A new CPU audit using
+`--model ultrasharp-4x --pass-id 2026-10-22-originals-pass` verified every source/output SHA-256 against the
+named-pass records, exact expected dimensions and PNG integrity. All issue collections are empty: no damaged
+originals, missing/invalid outputs, active vinyl masks, orphan replacements, model/context mismatches or changed
+completion records. The 5,603 masks, 23 flat images and 9 tiny images retain their intentional exclusions.
+
+Local report: `.local/texture-pass-20261023-final-audit.json`, SHA-256
+`134b5c1fd407dc731f85a1dc480a349e581af378839d4231784790cab19213ba`.
+This proves the fresh pass completed; the published v0.3.0 content bundle was frozen before this pass finished.
+Movies and the full post-media backup remain separate gates before new PBR generation.
+
+The following sections preserve the initial audit and implementation details.
+
 Updated 2026-10-22 by the texture worker. Scope: `tools/texture_pack/` and this note. No native renderer, video,
 original ISO, extracted source image, or PBR output was changed. Parent owns GPU scheduling and the full-project
 backup gate. The prior video x4plus GPU process was still running at the initial inspection.

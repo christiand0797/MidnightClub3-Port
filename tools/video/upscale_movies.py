@@ -33,6 +33,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[2]
 ASSETS = ROOT / "templates" / "game" / "assets" / "video"
 OUT = ROOT / "templates" / "game" / "out" / "native" / "video_hd"
+QUARANTINE = ROOT / ".local" / "video-upscale-candidates"
 ESRGAN_DIR = ROOT / "upscale_tools" / "realesrgan-20220424"
 SCALE = 3
 CHUNK = 400
@@ -83,15 +84,19 @@ def bink_header(path):
 def probe(ff, path, count_frames=False):
     command = [binary(ff, "ffprobe"), "-v", "error", "-select_streams", "v:0"]
     if count_frames:
-        command.append("-count_frames")
-    command += ["-show_entries", "stream=width,height,r_frame_rate,avg_frame_rate,nb_frames,nb_read_frames,codec_name,pix_fmt",
+        command += ["-count_frames", "-show_frames"]
+    entries = "stream=width,height,r_frame_rate,avg_frame_rate,time_base,duration_ts,nb_frames,nb_read_frames,codec_name,pix_fmt"
+    if count_frames:
+        entries += ":frame=pts,duration,pkt_duration"
+    command += ["-show_entries", entries,
                 "-of", "json", str(path)]
     result = subprocess.run(command, capture_output=True, text=True, check=True)
     # A decoder may exit successfully after reporting damaged frames. Do not
     # accept those clips merely because ffprobe still returned a stream record.
     if result.stderr.strip():
         raise RuntimeError(f"video decode errors in {path}: {result.stderr.strip()[-2000:]}")
-    streams = json.loads(result.stdout).get("streams", [])
+    document = json.loads(result.stdout)
+    streams = document.get("streams", [])
     if len(streams) != 1:
         raise ValueError(f"expected a video stream in {path}")
     stream = streams[0]
@@ -105,9 +110,16 @@ def probe(ff, path, count_frames=False):
         if (header["width"], header["height"], header["fps"]) != (int(stream["width"]), int(stream["height"]), str(fps)):
             raise ValueError(f"Bink header disagrees with decoder: {path}")
         frames = header["frames"]
-    return {"width": int(stream["width"]), "height": int(stream["height"]),
+    info = {"width": int(stream["width"]), "height": int(stream["height"]),
             "fps": str(fps), "frames": int(frames) if frames not in (None, "N/A") else None,
             "codec": stream.get("codec_name"), "pix_fmt": stream.get("pix_fmt")}
+    if count_frames:
+        decoded = document.get("frames", [])
+        info["timeline"] = {"time_base": stream.get("time_base"), "duration_ts": stream.get("duration_ts"),
+                            "avg_fps": stream.get("avg_frame_rate"),
+                            "pts": [frame.get("pts") for frame in decoded],
+                            "durations": [frame.get("duration", frame.get("pkt_duration")) for frame in decoded]}
+    return info
 
 
 def validate_info(info, source, expected_frames):
@@ -122,10 +134,38 @@ def validate_info(info, source, expected_frames):
         raise ValueError("HD movie must be H.264 yuv420p for the native Media Foundation decoder")
 
 
+def validate_timeline(info, fps, expected_frames):
+    info = dict(info)
+    timeline = info.pop("timeline")
+    fps = Fraction(fps)
+    try:
+        time_base = Fraction(timeline["time_base"])
+        average = Fraction(timeline["avg_fps"])
+        if time_base <= 0:
+            raise ValueError("nonpositive time base")
+    except (ValueError, TypeError, ZeroDivisionError) as error:
+        raise ValueError("movie has no valid timestamp time base/average rate") from error
+    step = 1 / (fps * time_base)
+    if step.denominator != 1 or average != fps:
+        raise ValueError("movie time base cannot represent the exact source frame interval")
+    if (len(timeline["pts"]) != expected_frames or len(timeline["durations"]) != expected_frames
+            or any(pts != index * step for index, pts in enumerate(timeline["pts"]))
+            or any(duration != step for duration in timeline["durations"])):
+        raise ValueError("movie presentation timestamps/durations differ from the exact source frame grid")
+    if timeline["duration_ts"] != expected_frames * step:
+        raise ValueError("movie stream duration differs from the exact source duration")
+    info["timing"] = {"time_base": str(time_base), "frame_step_ts": int(step),
+                      "duration_ts": timeline["duration_ts"], "frames_checked": expected_frames,
+                      "exact_source_timing": True,
+                      "presentation_timestamps_sha256": hashlib.sha256(
+                          "".join(f"{pts}\n" for pts in timeline["pts"]).encode("ascii")).hexdigest()}
+    return info
+
+
 def validate_movie(ff, dst, source, expected_frames):
     info = probe(ff, dst, count_frames=True)
     validate_info(info, source, expected_frames)
-    return info
+    return validate_timeline(info, source["fps"], expected_frames)
 
 
 def atomic_write(path, data):
@@ -169,10 +209,92 @@ def model_identity(model):
 
 
 def recipe_for(src, source, identity):
+    fps = Fraction(source["fps"])
     return {"pipeline_version": PIPELINE_VERSION, "source_sha256": sha256(src),
             "source_bytes": src.stat().st_size, "source": source,
             "model": identity, "output_scale": SCALE,
-            "encoder": {"codec": "libx264", "preset": "slow", "crf": 16, "pix_fmt": "yuv420p"}}
+            "encoder": {"codec": "libx264", "preset": "slow", "crf": 16, "pix_fmt": "yuv420p",
+                        "time_base": str(1 / fps), "video_track_timescale": fps.numerator}}
+
+
+def previous_timing_recipe(recipe):
+    """Only the old container timing defaults may differ; source, weights and picture settings must match."""
+    if not {"time_base", "video_track_timescale"} <= recipe.get("encoder", {}).keys():
+        return None
+    return dict(recipe, encoder={key: value for key, value in recipe["encoder"].items()
+                                 if key not in ("time_base", "video_track_timescale")})
+
+
+def encoded_picture_hash(ff, path):
+    result = subprocess.run([binary(ff, "ffprobe"), "-v", "error", "-select_streams", "v:0", "-show_packets",
+                             "-show_data_hash", "sha256", "-show_entries", "packet=data_hash", "-of", "json", str(path)],
+                            capture_output=True, text=True, check=True)
+    if result.stderr.strip():
+        raise ValueError("packet read errors while checking lossless retiming")
+    packets = json.loads(result.stdout).get("packets", [])
+    hashes = [packet["data_hash"] for packet in packets]
+    if not hashes:
+        raise ValueError("no encoded picture packets")
+    return hashlib.sha256("\n".join(hashes).encode("ascii")).hexdigest()
+
+
+def lossless_timing_copy(ff, src, part, source):
+    """Repair only the proven default-timescale case; validate every old/new PTS and unchanged H.264 payload."""
+    info = probe(ff, src, count_frames=True)
+    if (Fraction(source["fps"]) != Fraction(10000000, 333333)
+            or Fraction(info["fps"]) != Fraction(999991, 33333)
+            or Fraction(info["timeline"]["time_base"]) != Fraction(1, 999991)):
+        raise ValueError("candidate is not the verified default-timescale rounding case")
+    validate_info(info, dict(source, fps=info["fps"]), source["frames"])
+    validate_timeline(info, info["fps"], source["frames"])
+    # Prove that integer rescaling alone maps every PTS/duration to the exact source grid. This is not a
+    # floating-point tolerance or permission to retime arbitrary rates, missing frames, gaps or duplicates.
+    target_scale = Fraction(source["fps"]).numerator
+    target_step = Fraction(source["fps"]).denominator
+    base = Fraction(info["timeline"]["time_base"])
+    def rescale(ticks):
+        value = ticks * base * target_scale
+        return (2 * value.numerator + value.denominator) // (2 * value.denominator)
+    if (any(rescale(pts) != index * target_step for index, pts in enumerate(info["timeline"]["pts"]))
+            or any(rescale(duration) != target_step for duration in info["timeline"]["durations"])
+            or rescale(info["timeline"]["duration_ts"]) != source["frames"] * target_step):
+        raise ValueError("integer timestamp rescaling does not produce the exact source grid")
+    payload = encoded_picture_hash(ff, src)
+    subprocess.run([binary(ff, "ffmpeg"), "-v", "error", "-y", "-i", str(src), "-map", "0:v:0", "-an",
+                    "-c:v", "copy", "-video_track_timescale", str(target_scale), "-movflags", "+faststart", str(part)], check=True)
+    validated = validate_movie(ff, part, source, source["frames"])
+    if encoded_picture_hash(ff, part) != payload:
+        raise ValueError("encoded picture payload changed during lossless timing copy")
+    return validated, payload
+
+
+def retime_proven_output(ff, src, dst, source, recipe, saved):
+    # A text marker or adopted legacy record cannot establish the original inference recipe. Only an existing
+    # original-Bink record with matching source/model/weights/settings and output SHA may take this path.
+    if saved.get("origin") != "original-bink" or saved.get("historical_source_and_weights_verified") is not True:
+        return False
+    if (saved.get("recipe") != previous_timing_recipe(recipe)
+            or sha256(dst) != saved.get("output_sha256") or sha256(src) != recipe.get("source_sha256")):
+        return False
+    fd, name = tempfile.mkstemp(prefix=f".{dst.stem}.retime.", suffix=".part.mp4", dir=dst.parent)
+    os.close(fd)
+    part = Path(name)
+    try:
+        info, payload = lossless_timing_copy(ff, dst, part, source)
+        if sha256(dst) != saved["output_sha256"] or sha256(src) != recipe["source_sha256"]:
+            raise ValueError("source/published output changed during retiming")
+        with part.open("r+b") as stream:
+            os.fsync(stream.fileno())
+        record = dict(saved, output=info, output_sha256=sha256(part), validated_timing_recipe=recipe,
+                      container_retimed_from_sha256=saved["output_sha256"], encoded_picture_sha256=payload,
+                      container_timing_transform={"method": "stream-copy", "video_track_timescale": Fraction(source["fps"]).numerator},
+                      validated_at=datetime.now(timezone.utc).isoformat())
+        publish(part, dst)
+        atomic_write(dst.with_suffix(".upscale.json"), json.dumps(record, indent=2) + "\n")
+        print(f"retimed verified picture without inference/re-encoding: {dst}", flush=True)
+        return True
+    finally:
+        part.unlink(missing_ok=True)
 
 
 def current_output(ff, src, dst, source, recipe, adopt_legacy=True):
@@ -182,8 +304,29 @@ def current_output(ff, src, dst, source, recipe, adopt_legacy=True):
     if meta.exists():
         try:
             saved = json.loads(meta.read_text(encoding="utf-8"))
-            return (saved["recipe"] == recipe and saved["output_sha256"] == sha256(dst))
-        except (OSError, ValueError, KeyError, TypeError):
+            if saved["output_sha256"] != sha256(dst):
+                return False
+            if saved["recipe"] == recipe:
+                return True
+            if saved["recipe"] != previous_timing_recipe(recipe):
+                return False
+            if (saved.get("validated_timing_recipe") == recipe
+                    and saved.get("output", {}).get("timing", {}).get("exact_source_timing") is True):
+                return True
+            # Reuse a previously generated clip only after full decode and exact PTS verification. Preserve
+            # its original attribution, including any explicitly unverified historical model/source claim.
+            try:
+                info = validate_movie(ff, dst, source, source["frames"])
+            except ValueError:
+                if adopt_legacy:
+                    return retime_proven_output(ff, src, dst, source, recipe, saved)
+                return False
+            if adopt_legacy:
+                saved.update(validated_timing_recipe=recipe, output=info, validated_at=datetime.now(timezone.utc).isoformat(),
+                             timing_validation_upgrade=True)
+                atomic_write(meta, json.dumps(saved, indent=2) + "\n")
+            return True
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.SubprocessError):
             return False
     marker = dst.with_suffix(".model.txt")
     if not marker.exists() or marker.read_text(encoding="utf-8").strip() != recipe["model"]["name"]:
@@ -217,6 +360,21 @@ def stop_encoder(enc):
             enc.wait()
 
 
+def quarantine_encoded_movie(part, src, dst, recipe, error):
+    """Keep completed inference/encode work out of the published movie tree for later validated recovery."""
+    QUARANTINE.mkdir(parents=True, exist_ok=True)
+    folder = Path(tempfile.mkdtemp(prefix=dst.stem + "-", dir=QUARANTINE))
+    candidate = folder / "candidate.mp4"
+    os.replace(part, candidate)
+    record = {"status": "unvalidated-encoded-candidate", "source_path": str(src.resolve()),
+              "published_destination": str(dst.resolve()), "recipe": recipe,
+              "candidate_sha256": sha256(candidate), "candidate_bytes": candidate.stat().st_size,
+              "failure": f"{type(error).__name__}: {error}", "automatic_reuse": False,
+              "saved_at": datetime.now(timezone.utc).isoformat()}
+    atomic_write(folder / "candidate.json", json.dumps(record, indent=2) + "\n")
+    print(f"  completed candidate retained for recovery: {candidate}", flush=True)
+
+
 def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUNK):
     model_dir, model_scale, sharpen = MODELS[model]
     source = source or probe(ff, src)
@@ -230,6 +388,7 @@ def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUN
     os.close(fd)
     part = Path(name)
     enc = None
+    encoded = False
     try:
         with tempfile.TemporaryDirectory(prefix="mc3movie_") as tmp_name:
             tmp = Path(tmp_name)
@@ -243,7 +402,9 @@ def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUN
             enc = subprocess.Popen([binary(ff, "ffmpeg"), "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
                                     "-s", f"{W}x{H}", "-r", f"{fps.numerator}/{fps.denominator}", "-i", "-",
                                     "-an", "-vf", f"unsharp=5:5:{sharpen}", "-c:v", "libx264", "-preset", "slow",
-                                    "-crf", "16", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(part)],
+                                    "-crf", "16", "-pix_fmt", "yuv420p",
+                                    "-enc_time_base", f"{fps.denominator}:{fps.numerator}",
+                                    "-video_track_timescale", str(fps.numerator), "-movflags", "+faststart", str(part)],
                                    stdin=subprocess.PIPE)
             for i in range(0, len(frames), chunk_size):
                 cin, cout = tmp / "cin", tmp / "cout"
@@ -273,6 +434,7 @@ def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUN
             enc.stdin.close()
             if enc.wait():
                 raise RuntimeError(f"encoding {dst} failed")
+            encoded = True
         info = validate_movie(ff, part, source, len(frames))
         if sha256(src) != recipe["source_sha256"]:
             raise ValueError("original movie changed while the upscale was running")
@@ -287,10 +449,20 @@ def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUN
         atomic_write(dst.with_suffix(".upscale.json"), json.dumps(record, indent=2) + "\n")
         atomic_write(dst.with_suffix(".model.txt"), model + "\n")
         return len(frames)
+    except Exception as error:
+        if encoded and part.exists():
+            try:
+                quarantine_encoded_movie(part, src, dst, recipe, error)
+            except Exception as retention_error:
+                location = part if part.exists() else QUARANTINE
+                print(f"  completed candidate retained under {location}; quarantine metadata failed: {retention_error}",
+                      file=sys.stderr, flush=True)
+        raise
     finally:
         if enc is not None:
             stop_encoder(enc)
-        part.unlink(missing_ok=True)
+        if not encoded:
+            part.unlink(missing_ok=True)
 
 
 def legacy_workers():
