@@ -6,6 +6,7 @@
 #include <cstring>
 #include <deque>
 #include <functional>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -181,20 +182,20 @@ void QueueApc(Thread& t, uint32_t routine, uint32_t a1, uint32_t a2, uint32_t a3
 std::vector<ThreadRef> Threads();
 
 // files
-void MountDefaults(const std::string& game_dir, const std::string& data_dir);
+void MountDefaults(const std::filesystem::path& game_dir, const std::filesystem::path& data_dir);
 bool CreateSymbolicLink(const std::string& link, const std::string& target);
 bool DeleteSymbolicLink(const std::string& link);
 std::string QuerySymbolicLink(const std::string& link);
-std::string ResolvePath(const std::string& xbox_path, uint32_t root_handle);  // host path or empty
+std::filesystem::path ResolvePath(const std::string& xbox_path, uint32_t root_handle);  // native host path or empty
 bool ReadGameFile(const std::string& xbox_path, std::vector<uint8_t>& out);  // from a host folder or the disc image
 
 // boot
-bool Boot(std::vector<uint8_t> xbe, const std::string& xbe_name, const std::string& game_dir, const std::string& data_dir);
+bool Boot(std::vector<uint8_t> xbe, const std::string& xbe_name, const std::filesystem::path& game_dir, const std::filesystem::path& data_dir);
 [[noreturn]] void Shutdown(int code);
 // the executable recompiled from an Xbox image path (D:\\default.xbe), null when there is none
 const char* ImageExe(std::string xbe_path);
 [[noreturn]] void Relaunch(const char* exe);
-extern std::string g_launch_file;
+extern std::filesystem::path g_launch_file;
 // The display a title keeps up through a quick reboot (D3DDevice_PersistDisplay): its front buffer goes to a file
 // beside launch.bin, and the next instance finds it as a surface at AvGetSavedDataAddress.
 void SavePersistedDisplay(uint32_t common, uint32_t format, uint32_t size, const void* pixels, uint32_t bytes);

@@ -25,6 +25,7 @@
 
 #include "app/app.h"
 #include "core/log.h"
+#include "core/host_path.h"
 #include "gpu/backend.h"
 
 namespace input {
@@ -95,7 +96,7 @@ void LoadPadLive() {
     g_live_path = value;
     std::error_code ec;
     g_live_read = std::filesystem::exists(g_live_path, ec) ? std::filesystem::file_size(g_live_path, ec) : 0;
-    LOGR("input: live controller file %s, its presses add to port 0", g_live_path.string().c_str());
+    LOGR("input: live controller file %s, its presses add to port 0", hostpath::Utf8(g_live_path).c_str());
 }
 
 // caller holds g_lock; the presses held now

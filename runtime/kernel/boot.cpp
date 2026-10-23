@@ -4,6 +4,7 @@
 #include <fstream>
 
 #include "app/app.h"
+#include "core/host_path.h"
 #include "kernel/kernel.h"
 
 #ifdef _WIN32
@@ -31,7 +32,7 @@ void CloseSockets();  // xdk/xnet.cpp
 namespace kernel {
 
 uint8_t* g_base = nullptr;
-std::string g_launch_file;
+std::filesystem::path g_launch_file;
 
 namespace {
 uint32_t g_saved_data = 0;
@@ -39,7 +40,7 @@ bool g_mark = false, g_kept_marked = false;
 std::string g_picture, g_kept_picture;  // the last picture the title showed, raw path string with its terminator
 constexpr uint32_t kPersistMagic = 0x50535044;  // "DPSP"
 
-std::string PersistFile() { return g_launch_file.substr(0, g_launch_file.find_last_of("/\\") + 1) + "display.bin"; }
+std::filesystem::path PersistFile() { return g_launch_file.parent_path() / "display.bin"; }
 
 // surface header (Common, Data, Lock, Format, Size) then the pixels at +0x40, as the XDK lays out its persisted copy
 void LoadPersistedDisplay() {
@@ -64,7 +65,7 @@ void LoadPersistedDisplay() {
 }  // namespace
 
 void SavePersistedDisplay(uint32_t common, uint32_t format, uint32_t size, const void* pixels, uint32_t bytes) {
-    if (FILE* f = std::fopen(PersistFile().c_str(), "wb")) {
+    if (FILE* f = hostpath::Open(PersistFile(), "wb")) {
         uint32_t head[7] = {kPersistMagic, common, format, size, bytes, g_mark, uint32_t(g_picture.size())};
         std::fwrite(head, sizeof head, 1, f);
         std::fwrite(pixels, 1, bytes, f);
@@ -83,7 +84,7 @@ void SetSavedDataAddress(uint32_t surface) { g_saved_data = surface; }
 const xbe::Image* g_image = nullptr;
 static xbe::Image g_xbe;
 
-bool Boot(std::vector<uint8_t> xbe, const std::string& xbe_name, const std::string& game_dir, const std::string& data_dir) {
+bool Boot(std::vector<uint8_t> xbe, const std::string& xbe_name, const std::filesystem::path& game_dir, const std::filesystem::path& data_dir) {
     if (!mem::Init()) return false;
     g_base = mem::Base();
 
@@ -134,18 +135,20 @@ bool Boot(std::vector<uint8_t> xbe, const std::string& xbe_name, const std::stri
     MountDefaults(game_dir, data_dir);
 
     // a quick reboot into this title left its launch data page behind
-    g_launch_file = data_dir + "/launch.bin";
+    g_launch_file = hostpath::Native(data_dir / "launch.bin");
     std::ifstream lf(g_launch_file, std::ios::binary);
     if (lf) {
         uint32_t page = mem::AllocContiguous(0x1000, 0, 0xFFFFFFFF, 0x1000);
         lf.read(static_cast<char*>(HostPtr(page)), 0x1000);
         lf.close();
-        std::remove(g_launch_file.c_str());
+        std::error_code ec;
+        std::filesystem::remove(g_launch_file, ec);
         W32(g_launch_data_page_va, page);
         LOGI("boot: launch data from the previous run, type %u", R32(page));
         LoadPersistedDisplay();
     }
-    std::remove(PersistFile().c_str());
+    std::error_code ec;
+    std::filesystem::remove(PersistFile(), ec);
 
     uint32_t tls = 0;
     if (img.tls_addr) tls = ((img.tls.data_end - img.tls.data_start + img.tls.zero_fill + 15) & ~15u) + 4;
@@ -172,10 +175,7 @@ std::wstring HandoverEvent(unsigned long process) {
 void Relaunch(const char* exe) {
     logx::Flush();
 #ifdef _WIN32
-    wchar_t self[MAX_PATH];
-    GetModuleFileNameW(nullptr, self, MAX_PATH);
-    std::wstring path = self;
-    path = path.substr(0, path.find_last_of(L'\\') + 1) + std::wstring(exe, exe + std::strlen(exe)) + L".exe";
+    std::wstring path = (app::ExeDir() / (std::wstring(exe, exe + std::strlen(exe)) + L".exe")).wstring();
     // the command line keeps its arguments (--instance) behind the new executable
     std::wstring line = GetCommandLineW();
     size_t args = line[0] == L'"' ? line.find(L'"', 1) + 1 : line.find(L' ');

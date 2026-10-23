@@ -10,6 +10,10 @@ for those observations.
   controller D-pad navigate it; Enter / A activates controls. F2 opens Vehicle directly (garage agent's controls).
 - The settings window fits the visible client area at 640x480 through 4K. Its contents scroll independently of
   the Close / Save now footer. Tabs can scroll horizontally on small windows.
+- Native GUI text now uses Windows Segoe UI rasterized at 22 px with horizontal/vertical oversampling, rather than
+  enlarging ImGui's 13 px default. A 20 px built-in font remains available if the Windows font is missing. Label
+  columns reserve more room for the larger typeface. At 1080p the existing scale gives approximately 26 px text;
+  at 480p contents scroll while the footer stays on screen.
 - Display mode and monitor/window size are separate from **Native scene resolution**. Automatic follows the
   existing output settings. Explicit presets are 640x480, 854x480, 1280x720, 1920x1080, 2560x1440, 3840x2160,
   5120x2880, 7680x4320 and 15360x8640. Custom dimensions accept 320..16384 by 240..16384. Both zeros mean Automatic.
@@ -68,7 +72,7 @@ float values retain their previous/default values.
 - `settings_test`: real settings.cpp save/load of 16K, render-scale bounds, invalid persisted dimension pairs,
   backwards-compatible output dimensions, and scene-driven widescreen changes, alongside existing tuning checks.
 - `graphics_menu_test`: actual settings_menu.cpp and ImGui run headlessly at 640x480, 720p and 4K; the window fits
-  each screen. Exercises unpersisted display preview, allocation rejection restoring only display fields, automatic
+  each screen with the actual larger UI font; the 480p contents are scrollable. Exercises unpersisted display preview, allocation rejection restoring only display fields, automatic
   timeout, F1 close rollback, startup 1280x720 then 640x480 recovery, and saving/loading the working fallback.
 
 Still required after parent native build: mouse/controller interaction in the actual game; 480p / 1080p / 4K actual

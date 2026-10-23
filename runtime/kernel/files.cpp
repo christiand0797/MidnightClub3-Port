@@ -9,6 +9,7 @@
 #include <mutex>
 
 #include "kernel/disc.h"
+#include "core/host_path.h"
 #include "kernel/kernel.h"
 #include "kernel/exports.h"
 #include "kernel/memory.h"
@@ -58,7 +59,7 @@ fs::path MatchCase(const fs::path& dir, const std::vector<std::string>& parts) {
         bool found = false;
         std::string want = Upper(part);
         for (auto& e : fs::directory_iterator(cur, ec)) {
-            if (Upper(e.path().filename().string()) == want) {
+            if (Upper(hostpath::Utf8(e.path().filename())) == want) {
                 cur = e.path();
                 found = true;
                 break;
@@ -193,10 +194,10 @@ std::string ReadCString(uint32_t va, size_t max) {
     return s;
 }
 
-void MountDefaults(const std::string& game_dir, const std::string& data_dir) {
+void MountDefaults(const fs::path& game_dir, const fs::path& data_dir) {
     std::lock_guard<std::mutex> lock(g_links_lock);
-    fs::path d = data_dir;
-    g_devices[kCdRom] = game_dir;
+    fs::path d = hostpath::Native(data_dir);
+    g_devices[kCdRom] = hostpath::Native(game_dir);
     g_devices["\\DEVICE\\HARDDISK0\\PARTITION1"] = d / "E";
     g_devices["\\DEVICE\\HARDDISK0\\PARTITION2"] = d / "C";
     g_devices["\\DEVICE\\HARDDISK0\\PARTITION3"] = d / "X";
@@ -208,7 +209,7 @@ void MountDefaults(const std::string& game_dir, const std::string& data_dir) {
     }
     g_links["\\??\\D:"] = "\\Device\\CdRom0";
     const Disc* disc = MountedDisc();
-    LOGI("files: D: is %s, hard disk under %s", disc ? disc->Path().string().c_str() : game_dir.c_str(), data_dir.c_str());
+    LOGI("files: D: is %s, hard disk under %s", hostpath::Utf8(disc ? disc->Path() : game_dir).c_str(), hostpath::Utf8(data_dir).c_str());
 }
 
 bool CreateSymbolicLink(const std::string& link, const std::string& target) {
@@ -232,7 +233,7 @@ std::string QuerySymbolicLink(const std::string& link) {
 namespace {
 
 struct Target {
-    std::string host;                    // empty on the disc image or unmapped
+    fs::path host;                       // empty on the disc image or unmapped
     bool disc = false;                   // on the mounted disc image
     const Disc::Entry* entry = nullptr;  // there: the file or folder, null when missing
 };
@@ -276,7 +277,7 @@ Target Resolve(const std::string& xbox_path, uint32_t root_handle) {
         if (part.find(':') != std::string::npos) return {};
     if (best->first == kCdRom)
         if (const Disc* disc = MountedDisc()) return {{}, true, disc->Find(parts)};
-    return {MatchCase(best->second, parts).string()};
+    return {hostpath::Native(MatchCase(best->second, parts))};
 }
 
 // the disc image is read only: nothing on it is created, replaced or written
@@ -307,7 +308,7 @@ uint32_t OpenOnDisc(const Disc::Entry* e, const std::string& name, uint32_t hand
 
 }  // namespace
 
-std::string ResolvePath(const std::string& xbox_path, uint32_t root_handle) { return Resolve(xbox_path, root_handle).host; }
+fs::path ResolvePath(const std::string& xbox_path, uint32_t root_handle) { return Resolve(xbox_path, root_handle).host; }
 
 bool ReadGameFile(const std::string& xbox_path, std::vector<uint8_t>& out) {
     Target t = Resolve(xbox_path, 0);
@@ -331,7 +332,7 @@ KERNEL_EXPORT(190, NtCreateFile, 9) {
     std::string name = ObjectName(attrs, &root);
     Target t = Resolve(name, root);
     if (t.disc) return OpenOnDisc(t.entry, name, handle_out, iosb, disposition, options);
-    const std::string& host = t.host;
+    const fs::path& host = t.host;
     if (host.empty()) {
         LOGW("NtCreateFile: no mapping for %s", name.c_str());
         IoStatus(iosb, kObjectPathNotFound, 0);
@@ -409,10 +410,10 @@ KERNEL_EXPORT(190, NtCreateFile, 9) {
         IoStatus(iosb, kObjectPathNotFound, 0);
         return kObjectPathNotFound;
     }
-    FILE* fp = std::fopen(host.c_str(), mode);
-    if (!fp && std::string(mode) == "r+b") fp = std::fopen(host.c_str(), "rb");  // read only media
+    FILE* fp = hostpath::Open(host, mode);
+    if (!fp && std::string(mode) == "r+b") fp = hostpath::Open(host, "rb");  // read only media
     if (!fp) {
-        LOGW("NtCreateFile: cannot open %s", host.c_str());
+        LOGW("NtCreateFile: cannot open %s", hostpath::Utf8(host).c_str());
         IoStatus(iosb, kAccessDenied, 0);
         return kAccessDenied;
     }
@@ -434,7 +435,7 @@ KERNEL_EXPORT(202, NtOpenFile, 6) {
     std::string name = ObjectName(attrs, &root);
     Target t = Resolve(name, root);
     if (t.disc) return OpenOnDisc(t.entry, name, handle_out, iosb, 1, options);
-    const std::string& host = t.host;
+    const fs::path& host = t.host;
     std::error_code ec;
     if (host.empty() || !fs::exists(host, ec)) {
         LOG_FIRST(200, "missing %s", name.c_str());
@@ -446,8 +447,8 @@ KERNEL_EXPORT(202, NtOpenFile, 6) {
     f->xbox = Normalize(name);
     f->dir = fs::is_directory(host, ec);
     if (!f->dir) {
-        f->fp = std::fopen(host.c_str(), "r+b");
-        if (!f->fp) f->fp = std::fopen(host.c_str(), "rb");
+        f->fp = hostpath::Open(host, "r+b");
+        if (!f->fp) f->fp = hostpath::Open(host, "rb");
         if (!f->fp) return kAccessDenied;
     }
     (void)options;
@@ -572,7 +573,7 @@ KERNEL_EXPORT(226, NtSetInformationFile, 5) {
         case 10: {  // rename: ReplaceIfExists, RootDirectory, FileName (ANSI_STRING inline)
             uint32_t root = R32(in + 4);
             std::string target = ReadAnsiString(in + 8);
-            std::string host = ResolvePath(target, root);
+            fs::path host = ResolvePath(target, root);
             if (host.empty()) return kObjectPathNotFound;
             if (f->fp) std::fflush(f->fp);
             fs::rename(f->host, host, ec);
@@ -719,7 +720,7 @@ KERNEL_EXPORT(207, NtQueryDirectoryFile, 10) {
         } else {
             std::error_code ec;
             for (auto& e : fs::directory_iterator(f->host, ec))
-                if (WildMatch(pat, e.path().filename().string())) f->entries.push_back(e);
+                if (WildMatch(pat, hostpath::Utf8(e.path().filename()))) f->entries.push_back(e);
             std::sort(f->entries.begin(), f->entries.end());
         }
         f->next = 0;
@@ -730,7 +731,7 @@ KERNEL_EXPORT(207, NtQueryDirectoryFile, 10) {
         return f->next == 0 ? kNoSuchFile : kNoMoreFiles;
     }
     size_t i = f->next++;
-    std::string fname = f->entry ? f->disc_entries[i]->name : f->entries[i].path().filename().string();
+    std::string fname = f->entry ? f->disc_entries[i]->name : hostpath::Utf8(f->entries[i].path().filename());
     uint32_t need = 0x40 + uint32_t(fname.size());
     if (len < need) return kBufferTooSmall;
     std::memset(HostPtr(out), 0, need);
@@ -763,7 +764,7 @@ KERNEL_EXPORT(210, NtQueryFullAttributesFile, 2) {
 }
 
 KERNEL_EXPORT(195, NtDeleteFile, 1) {
-    std::string host = ResolvePath(ReadAnsiString(R32(a[0] + 4)), R32(a[0]));
+    fs::path host = ResolvePath(ReadAnsiString(R32(a[0] + 4)), R32(a[0]));
     std::error_code ec;
     if (host.empty() || !fs::remove(host, ec)) return kObjectNameNotFound;
     return kSuccess;

@@ -85,6 +85,27 @@ int main() {
     assert(!app::portable::OpenDisc(wrong, abc_sha1, xbe, disc, error));
     assert(!app::portable::OpenDisc(external, abc_sha1, xbe, disc, error));
 
+    // Native configuration joins also work below an extended-length Unicode folder. Relative in-folder discs
+    // remain portable when copied elsewhere; external Unicode discs retain their absolute UTF-8 path.
+    const fs::path extended_root(L"\\\\?\\" + root.wstring());
+    const fs::path long_portable = extended_root / std::wstring(190, L'x') / L"\u8eca\u5eab";
+    const fs::path long_relocated = extended_root / std::wstring(191, L'y') / L"\u79fb\u52d5";
+    assert(long_portable.wstring().size() > 260);
+    fs::create_directories(long_portable); fs::create_directories(long_relocated / "config");
+    const fs::path long_disc = long_portable / L"MC3_\u65e5\u672c\u8a9e.iso";
+    SyntheticDisc(long_disc);
+    assert(app::portable::RememberDiscPath(long_portable, long_disc));
+    assert(app::portable::ReadDiscPath(long_portable) == long_disc);
+    assert(app::portable::OpenDisc(long_disc, abc_sha1, xbe, disc, error)); disc.reset();
+    fs::copy_file(long_portable / "config" / "disc-path.txt", long_relocated / "config" / "disc-path.txt");
+    assert(app::portable::ReadDiscPath(long_relocated) == long_relocated / long_disc.filename());
+    const fs::path external_unicode = root / L"\u5916\u90e8_\u65e5\u672c\u8a9e.iso";
+    assert(app::portable::RememberDiscPath(long_portable, external_unicode));
+    assert(app::portable::ReadDiscPath(long_portable) == external_unicode);
+    assert(long_portable.parent_path().parent_path() == extended_root);
+    assert(long_relocated.parent_path().parent_path() == extended_root);
+    fs::remove_all(long_portable.parent_path()); fs::remove_all(long_relocated.parent_path());
+
     // Exercise the actual shell-link writer without touching the user's real desktop.
     const auto exe = portable / "mc3.exe", shortcut = root / "test.lnk";
     assert(app::portable::WriteShortcut(exe, shortcut));

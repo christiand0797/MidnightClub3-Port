@@ -58,6 +58,7 @@ namespace {
 // game
 constexpr uint32_t kCustomDb = 0x557F04;          // car custom database pointer
 constexpr uint32_t kOperatorNew = 0x1B3B90;       // cdecl (size)
+constexpr uint32_t kOperatorDelete = 0x1B3C00;    // cdecl (allocation)
 constexpr uint32_t kRideNameTable = 0x471A54;     // char*[15]: rh_0, rh_100 .. rh_800, rh+600 .. rh+100
 constexpr uint32_t kWidthNameTable = 0x471ADC;    // char*[9]: tw_195 .. tw_355
 constexpr uint32_t kRimNameTable = 0x4719C8;      // char*[17]: rim_12 .. rim_28
@@ -124,8 +125,8 @@ float ExtendedTireWidth(unsigned index) {  // 9..37, 105 .. 755 mm around the ga
     return k < kExtraWidths ? float(kExtraWidthsMm[k]) / 1000.0f : 0.255f;
 }
 
-// Guest memory for the strings the game keeps pointers to (database names are copied, Flash array strings and string
-// table text are not). Taken once from the game's heap while the database is being filled, never freed.
+// Guest memory for retained database/Flash names and source labels. String table entries receive separately owned
+// copies: their destructor deletes each text pointer. Taken once while the database is filled, never freed.
 struct Arena {
     uint32_t base = 0, used = 0, size = 0;
     uint32_t Alloc(uint32_t n) {
@@ -150,6 +151,7 @@ struct Arena {
 
 struct Label {
     uint32_t key, text;  // guest ASCII key, guest UTF-16 text
+    uint32_t bytes;      // includes the UTF-16 terminator
 };
 std::vector<Label> g_labels;
 
@@ -173,7 +175,8 @@ const char* const kNumbers[] = {"One", "Two",    "Three",    "Four",     "Five",
                                 "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen"};
 
 uint32_t AddLabel(const std::string& key, const std::string& text, const std::string& desc) {
-    Label l{g_arena.Ascii(key), g_arena.Wide(text)}, d{g_arena.Ascii(key + "_desc"), g_arena.Wide(desc)};
+    Label l{g_arena.Ascii(key), g_arena.Wide(text), uint32_t(text.size() + 1) * 2};
+    Label d{g_arena.Ascii(key + "_desc"), g_arena.Wide(desc), uint32_t(desc.size() + 1) * 2};
     if (l.key && l.text) g_labels.push_back(l);
     if (d.key && d.text) g_labels.push_back(d);
     return l.key;
@@ -475,6 +478,7 @@ void PutLabels(X86Context& ctx) {
     const uint32_t which = R32(kStringTable + 0x28);
     const uint32_t table = which < 10 ? R32(kStringTable + 4 * which) : 0;
     if (!table || table == g_labelled_table) return;
+    bool complete = true;
     for (const Label& l : g_labels) {
         const uint32_t entry = ThisCall(ctx, kStringTable, kTextLookup, {l.key});
         if (!Plausible(entry) || !Committed(entry, 0x18)) continue;
@@ -497,9 +501,21 @@ void PutLabels(X86Context& ctx) {
             have.size() == key.size() && std::equal(have.begin(), have.end(), key.begin(), [](char a, char b) {
                 return std::tolower(uint8_t(a)) == std::tolower(uint8_t(b));
             });
-        if (placeholder) W32(entry + 8, l.text);
+        if (placeholder) {
+            // 0xEA950 deletes entry+8 on menu teardown (including the purchase/save transition). A pointer into
+            // g_arena is not a heap allocation and freeing it interprets UTF-16 label text as allocator metadata.
+            // Transfer an ordinary guest allocation to this entry, then release the placeholder it owned.
+            const uint32_t owned = CallGuest(ctx, kOperatorNew, {l.bytes});
+            if (!owned || !Committed(owned, l.bytes)) {
+                complete = false;
+                continue;
+            }
+            std::memcpy(kernel::HostPtr(owned), kernel::HostPtr(l.text), l.bytes);
+            W32(entry + 8, owned);
+            CallGuest(ctx, kOperatorDelete, {text});
+        }
     }
-    g_labelled_table = table;
+    if (complete) g_labelled_table = table;
 }
 
 bool ListFor(uint32_t type, const std::string& var) {
@@ -572,6 +588,14 @@ void ExtendList(X86Context& ctx, uint32_t garage) {
     Lengthen(ctx, vm, flash, g_price_var, price_len, n, false);
 }
 }  // namespace
+
+// String-table contents are destroyed when the menu changes. The heap may reuse the table address on the next
+// visit; invalidate the cache at its lifetime boundary so the rebuilt table receives its own label allocations.
+X86_EXTERN_FUNC(__imp__sub_000EA950);
+X86_FUNC(sub_000EA950) {
+    if (ctx.ecx == g_labelled_table) g_labelled_table = 0;
+    __imp__sub_000EA950(ctx, base);
+}
 
 // The database's part names, filled at start (and again when the game rebuilds it): the extra names go right after
 // the game's so their indices, which saves store, never move.

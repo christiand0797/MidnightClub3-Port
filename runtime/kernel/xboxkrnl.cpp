@@ -6,6 +6,7 @@
 
 #include "app/app.h"
 #include "kernel/crypto.h"
+#include "core/host_path.h"
 #include "kernel/exports.h"
 #include "xbe/xbe.h"
 
@@ -1187,7 +1188,7 @@ KERNEL_EXPORT(49, HalReturnToFirmware, 1) {
     if (a[0] == 2 && page) {
         std::string path = ReadCString(page + 8, 520);
         if (const char* exe = ImageExe(path)) {
-            if (FILE* f = std::fopen(g_launch_file.c_str(), "wb")) {
+            if (FILE* f = hostpath::Open(g_launch_file, "wb")) {
                 std::fwrite(HostPtr(page), 1, 0x1000, f);
                 std::fclose(f);
             }

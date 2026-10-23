@@ -31,6 +31,7 @@
 #include "app/app.h"
 #include "core/diag.h"
 #include "core/log.h"
+#include "core/host_path.h"
 #include "gpu/backend.h"
 #include "gpu/ext.h"
 #include "gpu/shaders.h"
@@ -3293,7 +3294,7 @@ void D3D12Backend::FinishCapture(const Surface& front) {
     fclose(cap_);
     cap_ = nullptr;
     cap_tex_.clear();
-    LOGI("d3d12: frame captured to %s", cap_dir_.string().c_str());
+    LOGI("d3d12: frame captured to %s", hostpath::Utf8(cap_dir_).c_str());
 }
 
 void D3D12Backend::StartCapture() {

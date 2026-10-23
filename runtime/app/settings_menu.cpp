@@ -440,7 +440,7 @@ void DrawSettingsMenu(float fps) {
     ImGui::Begin("Game settings", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
     ImGui::BeginChild("settings contents", {0, -ImGui::GetFrameHeightWithSpacing() - 8.0f}, false,
                       ImGuiWindowFlags_AlwaysVerticalScrollbar);
-    ImGui::PushItemWidth(-std::min(230.0f * ui, width * 0.38f));
+    ImGui::PushItemWidth(-std::min(300.0f * ui, width * 0.43f));
     if (ImGui::BeginTabBar("tabs", ImGuiTabBarFlags_FittingPolicyScroll)) {
         if (ImGui::BeginTabItem("Display", nullptr, g_display_requested ? ImGuiTabItemFlags_SetSelected : 0)) {
             g_display_requested = false;
@@ -469,8 +469,8 @@ void DrawSettingsMenu(float fps) {
                    "Additional offset on each side. Positive moves the wheel outward; negative tucks it inward.");
             Slider("Wheel offset rear", &s.tuning.offset_rear, -0.3f, 0.3f, "%+.3f m", nullptr);
             Check("Airbags follow selected ride height", &s.tuning.airbag_match_ride,
-                  "For a lowered axle the fully deflated position equals its chosen ride height. "
-                  "Fully inflated mirrors that amount above stock. Uses the installed airbag controls.");
+                  "Fully deflated matches the selected axle height H; fully inflated is H + 2 x abs(H). "
+                  "A lowered -.20 m setup travels to +.20 m. Uses the installed airbag controls.");
             ImGui::Separator();
             ImGui::TextDisabled("Suspension");
             Slider("Front spring stiffness", &s.tuning.spring_front, 0.25f, 3, "x%.2f", nullptr);

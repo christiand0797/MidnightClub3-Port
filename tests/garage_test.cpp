@@ -21,6 +21,58 @@ std::map<uint32_t, bool> players;
 unsigned stock_ride_calls = 0, stock_available_calls = 0, cfg_applied_calls = 0;
 unsigned member_calls = 0;
 constexpr uint32_t globals[] = {0x5014D0, 0x5014D8, 0x5014D4, 0x501410, 0x501420, 0x50142C};
+constexpr uint32_t string_table = 0x507E08;
+std::map<uint32_t, uint32_t> allocations;
+std::map<std::string, uint32_t> text_entries;
+uint32_t next_allocation = 0x300000;
+unsigned frees = 0;
+bool fail_label_allocation = false;
+
+uint32_t Allocate(uint32_t bytes, uint32_t reuse = 0) {
+    const uint32_t va = reuse ? reuse : next_allocation;
+    assert(bytes && uint64_t(va) + bytes < memory.size() && !allocations.contains(va));
+    if (!reuse) next_allocation += (bytes + 15) & ~15u;
+    allocations[va] = bytes;
+    std::memset(memory.data() + va, 0, bytes);
+    return va;
+}
+void Free(uint32_t va) {
+    if (!va) return;
+    // The native allocator crashed interpreting UTF-16 bytes before an interior pointer as heap metadata.
+    // Rejecting every non-base pointer makes that same ownership error deterministic in this fixture.
+    assert(allocations.contains(va) && "string-table teardown freed an interior or already freed pointer");
+    std::memset(memory.data() + va, 0xDD, allocations.at(va));
+    allocations.erase(va);
+    ++frees;
+}
+uint32_t OwnedWide(const std::string& text) {
+    const uint32_t va = Allocate(uint32_t(text.size() + 1) * 2);
+    for (size_t i = 0; i < text.size(); ++i) kernel::W16(va + uint32_t(i) * 2, uint8_t(text[i]));
+    return va;
+}
+std::string Wide(uint32_t va) {
+    std::string text;
+    for (uint32_t i = 0; i < 160 && kernel::R16(va + 2 * i); ++i) text += char(kernel::R16(va + 2 * i));
+    return text;
+}
+uint32_t TextTable(uint32_t reuse = 0) {
+    const uint32_t table = Allocate(8, reuse), buckets = Allocate(4);
+    kernel::W32(table, 1); kernel::W32(table + 4, buckets);
+    kernel::W32(string_table, table); kernel::W32(string_table + 0x28, 0);
+    text_entries.clear();
+    return table;
+}
+uint32_t TextEntry(const std::string& key) {
+    if (text_entries.contains(key)) return text_entries.at(key);
+    const uint32_t entry = Allocate(0x18), key_text = Allocate(uint32_t(key.size() + 1));
+    std::memcpy(memory.data() + key_text, key.c_str(), key.size() + 1);
+    kernel::W32(entry + 4, key_text | 1); // the real destructor frees owned keys whose low bit is set
+    kernel::W32(entry + 8, OwnedWide(key == "tw_375" ? "Localized width" : "!!" + key + "!!"));
+    const uint32_t buckets = kernel::R32(kernel::R32(string_table) + 4), node = Allocate(12);
+    kernel::W32(node + 4, entry); kernel::W32(node + 8, kernel::R32(buckets)); kernel::W32(buckets, node);
+    text_entries[key] = entry;
+    return entry;
+}
 
 void Pool(unsigned count) {
     constexpr uint32_t nodes = 0x125000;
@@ -77,7 +129,14 @@ std::string ReadCString(uint32_t va, size_t max) {
 }
 uint32_t CallGuest(X86Context& ctx, uint32_t fn, const uint32_t* a, size_t count) {
     using namespace fixture;
-    if (fn == 0x1B3B90) { assert(count == 1 && a[0] == 0x2000); return 0x30000; }
+    if (fn == 0x1B3B90) {
+        assert(count == 1);
+        if (a[0] == 0x2000 && !allocations.contains(0x30000)) return Allocate(a[0], 0x30000);
+        if (fail_label_allocation) { fail_label_allocation = false; return 0; }
+        return Allocate(a[0]);
+    }
+    if (fn == 0x1B3C00) { assert(count == 1); Free(a[0]); return 0; }
+    if (fn == 0x0EA750) { assert(ctx.ecx == string_table && count == 1); return TextEntry(ReadCString(a[0])); }
     if (fn == 0x274A80 || fn == 0x2749C0) {
         assert(ctx.ecx == db && count == 1);
         (fn == 0x274A80 ? rides : widths).push_back(a[0]); Database(); return 0;
@@ -139,6 +198,14 @@ X86_FUNC(__imp__sub_00121970) { ctx.ecx = 0; ctx.esp += 12; }
 X86_FUNC(__imp__sub_002CBDE0) { ctx.ecx = 0; ctx.esp += 4; }
 X86_FUNC(__imp__sub_001FAE10) { ctx.ecx = 0; ctx.esp += 4; }
 X86_FUNC(__imp__sub_000FFBA0) { ctx.esp += 4; }
+#ifndef MC3_TEST_REAL_STRING_DESTRUCTOR
+X86_FUNC(__imp__sub_000EA950) { ctx.esp += 4; }
+#else
+X86_FUNC(sub_001B3C00) { fixture::Free(kernel::R32(ctx.esp + 4)); ctx.esp += 4; }
+X86_FUNC(sub_000EC160) { assert(false && "unexpected pooled key in string-table fixture"); }
+X86_FUNC(sub_000EC600) { fixture::Free(kernel::R32(ctx.ecx + 4)); ctx.esp += 4; }
+X86_EXTERN_FUNC(FixtureGarageLeaveForSave);
+#endif
 #define DECLARE(name) X86_EXTERN_FUNC(sub_##name)
 DECLARE(00270C10); DECLARE(00270BE0); DECLARE(00272FC0); DECLARE(00270C00); DECLARE(00145DC0);
 DECLARE(001465E0); DECLARE(00121970); DECLARE(002CBDE0); DECLARE(001FAE10); DECLARE(000FFBA0);
@@ -210,6 +277,38 @@ int main() {
     assert(kernel::ReadCString(arrays["TiresWidthNames"].items.back().payload) == "tw_105");
     assert(arrays["TiresWidthPrice"].items.back().payload == 75);
     for (unsigned i = 0; i < 6; ++i) assert(kernel::R32(globals[i]) == 0x90000 + i * 16);
+
+#ifdef MC3_TEST_REAL_STRING_DESTRUCTOR
+    // Opening width/ride menus installs the added labels. Purchasing a rim then leaving for save destroys the
+    // same string tables through EA9F0 -> EA950 -> delete, the exact generated path in the native crash stack.
+    for (unsigned visit = 0, recycled_table = 0; visit < 3; ++visit) {
+        const uint32_t table = TextTable(recycled_table);
+        const unsigned freed_before = frees;
+        fail_label_allocation = visit == 1;
+        Call(sub_001465E0, garage, {0});
+        if (visit == 1) {
+            // A failed allocation leaves its original placeholder owned and retries on the next refresh.
+            assert(Wide(kernel::R32(text_entries.at("rh_900") + 8)) == "!!rh_900!!");
+            Call(sub_001465E0, garage, {0});
+        }
+        assert(Wide(kernel::R32(text_entries.at("rh_900") + 8)) == "9\"\"");
+        assert(Wide(kernel::R32(text_entries.at("tw_755_desc") + 8)) == "755 mm Tire Width");
+        assert(Wide(kernel::R32(text_entries.at("tw_375") + 8)) == "Localized width");
+        assert(frees > freed_before); // replaced placeholder allocations are released immediately
+        const size_t allocated = allocations.size();
+        const unsigned freed = frees;
+        Call(sub_001465E0, garage, {0});
+        assert(allocations.size() == allocated && frees == freed); // repeated menu refresh keeps one owner
+        for (const auto& [key, entry] : text_entries) {
+            const uint32_t text = kernel::R32(entry + 8);
+            assert(allocations.contains(text) && (text < 0x30000 || text >= 0x32000));
+        }
+        ctx = Call(FixtureGarageLeaveForSave, string_table);
+        assert(ctx.esp == stack + 4 && kernel::R32(string_table) == 0);
+        assert(allocations.size() == 1 && allocations.contains(0x30000)); // only the retained name arena survives
+        recycled_table = table; // catch a cache that mistakes a reused address for the previous table lifetime
+    }
+#endif
 
     // Known AI ownership takes precedence when a preview and a human's car share a CarCfg.
     constexpr uint32_t human = 0x140000, ai = 0x141000, human_sim = 0x160000, ai_sim = 0x161000, preview = 0x162000;

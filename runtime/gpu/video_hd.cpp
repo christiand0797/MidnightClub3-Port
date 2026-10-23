@@ -28,6 +28,7 @@
 
 #include "app/app.h"
 #include "core/log.h"
+#include "core/host_path.h"
 #include "gpu/texture.h"
 
 namespace fs = std::filesystem;
@@ -136,7 +137,7 @@ void DecodeMovie(const std::shared_ptr<Movie>& m, const fs::path& file) {
         return;
     VideoLayout layout;
     if (!check(ReadLayout(reader.Get(), video, layout) ? S_OK : E_INVALIDARG, "validating RGB32 layout")) return;
-    LOGR("movies: %s from %s, %ux%u at %.2f fps", m->name.c_str(), file.filename().string().c_str(),
+    LOGR("movies: %s from %s, %ux%u at %.2f fps", m->name.c_str(), hostpath::Utf8(file.filename()).c_str(),
          layout.width, layout.height, layout.fps);
 
     int64_t at = -1;  // the last frame decoded
@@ -242,7 +243,7 @@ bool Open(uint32_t header_va, const std::string& path) {
     fs::path file = HdFile(path);
     std::error_code ec;
     if (!fs::exists(file, ec)) {
-        LOGI("movies: %s has no HD file (%s)", path.c_str(), file.string().c_str());
+        LOGI("movies: %s has no HD file (%s)", path.c_str(), hostpath::Utf8(file).c_str());
         return false;
     }
     auto m = std::make_shared<Movie>();

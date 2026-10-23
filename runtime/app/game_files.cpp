@@ -17,6 +17,7 @@
 #include "app/portable.h"
 #include "app/portable_content.h"
 #include "core/log.h"
+#include "core/host_path.h"
 #include "image_symbols.h"
 #include "kernel/crypto.h"
 #include "kernel/disc.h"
@@ -87,7 +88,7 @@ bool FindGame(GameFiles& game) {
         std::unique_ptr<kernel::Disc> disc;
         std::vector<uint8_t> xbe;
         if (!portable::OpenDisc(path, kImageSha1, xbe, disc, error)) return false;
-        LOGR("Game: %s in %s, sha1 %s", IMAGE_XBE, path.string().c_str(), kImageSha1);
+        LOGR("Game: %s in %s, sha1 %s", IMAGE_XBE, hostpath::Utf8(path).c_str(), kImageSha1);
         game = {path.parent_path(), std::move(xbe)};
         kernel::MountDisc(std::move(disc));
         if (!portable::RememberDiscPath(exe_dir, path)) LOGW("setup: disc location could not be saved beside the executable");
@@ -127,7 +128,7 @@ bool FindGame(GameFiles& game) {
         std::vector<uint8_t> xbe;
         if (!assets.empty() && ReadHostFile(assets / IMAGE_XBE, xbe)) {
             if (Sha1(xbe) == kImageSha1) {
-                LOGR("Game: %s in %s, sha1 %s", IMAGE_XBE, assets.string().c_str(), kImageSha1);
+                LOGR("Game: %s in %s, sha1 %s", IMAGE_XBE, hostpath::Utf8(assets).c_str(), kImageSha1);
                 game = {assets, std::move(xbe)};
                 kernel::MountDisc(nullptr);
                 portable::EnsureDesktopShortcut();

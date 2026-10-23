@@ -7,6 +7,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 #include "app/app.h"
+#include "app/ui_font.h"
 #include "core/input.h"
 #include "core/log.h"
 
@@ -47,18 +48,31 @@ int main() {
     ImGui::CreateContext();
     auto& io = ImGui::GetIO();
     io.IniFilename = nullptr;
+    app::ConfigureUiFont(io);
     unsigned char* pixels; int fw, fh;
     io.Fonts->GetTexDataAsRGBA32(&pixels, &fw, &fh);
+    const ImFontGlyph* glyph = io.Fonts->Fonts[0]->FindGlyphNoFallback('M');
+    assert(glyph && glyph->Y1 - glyph->Y0 >= 12);
     auto& s = app::Get();
     s.width = 1280; s.height = 720;
     s.graphics.scene_width = 1920; s.graphics.scene_height = 1080;
     app::ToggleMenu();
     for (app::Mode display : {app::Mode{640, 480}, {1280, 720}, {3840, 2160}}) {
         Frame(float(display.width), float(display.height));
+        Frame(float(display.width), float(display.height));
         auto* window = ImGui::FindWindowByName("Game settings");
         assert(window && window->Pos.x >= 0 && window->Pos.y >= 0);
         assert(window->Pos.x + window->Size.x <= display.width + 1);
         assert(window->Pos.y + window->Size.y <= display.height + 1);
+        assert(io.FontDefault == nullptr || io.FontDefault->FontSize >= 20);
+        assert(io.Fonts->Fonts[0]->FontSize >= 20);
+        if (display.height == 480) {
+            bool scrollable_contents = false;
+            for (ImGuiWindow* child : GImGui->Windows)
+                if (child->ParentWindow == window && (child->Flags & ImGuiWindowFlags_ChildWindow) && child->ScrollMax.y > 0)
+                    scrollable_contents = true;
+            assert(scrollable_contents);
+        }
     }
     // Previewing a mode does not persist it, and cancelling restores only display settings.
     Preview({15360, 8640});

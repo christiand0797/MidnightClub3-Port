@@ -44,6 +44,7 @@ Settings& Get() {
     static Settings settings;
     return settings;
 }
+std::recursive_mutex& UiLock() { static std::recursive_mutex lock; return lock; }
 }  // namespace app
 
 namespace kernel {
@@ -278,6 +279,9 @@ int main(int argc, char** argv) {
     assert(Near(displacement(0xF7B7D), 0.04999f)); // the opposite side has its own ordinary wheel branch
     assert(Near(displacement(0xF7525, -0.1f), -0.45001f)); // signed low-arch envelope is valid
     assert(Near(displacement(0xF74D5), 0.0f));
+    settings.wheel_tuck = false;
+    assert(Near(displacement(0xF7525), .351f) && Near(displacement(0xF7B7D), .351f));
+    settings.wheel_tuck = true;
     assert(Near(displacement(0xAEAE1), 0.351f)); // physics/other callers get the real original displacement
     assert(Near(Float(runtimeWheel + 0x144), 0.001f)); // cosmetic correction never changes physical compression
 #endif
@@ -322,7 +326,8 @@ int main(int argc, char** argv) {
             PutFloat(w + 0x40, .5f); PutFloat(w + 0x44, .18f);
             PutFloat(w + 0x4C, .24f); PutFloat(w + 0x50, .23f);
             PutFloat(w + 0x58, base); PutFloat(w + 0x5C, base * .1f);
-            PutFloat(w + 0x34, base * .3f); PutFloat(w + 0x68, base * 2.0f); PutFloat(w, base * 1.5f);
+            PutFloat(w + 0x34, base * .3f); PutFloat(w + 0x68, base * 2.0f); PutFloat(w + 0x6C, base * 1.5f);
+            kernel::W32(w, 0x44D6C8); // the wheel tune's real +0 is its vtable, never a friction float
         }
         PutFloat(engine + 4, 600); PutFloat(engine + 8, 1000); PutFloat(engine + 0x0C, 6000);
     };
@@ -340,7 +345,8 @@ int main(int argc, char** argv) {
     assert(Near(Float(front + 0x5C), .125f) && Near(Float(rear + 0x5C), .1f));
     assert(Near(Float(front + 0x34), .6f) && Near(Float(rear + 0x34), .3f));
     assert(Near(Float(front + 0x68), 2.5f) && Near(Float(rear + 0x68), 3));
-    assert(Near(Float(front), 1.875f) && Near(Float(rear), 2.25f) && Near(Float(engine + 4), 1200));
+    assert(Near(Float(front + 0x6C), 1.875f) && Near(Float(rear + 0x6C), 2.25f) && Near(Float(engine + 4), 1200));
+    assert(kernel::R32(front) == 0x44D6C8 && kernel::R32(rear) == 0x44D6C8);
     assert(Near(Float(render + 0x12E8), -14.5f) && Near(Float(render + 0x12EC), -9));
     assert(Near(Float(render + 0x12D8), -.08f) && Near(Float(render + 0x12DC), -.01f));
     assert(Near(Float(cfg + 0x0C), -2.5f)); // original purchased save data is not rewritten
@@ -389,6 +395,17 @@ int main(int argc, char** argv) {
     settings.airbag_match_ride = false; PutFloat(bag + 0x20, 0);
     for (int n = 0; n < 120; ++n) move_bag(0, +1, -.35f);
     assert(Near(Float(bag + 0x20), -.1f)); // disabled: unmodified original endpoint
+    settings.airbag_match_ride = true;
+    for (unsigned w = 0; w != 4; ++w) {
+        const float baseline = w < 2 ? .125f : .275f;
+        PutFloat(bag + 0x20 + w * 4, -.35f); // a prior lower setting must not strand the mover below new low H
+        assert(Near(move_bag(w, +1, baseline), baseline));
+        for (int n = 0; n < 180; ++n) move_bag(w, -1, baseline);
+        assert(Near(Float(bag + 0x20 + w * 4), 3 * baseline));
+    }
+    PutFloat(bag + 0x20, 0);
+    for (int n = 0; n < 120; ++n) move_bag(0, -1, 0);
+    assert(Near(Float(bag + 0x20), .1f)); // neutral stock ride keeps retail travel, rather than collapsing to zero
 #endif
     TuningSetPlayerSim(sim, false); ApplyVehicleTuning();
     assert(Near(Float(front + 0x58), 1) && Near(Float(rear + 0x58), 2));
@@ -457,6 +474,11 @@ int main(int argc, char** argv) {
         assert(models > 0);
         std::cout << "Verified " << models << " original vehicle tunes, both axles, " << queries
                   << " opposite-side render queries; chassis-ground collision remains a live check.\n";
+    }
+#else
+    if (argc > 1) {
+        std::cerr << "Catalogue checks require a build with generated original wheel/airbag sources.\n";
+        return 2;
     }
 #endif
 }

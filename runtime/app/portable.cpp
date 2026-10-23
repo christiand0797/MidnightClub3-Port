@@ -15,13 +15,14 @@
 #include <iterator>
 
 #include "app/portable.h"
+#include "core/host_path.h"
 #include "core/log.h"
 #include "kernel/crypto.h"
 
 namespace app::portable {
 namespace {
 namespace fs = std::filesystem;
-constexpr auto kDiscPath = "config/disc-path.txt";
+constexpr auto kDiscPath = L"config\\disc-path.txt";
 
 std::string Hash(const std::vector<uint8_t>& data) {
     alignas(8) uint8_t context[128], digest[20];
@@ -47,7 +48,7 @@ private:
 }  // namespace
 
 fs::path ReadDiscPath(const fs::path& exe_dir) {
-    std::ifstream file(exe_dir / kDiscPath, std::ios::binary);
+    std::ifstream file(hostpath::Native(exe_dir / kDiscPath), std::ios::binary);
     if (!file) return {};
     std::string text;
     // Do not let a damaged configuration allocate an arbitrarily large buffer.
@@ -59,7 +60,7 @@ fs::path ReadDiscPath(const fs::path& exe_dir) {
     if (text.empty() || text.find_first_of(std::string("\0\r\n", 3)) != std::string::npos) return {};
     try {
         fs::path path{std::u8string(reinterpret_cast<const char8_t*>(text.data()), text.size())};
-        return (path.is_absolute() ? path : exe_dir / path).lexically_normal();
+        return hostpath::Native((path.is_absolute() ? path : exe_dir / path).lexically_normal());
     } catch (const fs::filesystem_error&) {
         return {};
     }
@@ -67,15 +68,15 @@ fs::path ReadDiscPath(const fs::path& exe_dir) {
 
 bool RememberDiscPath(const fs::path& exe_dir, const fs::path& disc_path) {
     std::error_code ec;
-    const auto absolute = fs::absolute(disc_path, ec).lexically_normal();
+    const auto absolute = hostpath::Native(fs::absolute(disc_path, ec).lexically_normal());
     if (ec) return false;
-    const auto base = fs::absolute(exe_dir, ec).lexically_normal();
+    const auto base = hostpath::Native(fs::absolute(exe_dir, ec).lexically_normal());
     if (ec) return false;
     auto stored = absolute.lexically_relative(base);
     // Keep only paths inside the portable folder relative: a relocated external drive needs picking again.
     if (stored.empty() || *stored.begin() == L"..") stored = absolute;
     const auto bytes = stored.u8string();
-    const auto destination = exe_dir / kDiscPath;
+    const auto destination = hostpath::Native(exe_dir / kDiscPath);
     fs::create_directories(destination.parent_path(), ec);
     if (ec) return false;
     const fs::path temporary = destination.wstring() + L".tmp." + std::to_wstring(GetCurrentProcessId());
@@ -160,9 +161,9 @@ void EnsureDesktopShortcut() {
     std::vector<wchar_t> filename(32768);
     const DWORD size = GetModuleFileNameW(nullptr, filename.data(), DWORD(filename.size()));
     if (!size || size >= filename.size()) return;
-    const fs::path exe(filename.data());
+    const fs::path exe = hostpath::Native(fs::path(filename.data()));
     // The marker belongs to this extracted location. Moving the folder recreates the shortcut on next launch.
-    const auto marker = exe.parent_path() / "config" / "desktop-shortcut.txt";
+    const auto marker = hostpath::Native(exe.parent_path() / "config" / "desktop-shortcut.txt");
     const auto expected = exe.u8string();
     std::ifstream previous(marker, std::ios::binary);
     const std::string previous_path{std::istreambuf_iterator<char>(previous), {}};

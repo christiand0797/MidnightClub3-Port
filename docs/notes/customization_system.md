@@ -482,7 +482,7 @@ The wheel parameter block layout is the 0xA6DA0 visitor:
 
 | Offset | Field |
 |---|---|
-| +0x00 | SlidingFric |
+| +0x00 | vtable pointer (correction checked against constructor and 0xA6DA0 visitor, 2026-10-23) |
 | +0x04 | radius (from the CarCfg) |
 | +0x08 | width (from the CarCfg) |
 | +0x0C | TireDispLimitLat |
@@ -509,6 +509,7 @@ The wheel parameter block layout is the 0xA6DA0 visitor:
 | +0x60 | SuspensionDampFactor |
 | +0x64 | OptimumSlipPercent |
 | +0x68 | StaticFric |
+| +0x6C | SlidingFric (registered at 0xA6FBC..0xA6FC9) |
 
 vehSim (0xA3CA0):
 

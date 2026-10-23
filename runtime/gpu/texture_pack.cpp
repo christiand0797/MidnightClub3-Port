@@ -23,6 +23,7 @@
 
 #include "app/app.h"
 #include "core/log.h"
+#include "core/host_path.h"
 #include "gpu/shaders.h"
 
 namespace fs = std::filesystem;
@@ -51,15 +52,15 @@ void Index() {
     fs::create_directories(Root() / "dump", ec);
     for (auto it = fs::recursive_directory_iterator(dir, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
         if (!it->is_regular_file()) continue;
-        std::string ext = it->path().extension().string();
+        std::string ext = hostpath::Utf8(it->path().extension());
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         if (ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".bmp") continue;
-        std::string name = it->path().stem().string();
+        std::string name = hostpath::Utf8(it->path().stem());
         if (name.size() < 16) continue;
         uint64_t h = 0;
         if (std::sscanf(name.c_str(), "%16llx", (unsigned long long*)&h) == 1) g_index[h] = it->path();
     }
-    LOGR("textures: %zu replacements in %s", g_index.size(), dir.string().c_str());
+    LOGR("textures: %zu replacements in %s", g_index.size(), hostpath::Utf8(dir).c_str());
 }
 
 IWICImagingFactory* Wic() {
@@ -226,11 +227,11 @@ std::unique_ptr<Image> Find(uint64_t hash) {
         path = at->second;
     }
     std::unique_ptr<Image> img = Load(path);
-    if (!img) LOGE("textures: could not read %s", path.string().c_str());
+    if (!img) LOGE("textures: could not read %s", hostpath::Utf8(path).c_str());
     else {
         std::lock_guard<std::mutex> lock(g_lock);
         if (g_used_hashes.insert(hash).second)
-            LOGI("textures: %016llX from %s, %ux%u", (unsigned long long)hash, path.filename().string().c_str(),
+            LOGI("textures: %016llX from %s, %ux%u", (unsigned long long)hash, hostpath::Utf8(path.filename()).c_str(),
                  img->width, img->height);
     }
     return img;

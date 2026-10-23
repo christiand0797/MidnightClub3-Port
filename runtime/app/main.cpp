@@ -20,7 +20,9 @@
 #include <backends/imgui_impl_win32.h>
 
 #include "app/app.h"
+#include "app/ui_font.h"
 #include "core/input.h"
+#include "core/host_path.h"
 #include "core/log.h"
 #include "gpu/backend.h"
 #include "image_symbols.h"
@@ -242,9 +244,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 }  // namespace
 
 std::filesystem::path ExeDir() {
-    wchar_t p[MAX_PATH];
-    GetModuleFileNameW(nullptr, p, MAX_PATH);
-    return std::filesystem::path(p).parent_path();
+    return hostpath::ExecutablePath().parent_path();
 }
 
 int Instance() {
@@ -292,7 +292,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     bool relaunched = std::wcsstr(GetCommandLineW(), L"--relaunched") != nullptr;
     std::string log = app::kGame.log;
     if (app::Instance() > 1) log += "-" + std::to_string(app::Instance());
-    logx::Init((app::ExeDir() / "logs").string(), log, relaunched);
+    logx::Init(app::ExeDir() / "logs", log, relaunched);
     app::Load();
     if (app::kGame.init) app::kGame.init();
     if (relaunched && !logx::kVerbose) LOGR("Relaunched: %s", IMAGE_XBE);
@@ -325,6 +325,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
+    app::ConfigureUiFont(io);
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
     ImGui_ImplWin32_Init(app::g_hwnd);
 
@@ -333,7 +334,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     std::wstring hdd = app::Instance() > 1 ? L"hdd" + std::to_wstring(app::Instance()) : L"hdd";
     if (app::Instance())
         SetWindowTextW(app::g_hwnd, (std::wstring(app::kGame.title) + L" [" + std::to_wstring(app::Instance()) + L"]").c_str());
-    if (!kernel::Boot(std::move(game.xbe), IMAGE_XBE, game.dir.string(), (app::ExeDir() / hdd).string())) {
+    if (!kernel::Boot(std::move(game.xbe), IMAGE_XBE, game.dir, app::ExeDir() / hdd)) {
         MessageBoxW(app::g_hwnd, L"The game failed to start, see the log in the logs folder.", app::kGame.short_title,
                     MB_ICONERROR);
         return 1;

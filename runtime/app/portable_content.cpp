@@ -13,6 +13,7 @@
 #include <charconv>
 #include <cwctype>
 #include <fstream>
+#include <functional>
 #include <limits>
 #include <set>
 #include <sstream>
@@ -28,6 +29,7 @@ namespace fs = std::filesystem;
 constexpr uint64_t kChunkLimit = 1900ull << 20;
 constexpr uint64_t kArchiveLimit = 512ull << 30;
 constexpr uint64_t kMetadataLimit = 1ull << 20;
+constexpr uint64_t kInventoryLimit = 64ull << 20;
 
 void Require(bool ok, const char* message) { if (!ok) throw std::runtime_error(message); }
 std::string Hex(const uint8_t* data, size_t count) {
@@ -60,22 +62,28 @@ private:
     BCRYPT_ALG_HANDLE algorithm_ = nullptr;
     BCRYPT_HASH_HANDLE hash_ = nullptr;
 };
-std::string FileHash(const fs::path& path) {
+std::string FileHash(const fs::path& path, const std::function<void(uint64_t)>& progress = {}) {
     std::ifstream file(path, std::ios::binary);
     Require(bool(file), "Cannot read a content file.");
     std::vector<char> buffer(1 << 20);
     Hash hash;
-    while (file) { file.read(buffer.data(), buffer.size()); hash.Add(buffer.data(), size_t(file.gcount())); }
+    uint64_t read = 0;
+    while (file) {
+        file.read(buffer.data(), buffer.size()); hash.Add(buffer.data(), size_t(file.gcount()));
+        read += uint64_t(file.gcount());
+        if (progress) progress(read);
+    }
     Require(file.eof(), "Content file read failed.");
     return hash.Finish();
 }
-bool Matches(const fs::path& path, uint64_t size, std::string_view hash) {
+bool Matches(const fs::path& path, uint64_t size, std::string_view hash,
+             const std::function<void(uint64_t)>& progress = {}) {
     std::error_code ec;
-    return fs::is_regular_file(path, ec) && fs::file_size(path, ec) == size && !ec && FileHash(path) == hash;
+    return fs::is_regular_file(path, ec) && fs::file_size(path, ec) == size && !ec && FileHash(path, progress) == hash;
 }
-std::string Metadata(const fs::path& path) {
+std::string Metadata(const fs::path& path, uint64_t limit = kMetadataLimit) {
     std::error_code ec;
-    Require(fs::file_size(path, ec) <= kMetadataLimit && !ec, "Missing or oversized content metadata.");
+    Require(fs::file_size(path, ec) <= limit && !ec, "Missing or oversized content metadata.");
     std::ifstream file(path, std::ios::binary);
     Require(bool(file), "Cannot open content metadata.");
     return std::string(std::istreambuf_iterator<char>(file), {});
@@ -95,6 +103,67 @@ void NoLink(const fs::path& path) {
 }
 struct Chunk { std::string name, hash; uint64_t size; };
 struct Manifest { uint64_t size = 0; std::string hash; std::vector<Chunk> chunks; };
+struct ContentFile { std::string name, hash; uint64_t size; };
+
+class InstallLock {
+public:
+    explicit InstallLock(const fs::path& base) {
+        const auto directory = fs::path(base).make_preferred();
+        HANDLE folder = CreateFileW(directory.c_str(), FILE_READ_ATTRIBUTES,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                                    FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+        Require(folder != INVALID_HANDLE_VALUE, "Cannot identify the content installation folder.");
+        BY_HANDLE_FILE_INFORMATION identity{};
+        const bool identified = GetFileInformationByHandle(folder, &identity) != FALSE;
+        CloseHandle(folder);
+        Require(identified, "Cannot identify the content installation folder.");
+        // Directory identity unifies normal, extended-length, differently cased and short-name path aliases.
+        const uint32_t id[] = {identity.dwVolumeSerialNumber, identity.nFileIndexHigh, identity.nFileIndexLow};
+        Hash key; key.Add(id, sizeof(id));
+        const std::string digest = key.Finish();
+        const std::wstring name = L"Local\\MC3ContentSetup_" + std::wstring(digest.begin(), digest.end());
+        mutex_ = CreateMutexW(nullptr, FALSE, name.c_str());
+        Require(mutex_ != nullptr, "Cannot protect the content installation folder.");
+        const DWORD status = WaitForSingleObject(mutex_, 0);
+        if (status != WAIT_OBJECT_0 && status != WAIT_ABANDONED) {
+            CloseHandle(mutex_); mutex_ = nullptr;
+            throw std::runtime_error("Content setup is already running for this folder. Let that window finish, then run mc3.exe again.");
+        }
+    }
+    ~InstallLock() { if (mutex_) { ReleaseMutex(mutex_); CloseHandle(mutex_); } }
+    InstallLock(const InstallLock&) = delete;
+    InstallLock& operator=(const InstallLock&) = delete;
+private:
+    HANDLE mutex_ = nullptr;
+};
+
+// Keep the authenticated chunk objects unchanged between verification and publication, including when the
+// offline files are hard-linked into the cache. Denying write/delete sharing also prevents a second process
+// from replacing a chunk between passes. File names alone are not a stable archive snapshot.
+class ChunkLocks {
+public:
+    ChunkLocks(const fs::path& cache, const Manifest& manifest) {
+        try {
+            for (const auto& chunk : manifest.chunks) {
+                const fs::path path = cache / chunk.name;
+                NoLink(path);
+                HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                                          FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+                Require(file != INVALID_HANDLE_VALUE, "Cannot lock a content chunk for verification.");
+                files_.push_back(file);
+                LARGE_INTEGER size{};
+                Require(GetFileSizeEx(file, &size) && size.QuadPart >= 0 && uint64_t(size.QuadPart) == chunk.size,
+                        "Content chunk size does not match its manifest.");
+            }
+        } catch (...) { Close(); throw; }
+    }
+    ~ChunkLocks() { Close(); }
+    ChunkLocks(const ChunkLocks&) = delete;
+    ChunkLocks& operator=(const ChunkLocks&) = delete;
+private:
+    void Close() { for (HANDLE file : files_) CloseHandle(file); files_.clear(); }
+    std::vector<HANDLE> files_;
+};
 Manifest ParseManifest(const std::string& text) {
     std::istringstream input(text);
     std::string line;
@@ -160,7 +229,9 @@ struct HttpHandle {
 void Download(const std::wstring& url, const fs::path& path, uint64_t size, std::string_view hash, Progress& progress) {
     const fs::path partial = path.wstring() + L".part";
     NoLink(path); NoLink(partial);
-    if (Matches(path, size, hash)) return;
+    if (Matches(path, size, hash, [&](uint64_t bytes) {
+            progress.Update(L"Verifying " + path.filename().wstring() + L"\n" + std::to_wstring(bytes >> 20) + L" MiB");
+        })) return;
     std::error_code ec;
     uint64_t resume = fs::is_regular_file(partial, ec) ? fs::file_size(partial, ec) : 0;
     if (ec || resume >= size) { fs::remove(partial, ec); resume = 0; }
@@ -207,7 +278,9 @@ void Download(const std::wstring& url, const fs::path& path, uint64_t size, std:
     }
     output.flush(); Require(bool(output), "Content download flush failed."); output.close();
     Require(received == size, "Content download was incomplete. Run mc3.exe again to resume.");
-    if (FileHash(partial) != hash) { fs::remove(partial, ec); throw std::runtime_error("Content download checksum failed. Run mc3.exe again to retry."); }
+    if (FileHash(partial, [&](uint64_t bytes) {
+            progress.Update(L"Verifying download " + path.filename().wstring() + L"\n" + std::to_wstring(bytes >> 20) + L" MiB");
+        }) != hash) { fs::remove(partial, ec); throw std::runtime_error("Content download checksum failed. Run mc3.exe again to retry."); }
     Require(MoveFileExW(partial.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH), "Cannot publish downloaded content chunk.");
 }
 
@@ -236,7 +309,8 @@ private:
 };
 fs::path ContentPath(const fs::path& base, const std::string& name) {
     Require(!name.empty() && name.size() <= 4096 && name.find("//") == std::string::npos && name.find_first_of(std::string("\0\\:\t\r\n<>\"|?*", 13)) == std::string::npos, "Unsafe content path.");
-    const fs::path relative{std::u8string(reinterpret_cast<const char8_t*>(name.data()), name.size())};
+    fs::path relative{std::u8string(reinterpret_cast<const char8_t*>(name.data()), name.size())};
+    relative.make_preferred(); // extended-length Windows paths require native backslashes, including inside names
     Require(!relative.is_absolute() && !relative.has_root_path(), "Absolute content paths are forbidden.");
     for (const auto& part : relative) {
         Require(part != L".." && part != L"." && !part.empty() && part.wstring().back() != L'.' && part.wstring().back() != L' ', "Unsafe content path component.");
@@ -256,7 +330,8 @@ fs::path ContentPath(const fs::path& base, const std::string& name) {
     }
     return base / relative;
 }
-void Extract(const fs::path& base, const fs::path& cache, const Manifest& manifest, Progress& progress) {
+std::vector<ContentFile> ReadArchive(const fs::path& base, const fs::path& cache, const Manifest& manifest,
+                                   Progress& progress, bool publish) {
     Archive archive(cache, manifest);
     char magic[8]; archive.Read(magic, sizeof(magic));
     Require(std::string_view(magic, 8) == "MC3C0001", "Unknown content archive format.");
@@ -265,38 +340,141 @@ void Extract(const fs::path& base, const fs::path& cache, const Manifest& manife
     std::vector<char> buffer(1 << 20);
     std::error_code ec;
     std::set<std::wstring> paths;
+    std::vector<ContentFile> inventory;
+    inventory.reserve(count);
+    uint64_t inventory_bytes = 128;
     for (uint32_t index = 0; index < count; index++) {
         const uint32_t path_size = archive.Value<uint32_t>(); const uint64_t size = archive.Value<uint64_t>();
         uint8_t digest[32]; archive.Read(digest, sizeof(digest));
         Require(path_size && path_size <= 4096 && size <= kArchiveLimit, "Invalid content file header.");
+        inventory_bytes += path_size + 100ull;
+        Require(inventory_bytes <= kInventoryLimit, "Installed content inventory is too large.");
         std::string name(path_size, '\0'); archive.Read(name.data(), name.size());
         const fs::path target = ContentPath(base, name);
         auto key = target.wstring();
         std::transform(key.begin(), key.end(), key.begin(), [](wchar_t c) { return wchar_t(std::towlower(c)); });
         Require(paths.insert(key).second, "Duplicate installed content path.");
-        progress.Update(L"Installing " + target.filename().wstring() + L"\nFile " + std::to_wstring(index + 1) + L" / " + std::to_wstring(count));
+        const std::wstring status = std::wstring(publish ? L"Installing " : L"Verifying archive: ") +
+            target.filename().wstring() + L"\nFile " + std::to_wstring(index + 1) + L" / " + std::to_wstring(count);
+        progress.Update(status);
         const std::string hash = Hex(digest, sizeof(digest));
-        const bool exists = Matches(target, size, hash);
-        fs::create_directories(target.parent_path());
+        const bool exists = publish && Matches(target, size, hash, [&](uint64_t) { progress.Update(status); });
+        if (publish) fs::create_directories(target.parent_path());
         const fs::path temporary = target.wstring() + L".installing";
         NoLink(temporary);
         std::ofstream output;
-        if (!exists) { output.open(temporary, std::ios::binary | std::ios::trunc); Require(bool(output), "Cannot create installed content file."); }
+        if (publish && !exists) { output.open(temporary, std::ios::binary | std::ios::trunc); Require(bool(output), "Cannot create installed content file."); }
         Hash file_hash;
         for (uint64_t left = size; left;) {
             const auto bytes = size_t(std::min<uint64_t>(buffer.size(), left));
             archive.Read(buffer.data(), bytes); file_hash.Add(buffer.data(), bytes);
-            if (!exists) { output.write(buffer.data(), bytes); Require(bool(output), "Content installation write failed (check free disk space)."); }
+            if (publish && !exists) { output.write(buffer.data(), bytes); Require(bool(output), "Content installation write failed (check free disk space)."); }
             left -= bytes;
-            progress.Update(L"Installing " + target.filename().wstring() + L"\nFile " + std::to_wstring(index + 1) + L" / " + std::to_wstring(count));
+            progress.Update(status);
         }
-        if (file_hash.Finish() != hash) { output.close(); fs::remove(temporary, ec); throw std::runtime_error("Installed content checksum failed."); }
-        if (!exists) {
+        if (file_hash.Finish() != hash) {
+            output.close();
+            if (publish) fs::remove(temporary, ec);
+            throw std::runtime_error("Content archive file checksum failed.");
+        }
+        if (publish && !exists) {
             output.flush(); Require(bool(output), "Content installation flush failed."); output.close();
             Require(MoveFileExW(temporary.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH), "Cannot publish an installed content file.");
+        } else if (publish) {
+            fs::remove(temporary, ec); // owned partial from an earlier interrupted installation
         }
+        inventory.push_back({std::move(name), hash, size});
     }
     archive.Finish();
+    return inventory;
+}
+
+std::vector<ContentFile> Extract(const fs::path& base, const fs::path& cache, const Manifest& manifest, Progress& progress) {
+    ChunkLocks locked(cache, manifest);
+    // Authenticate the complete archive and every file/header/path before creating any destination file or
+    // directory. A wrong whole-archive hash or a malformed later entry cannot replace an earlier working file.
+    auto inventory = ReadArchive(base, cache, manifest, progress, false);
+    ReadArchive(base, cache, manifest, progress, true);
+    return inventory;
+}
+
+std::string InventoryText(const std::vector<ContentFile>& files, std::string_view manifest_hash) {
+    std::ostringstream text;
+    text << "MC3-CONTENT-INVENTORY\t1\nmanifest\t" << manifest_hash << '\n';
+    for (const auto& file : files) text << "file\t" << file.size << '\t' << file.hash << '\t' << file.name << '\n';
+    auto result = text.str();
+    Require(result.size() <= kInventoryLimit, "Installed content inventory is too large.");
+    return result;
+}
+std::string TextHash(std::string_view text) { Hash hash; hash.Add(text.data(), text.size()); return hash.Finish(); }
+
+std::vector<ContentFile> ParseInventory(const fs::path& base, const std::string& text, std::string_view manifest_hash) {
+    std::istringstream input(text);
+    std::string line;
+    Require(bool(std::getline(input, line)) && line == "MC3-CONTENT-INVENTORY\t1", "Unknown installed inventory format.");
+    Require(bool(std::getline(input, line)) && line == "manifest\t" + std::string(manifest_hash), "Installed inventory is for another content release.");
+    std::vector<ContentFile> files;
+    std::set<std::wstring> paths;
+    while (std::getline(input, line)) {
+        const auto fields = Fields(line);
+        Require(fields.size() == 4 && fields[0] == "file" && ValidHash(fields[2]) && files.size() < 200000,
+                "Invalid installed inventory record.");
+        const uint64_t size = Number(fields[1]); Require(size <= kArchiveLimit, "Installed inventory file is too large.");
+        auto key = ContentPath(base, fields[3]).wstring();
+        std::transform(key.begin(), key.end(), key.begin(), [](wchar_t c) { return wchar_t(std::towlower(c)); });
+        Require(paths.insert(key).second, "Duplicate installed inventory path.");
+        files.push_back({fields[3], fields[2], size});
+    }
+    Require(!files.empty(), "Installed inventory is empty.");
+    return files;
+}
+
+bool InstalledMatches(const fs::path& base, std::string_view manifest_hash, Progress& progress) {
+    const fs::path marker = base / "config" / "content-installed.txt", inventory = base / "config" / "content-inventory.tsv";
+    std::vector<ContentFile> files;
+    try {
+        NoLink(marker); NoLink(inventory);
+        const auto marker_text = Metadata(marker), inventory_text = Metadata(inventory, kInventoryLimit);
+        const std::string expected = "MC3-CONTENT-INSTALLED\t2\nmanifest\t" + std::string(manifest_hash) +
+                                     "\ninventory\t" + TextHash(inventory_text) + "\n";
+        if (marker_text != expected) return false;
+        files = ParseInventory(base, inventory_text, manifest_hash);
+    } catch (const std::exception&) {
+        return false; // absent, legacy or damaged metadata: reconstruct it from the pinned archive
+    }
+    for (size_t i = 0; i < files.size(); ++i) {
+        const auto& file = files[i];
+        const fs::path target = ContentPath(base, file.name);
+        const std::wstring status = L"Checking installed content: " + target.filename().wstring() + L"\nFile " +
+                                    std::to_wstring(i + 1) + L" / " + std::to_wstring(files.size());
+        progress.Update(status);
+        // Hash every file, including equal-sized files. A surviving ISO and marker do not establish that the
+        // videos/textures still exist or contain their expected bytes.
+        if (!Matches(target, file.size, file.hash, [&](uint64_t) { progress.Update(status); })) return false;
+    }
+    return true;
+}
+
+void PublishMetadata(const fs::path& target, std::string_view text) {
+    const fs::path temporary = target.wstring() + L".installing";
+    NoLink(target); NoLink(temporary);
+    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+    Require(bool(output), "Cannot create content setup metadata.");
+    output.write(text.data(), text.size()); output.flush();
+    Require(bool(output), "Cannot save content setup metadata."); output.close();
+    Require(MoveFileExW(temporary.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH),
+            "Cannot publish content setup metadata.");
+}
+
+void CleanupPartials(const fs::path& base, const fs::path& cache, const Manifest& manifest) {
+    std::error_code ec;
+    for (const auto& chunk : manifest.chunks) {
+        for (const fs::path& path : {base / (chunk.name + ".part"), cache / (chunk.name + ".part")}) {
+            NoLink(path); fs::remove(path, ec);
+        }
+    }
+    const fs::path manifest_partial = base / "content-manifest.tsv.part";
+    NoLink(manifest_partial); fs::remove(manifest_partial, ec);
 }
 }  // namespace
 
@@ -305,6 +483,7 @@ bool InstallBundledContent(const fs::path& exe_dir, std::string& error) {
     const fs::path source = exe_dir / "content-source.txt";
     if (!fs::is_regular_file(source, ec)) return true;
     try {
+        InstallLock install_lock(exe_dir);
         std::istringstream descriptor(Metadata(source));
         std::string line, url, hash; uint64_t size = 0;
         Require(bool(std::getline(descriptor, line)) && line == "MC3-CONTENT-SOURCE\t1", "Unknown content source format.");
@@ -317,23 +496,31 @@ bool InstallBundledContent(const fs::path& exe_dir, std::string& error) {
             else throw std::runtime_error("Unknown content source record.");
         }
         Require(url.starts_with("https://github.com/") && url.find("/releases/download/") != std::string::npos && url.find_first_of("\r\n\t?#") == std::string::npos && ValidHash(hash) && size && size <= kMetadataLimit, "Invalid pinned content release.");
-        const fs::path marker = exe_dir / "config/content-installed.txt";
-        if (fs::is_regular_file(marker, ec) && Metadata(marker) == hash && fs::is_regular_file(exe_dir / "game/game.iso", ec)) return true;
+        const fs::path marker = exe_dir / "config" / "content-installed.txt";
+        const fs::path inventory_path = exe_dir / "config" / "content-inventory.tsv";
+        const fs::path cache = exe_dir / ".content-cache";
+        NoLink(marker.parent_path()); NoLink(marker); NoLink(inventory_path); NoLink(cache);
         Progress progress;
         const fs::path manifest_path = exe_dir / "content-manifest.tsv";
+        if (InstalledMatches(exe_dir, hash, progress)) {
+            if (Matches(manifest_path, size, hash)) CleanupPartials(exe_dir, cache, ParseManifest(Metadata(manifest_path)));
+            else { NoLink(exe_dir / "content-manifest.tsv.part"); fs::remove(exe_dir / "content-manifest.tsv.part", ec); }
+            return true;
+        }
         Download(std::wstring(url.begin(), url.end()), manifest_path, size, hash, progress);
         const auto manifest = ParseManifest(Metadata(manifest_path));
-        const fs::path cache = exe_dir / ".content-cache";
-        NoLink(cache);
         fs::create_directories(cache);
         const auto prefix = url.substr(0, url.rfind('/') + 1);
         for (const auto& chunk : manifest.chunks) {
             const fs::path local = exe_dir / chunk.name;
             const fs::path cached = cache / chunk.name;
             NoLink(local); NoLink(cached);
-            if (Matches(local, chunk.size, chunk.hash)) {
+            auto check_progress = [&](uint64_t bytes) {
+                progress.Update(L"Checking content chunk " + local.filename().wstring() + L"\n" + std::to_wstring(bytes >> 20) + L" MiB");
+            };
+            if (Matches(local, chunk.size, chunk.hash, check_progress)) {
                 // Offline parts beside the exe are read in place through a cache hard link, or copied across volumes.
-                if (!Matches(cached, chunk.size, chunk.hash)) {
+                if (!Matches(cached, chunk.size, chunk.hash, check_progress)) {
                     fs::remove(cached, ec); fs::create_hard_link(local, cached, ec);
                     if (ec) { ec.clear(); fs::copy_file(local, cached, fs::copy_options::overwrite_existing, ec); Require(!ec, "Cannot stage offline content chunk."); }
                 }
@@ -342,9 +529,11 @@ bool InstallBundledContent(const fs::path& exe_dir, std::string& error) {
                 Download(std::wstring(chunk_url.begin(), chunk_url.end()), cached, chunk.size, chunk.hash, progress);
             }
         }
-        Extract(exe_dir, cache, manifest, progress);
+        const auto inventory = InventoryText(Extract(exe_dir, cache, manifest, progress), hash);
         fs::create_directories(marker.parent_path());
-        std::ofstream done(marker, std::ios::binary | std::ios::trunc); done << hash; done.flush(); Require(bool(done), "Cannot save content setup completion."); done.close();
+        PublishMetadata(inventory_path, inventory);
+        PublishMetadata(marker, "MC3-CONTENT-INSTALLED\t2\nmanifest\t" + hash + "\ninventory\t" + TextHash(inventory) + "\n");
+        CleanupPartials(exe_dir, cache, manifest);
         for (const auto& chunk : manifest.chunks) fs::remove(cache / chunk.name, ec);
         fs::remove(cache, ec);
         LOGR("setup: verified content installed (%zu chunks, %llu bytes)", manifest.chunks.size(), (unsigned long long)manifest.size);

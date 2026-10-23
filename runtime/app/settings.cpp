@@ -17,6 +17,7 @@
 
 #include "app/app.h"
 #include "core/log.h"
+#include "core/host_path.h"
 
 namespace app {
 
@@ -100,7 +101,7 @@ void ClampDeadzones(Settings& s) {
 void LoadEnhancements(Settings& s, const toml::table* graphics_keys) {
     toml::table t;
     try {
-        t = toml::parse_file(EnhancementsFile().string());
+        t = toml::parse_file(EnhancementsFile().wstring());
     } catch (...) {
         return;  // optional
     }
@@ -135,7 +136,7 @@ void Load() {
     Settings& s = Get();
     toml::table t;
     try {
-        t = toml::parse_file(File().string());
+        t = toml::parse_file(File().wstring());
     } catch (...) {
         // none yet (first run) or unreadable: the defaults, and the game's load hook and the enhancements file
         // still run
@@ -237,7 +238,7 @@ void Save() {
 
 void LogSettings() {
     std::ostringstream text;
-    text << Table() << "\n" << EnhancementsFile().filename().string() << ":\n" << EnhancementsTable();
+    text << Table() << "\n" << hostpath::Utf8(EnhancementsFile().filename()) << ":\n" << EnhancementsTable();
     std::istringstream lines(text.str());
     LOGR("Settings:");
     for (std::string line; std::getline(lines, line);)

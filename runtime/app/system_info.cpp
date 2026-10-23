@@ -17,6 +17,7 @@
 
 #include "app/app.h"
 #include "core/log.h"
+#include "core/host_path.h"
 #include "image_symbols.h"
 
 #pragma comment(lib, "advapi32.lib")
@@ -75,7 +76,7 @@ void LogSystem() {
     char date[32] = {};
     std::strftime(date, sizeof(date), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
     LOGR("%ls (%s), %s", kGame.title, IMAGE_XBE, date);
-    LOGR("Path: %ls", ExeDir().c_str());
+    LOGR("Path: %s", hostpath::Utf8(ExeDir()).c_str());
     LOGR("OS: %s", OsVersion().c_str());
     SYSTEM_INFO si{};
     GetNativeSystemInfo(&si);

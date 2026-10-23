@@ -51,6 +51,13 @@ constexpr uint32_t kWheelSuspensionLimit = 0x4C, kWheelTravelExtent = 0x44;
 constexpr float kFreeLowering = 0.15f;
 constexpr uint32_t kModelTireDiameterFront = 0x14, kModelTireDiameterRear = 0x18, kModelTireExtentFront = 0x1C;
 
+app::Settings::Tuning SettingsSnapshot() {
+    // ImGui edits the settings on the render thread. Take one consistent copy before the tuning lock; never
+    // hold g_lock while waiting for UiLock, and never let a slider race a physics read of the same float.
+    std::lock_guard ui(app::UiLock());
+    return app::Get().tuning;
+}
+
 float F32(uint32_t va) {
     float f;
     uint32_t b = R32(va);
@@ -69,7 +76,7 @@ struct Tuned {
     float original, written;
     uint32_t check_a, check_b;  // addresses of the neighbours
     uint32_t value_a, value_b;
-    int kind;  // 0 ride front, 1 ride rear, 2 wheel limit, 3/4 SuspensionLimit front/rear, 5/6 TravelExtent front/rear
+    int kind;  // 0/1 ride, 2 fit limit, 3/4 bump travel, 5/6 droop travel, 7 horsepower, 8..17 per-axle multipliers
     uint32_t owner;             // the vehSim of a ride height field, 0 for model data
 };
 std::mutex g_lock;
@@ -224,7 +231,7 @@ std::vector<Pending> ParameterFields(uint32_t sim) {
     std::vector<Pending> fields;
     for (int axle = 0; axle < 2; ++axle) {
         const uint32_t wheel = offsets[axle].va - kWheelSuspensionOffset;
-        for (const auto [off, kind] : {std::pair{0x58u, 8}, {0x5Cu, 10}, {0x34u, 12}, {0x68u, 14}, {0x00u, 16}})
+        for (const auto [off, kind] : {std::pair{0x58u, 8}, {0x5Cu, 10}, {0x34u, 12}, {0x68u, 14}, {0x6Cu, 16}})
             fields.push_back({wheel + off, offsets[axle].check_a, offsets[axle].check_b, kind + axle, sim});
     }
     if (Committed(sim + 0x5C, 4)) {
@@ -321,10 +328,11 @@ X86_FUNC(sub_000A65D0) {
     if (!std::isfinite(limit) || !std::isfinite(radius) || radius <= 0 ||
         (caller == 0xF74D5 && limit < 0)) return;
     bool report = false;
+    const bool allow_tuck = SettingsSnapshot().wheel_tuck;
     {
         std::lock_guard<std::mutex> lock(g_lock);
         auto offset = g_tuned.find(tune + kWheelSuspensionOffset);
-        if (!app::Get().tuning.wheel_tuck || offset == g_tuned.end() || !g_player_sims.count(offset->second.owner) ||
+        if (!allow_tuck || offset == g_tuned.end() || !g_player_sims.count(offset->second.owner) ||
             F32(offset->first) >= -kFreeLowering) return;
         static unsigned reported = 0;
         report = reported++ < 8;
@@ -383,7 +391,7 @@ void TuningCarCfgApplied(uint32_t sim) {
     Pending fields[6];
     if (!SimFields(sim, fields)) return;
     TravelFields(fields, fields + 2);
-    const app::Settings::Tuning& s = app::Get().tuning;
+    const app::Settings::Tuning s = SettingsSnapshot();
     std::lock_guard<std::mutex> lock(g_lock);
     // offsets first: the travel limits follow their wheel's offset
     for (const Pending& p : fields) {
@@ -445,7 +453,7 @@ X86_FUNC(sub_0032F840) {
 
 // once a frame (the time manager hook): every tracked value set from the current settings
 void ApplyVehicleTuning() {
-    const app::Settings::Tuning& s = app::Get().tuning;
+    const app::Settings::Tuning s = SettingsSnapshot();
     std::lock_guard<std::mutex> lock(g_lock);
     for (auto it = g_tuned.begin(); it != g_tuned.end();) {
         if (!Apply(it->first, it->second, s))
@@ -463,12 +471,13 @@ void ApplyVehicleTuning() {
 X86_EXTERN_FUNC(__imp__sub_000FFD90);
 X86_FUNC(sub_000FFD90) {
     const uint32_t car = ctx.ecx;
+    const auto settings = SettingsSnapshot();
     {
         std::lock_guard<std::mutex> lock(g_lock);
         auto it = g_player_cars.find(car);
         if (it != g_player_cars.end() && g_player_sims.count(it->second.sim)) {
             auto& c = it->second;
-            const auto key = SettingsKey(app::Get().tuning);
+            const auto key = SettingsKey(settings);
             if ((!c.initialized || key != c.settings) && Committed(car + 0x64, 4) && R32(car + 0x64) == c.cfg &&
                 Committed(c.cfg + 8, 4)) {
                 W32(c.cfg + 8, R32(c.cfg + 8) | 0x81u);
@@ -486,10 +495,11 @@ X86_FUNC(sub_000F32A0) {
     const bool rebuilt_wheels = Committed(ctx.esp + 8, 4) &&
                                 ((R32(ctx.esp + 8) & 0xFFu) || (Committed(cfg + 8, 4) && (R32(cfg + 8) & 5u)));
     __imp__sub_000F32A0(ctx, base);
+    const auto settings = SettingsSnapshot();
     std::lock_guard<std::mutex> lock(g_lock);
     for (auto& [car, c] : g_player_cars)
         if (g_player_sims.count(c.sim) && Committed(car + 0x68, 4) && R32(car + 0x68) == render)
-            ApplyRender(car, c, app::Get().tuning, rebuilt_wheels);
+            ApplyRender(car, c, settings, rebuilt_wheels);
 }
 
 // Purchased performance upgrades interpolate base/mods physics in this routine. Re-record only the fields that
@@ -500,22 +510,24 @@ X86_FUNC(sub_00103C50) {
     __imp__sub_00103C50(ctx, base);
     if (!Committed(car + 0x50, 4)) return;
     const uint32_t sim = R32(car + 0x50);
+    const auto settings = SettingsSnapshot();
     std::lock_guard<std::mutex> lock(g_lock);
     for (const Pending& p : ParameterFields(sim)) {
         g_tuned.erase(p.va);
         if (Tuned* t = Track(p))
-            if (!Apply(p.va, *t, app::Get().tuning)) g_tuned.erase(p.va);
+            if (!Apply(p.va, *t, settings)) g_tuned.erase(p.va);
     }
 }
 
 // AirRide::MoveWheel(float*, state, low, high, neutral). The original 0x1288C0 supplies each axle's baseline as
 // neutral, while its original low/high values are absolute and ignore a deep garage selection. Use the actual
-// per-axle baseline for both endpoints: fully low H, fully high -H for a lowered H. Keep its transition rates,
+// per-axle baseline for both endpoints: fully low H, fully high H+2*abs(H). Thus lowering mirrors above stock,
+// and a raised setup keeps its selected height as the low endpoint with the same 2*abs(H) travel. Keep the rates,
 // four-wheel sequencing, original state machine and installed-equipment checks unchanged.
 X86_EXTERN_FUNC(__imp__sub_001284F0);
 X86_FUNC(sub_001284F0) {
     const uint32_t control = ctx.ecx, stack = ctx.esp;
-    if (app::Get().tuning.airbag_match_ride && Committed(control + 8, 4) && Committed(stack + 4, 20)) {
+    if (SettingsSnapshot().airbag_match_ride && Committed(control + 8, 4) && Committed(stack + 4, 20)) {
         const uint32_t car = R32(control + 8), target = R32(stack + 4);
         bool owned = false;
         {
@@ -525,10 +537,15 @@ X86_FUNC(sub_001284F0) {
                     target >= control + 0x20 && target <= control + 0x2C && ((target - control) & 3) == 0;
         }
         const float baseline = F32(stack + 0x14);
-        if (owned && std::isfinite(baseline) && baseline < 0) {
+        if (owned && std::isfinite(baseline) && baseline != 0) {
+            const float high = baseline + 2 * std::abs(baseline);
             // State +1 moves down toward arg4; state -1 moves up toward arg3 in the retail body.
-            WF32(stack + 0x0C, -baseline);
+            WF32(stack + 0x0C, high);
             WF32(stack + 0x10, baseline);
+            // A different garage step may leave an in-flight airbag value outside the new range. Do not let the
+            // retail mover's directional early-return strand it below its new lowest position.
+            if (Committed(target, 4) && std::isfinite(F32(target)))
+                WF32(target, std::clamp(F32(target), baseline, high));
         }
     }
     __imp__sub_001284F0(ctx, base);
