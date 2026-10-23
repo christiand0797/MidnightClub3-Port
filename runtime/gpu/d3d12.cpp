@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -64,6 +65,18 @@ constexpr uint32_t kDsvCount = 256;
 constexpr DXGI_FORMAT kBgra = DXGI_FORMAT_B8G8R8A8_UNORM;
 constexpr uint32_t kQueries = 8192;  // occlusion queries in flight, several frames of counted draws
 constexpr uint32_t kNoQuery = ~0u;
+
+// Failed command submission cannot be recovered by resetting its allocator or upload ring: the GPU may still
+// own them. Keep the HRESULT in the release log and stop this render path instead of waiting on an unsignalled
+// fence or reusing live resources. Device removal supplies the more specific reason when one is available.
+void CheckGpu(ID3D12Device* device, HRESULT result, const char* operation) {
+    if (SUCCEEDED(result)) return;
+    const HRESULT removed = device->GetDeviceRemovedReason();
+    LOGE("d3d12: %s failed (0x%08lX), device removal reason 0x%08lX", operation,
+         static_cast<unsigned long>(result), static_cast<unsigned long>(removed));
+    logx::Flush();
+    throw std::runtime_error("Direct3D 12 command submission failed; see mc3.log for the operation and HRESULT.");
+}
 
 // perf diagnostic: where a frame's time goes, logged once a second with diag::Perf
 using PerfClock = std::chrono::steady_clock;
@@ -1048,12 +1061,18 @@ void D3D12Backend::Begin() {
 }
 
 void D3D12Backend::Submit(bool wait) {
-    cl_->Close();
+    CheckGpu(dev_.Get(), cl_->Close(), "closing the command list");
     ID3D12CommandList* lists[] = {cl_.Get()};
     queue_->ExecuteCommandLists(1, lists);
-    queue_->Signal(fence_.Get(), ++fence_value_);
+    CheckGpu(dev_.Get(), queue_->Signal(fence_.Get(), ++fence_value_), "signalling the submission fence");
     Frame& f = CurrentFrame();
     f.fence = fence_value_;
+    static unsigned reports = 0;
+    if (reports++ < 8)
+        LOGR("d3d12: submitted frame %llu slot %llu fence %llu, completed %llu, upload %llu bytes%s",
+             static_cast<unsigned long long>(frame_), static_cast<unsigned long long>(frame_ % kFrames),
+             static_cast<unsigned long long>(fence_value_), static_cast<unsigned long long>(fence_->GetCompletedValue()),
+             static_cast<unsigned long long>(f.used), wait ? ", synchronous" : "");
     if (wait) {
         WaitFence(fence_value_);
         f.alloc->Reset();
@@ -1068,8 +1087,31 @@ void D3D12Backend::Submit(bool wait) {
 void D3D12Backend::Flush() { Submit(true); }
 
 void D3D12Backend::WaitFence(uint64_t value) {
-    fence_->SetEventOnCompletion(value, event_);
-    WaitForSingleObject(event_, INFINITE);
+    CheckGpu(dev_.Get(), fence_->SetEventOnCompletion(value, event_), "arming the submission fence event");
+    static unsigned reports = 0;
+    for (;;) {
+        const DWORD result = WaitForSingleObject(event_, 1000);
+        const DWORD wait_error = result == WAIT_FAILED ? GetLastError() : ERROR_SUCCESS;
+        const uint64_t completed = fence_->GetCompletedValue();
+        if (completed == UINT64_MAX)
+            CheckGpu(dev_.Get(), DXGI_ERROR_DEVICE_REMOVED, "waiting for GPU completion");
+        if (completed >= value) return;  // Only actual completion permits allocator/upload-ring reuse.
+        CheckGpu(dev_.Get(), dev_->GetDeviceRemovedReason(), "waiting for GPU completion");
+        if (result == WAIT_FAILED)
+            CheckGpu(dev_.Get(), HRESULT_FROM_WIN32(wait_error), "waiting for the submission fence event");
+        if (reports++ < 8) {
+            LOGR("d3d12: fence still pending after 1 s: frame %llu target %llu completed %llu last signal %llu "
+                 "slots [%llu,%llu,%llu], upload %llu bytes, event result 0x%08lX",
+                 static_cast<unsigned long long>(frame_), static_cast<unsigned long long>(value),
+                 static_cast<unsigned long long>(completed), static_cast<unsigned long long>(fence_value_),
+                 static_cast<unsigned long long>(frames_[0].fence), static_cast<unsigned long long>(frames_[1].fence),
+                 static_cast<unsigned long long>(frames_[2].fence),
+                 static_cast<unsigned long long>(CurrentFrame().used), static_cast<unsigned long>(result));
+            logx::Flush();
+        }
+        if (result == WAIT_OBJECT_0)
+            CheckGpu(dev_.Get(), fence_->SetEventOnCompletion(value, event_), "rearming the submission fence event");
+    }
 }
 
 void D3D12Backend::SetFullViewport(uint32_t w, uint32_t h) {
@@ -3495,7 +3537,10 @@ void D3D12Backend::ReleaseOldTextures() {
 
 void D3D12Backend::ResetFrame() {
     Frame& f = CurrentFrame();
-    if (f.fence && fence_->GetCompletedValue() < f.fence) {
+    const uint64_t completed = fence_->GetCompletedValue();
+    if (completed == UINT64_MAX)
+        CheckGpu(dev_.Get(), DXGI_ERROR_DEVICE_REMOVED, "resetting the frame allocator");
+    if (f.fence && completed < f.fence) {
         auto perf_wait = PerfClock::now();
         WaitFence(f.fence);
         g_perf.wait += PerfMs(perf_wait);
