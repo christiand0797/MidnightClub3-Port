@@ -1,0 +1,50 @@
+import struct
+
+width, height = 1024, 512
+fourcc = b'DXT3'
+block_size = 16
+num_blocks = ((width + 3) // 4) * ((height + 3) // 4)
+expected_size = num_blocks * block_size
+data = b'\x00' * expected_size
+
+# Correct DDS header (124 bytes) - includes pixel format and caps
+dds_header = struct.pack('<I', 124)           # dwSize
+dds_header += struct.pack('<I', 0x81007)      # dwFlags
+dds_header += struct.pack('<I', height)       # dwHeight
+dds_header += struct.pack('<I', width)        # dwWidth
+dds_header += struct.pack('<I', expected_size) # dwPitchOrLinearSize
+dds_header += struct.pack('<I', 0)            # dwDepth
+dds_header += struct.pack('<I', 1)            # dwMipMapCount
+dds_header += b'\x00' * (4 * 11)              # dwReserved1[11] = 44 bytes
+
+# DDS_PIXELFORMAT (32 bytes) - embedded in header
+dds_header += struct.pack('<I', 32)           # dwSize
+dds_header += struct.pack('<I', 4)            # dwFlags (DDPF_FOURCC)
+dds_header += fourcc                          # dwFourCC (4 bytes)
+dds_header += struct.pack('<I', 0)            # dwRGBBitCount
+dds_header += struct.pack('<I', 0)            # dwRBitMask
+dds_header += struct.pack('<I', 0)            # dwGBitMask
+dds_header += struct.pack('<I', 0)            # dwBBitMask
+dds_header += struct.pack('<I', 0)            # dwABitMask
+
+# DDS_CAPS (16 bytes) - embedded in header
+dds_header += struct.pack('<I', 0x1000)       # dwCaps
+dds_header += struct.pack('<I', 0)            # dwCaps2
+dds_header += struct.pack('<I', 0)            # dwCaps3
+dds_header += struct.pack('<I', 0)            # dwCaps4
+dds_header += struct.pack('<I', 0)            # dwReserved2
+
+print(f'Header size: {len(dds_header)}')
+assert len(dds_header) == 124, f'Header size: {len(dds_header)}'
+
+dds_data = b'DDS ' + dds_header + data
+
+print(f'Magic: 4, Header: {len(dds_header)}')
+print(f'Total header+magic: {4 + len(dds_header)}')
+print(f'Data: {len(data)}')
+print(f'Total: {len(dds_data)}')
+
+with open(r'C:\Users\purpl\Desktop\MidnightClub3-Port\test_dxt3.dds', 'wb') as f:
+    f.write(dds_data)
+
+print('Created test DDS')

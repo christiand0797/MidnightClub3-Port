@@ -32,6 +32,7 @@ enum : uint32_t {
     kNoMoreFiles = 0x80000006,
     kUnsuccessful = 0xC0000001,
     kNotImplemented = 0xC0000002,
+    kInfoLengthMismatch = 0xC0000004,
     kInvalidHandle = 0xC0000008,
     kInvalidParameter = 0xC000000D,
     kNoSuchFile = 0xC000000F,
@@ -123,6 +124,7 @@ bool CloseHandle(uint32_t handle);
 uint32_t DuplicateHandle(uint32_t handle);
 ObjectRef FromPointer(uint32_t guest);  // dispatcher object in guest memory, created on first use
 void Bind(ObjectRef obj, uint32_t guest);
+uint32_t FileObjectBody(const ObjectRef& file);  // the FILE_OBJECT a file handle references
 ObjectRef FindNamed(const std::string& name);
 void AddNamed(const std::string& name, ObjectRef obj);
 

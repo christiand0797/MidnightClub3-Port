@@ -25,7 +25,8 @@ uint8_t* Base() { return g_base; }
 // physical memory shows at 0x80000000 and again at 0xF0000000 (write combined view)
 static bool InPhysical(uint32_t va) {
     return (va >= kContiguousBase && va < kContiguousBase + kPhysicalSize) ||
-           (va >= kWriteCombineBase && va < kWriteCombineBase + kPhysicalSize);
+           (va >= kWriteCombineBase && va < kWriteCombineBase + kPhysicalSize) ||
+           (va >= kMcpXBase && va < kMcpXBase + kMcpXSize);
 }
 
 bool Init() {
@@ -40,12 +41,16 @@ bool Init() {
         // reserve around the two physical windows, then map the same memory into both
         const uint64_t cuts[][2] = {{0, kContiguousBase},
                                     {kContiguousBase + kPhysicalSize, kWriteCombineBase},
-                                    {kWriteCombineBase + kPhysicalSize, size}};
+                                    {kWriteCombineBase + kPhysicalSize, kMcpXBase},
+                                    {kMcpXBase + kMcpXSize, size}};
         bool ok = ram != nullptr;
         for (auto& c : cuts)
             ok = ok && VirtualAlloc(b + c[0], size_t(c[1] - c[0]), MEM_RESERVE, PAGE_NOACCESS) == b + c[0];
         ok = ok && MapViewOfFileEx(ram, FILE_MAP_ALL_ACCESS, 0, 0, kPhysicalSize, b + kContiguousBase) == b + kContiguousBase;
         ok = ok && MapViewOfFileEx(ram, FILE_MAP_ALL_ACCESS, 0, 0, kPhysicalSize, b + kWriteCombineBase) == b + kWriteCombineBase;
+        // map MCPX range to a zero page
+        HANDLE zero_page = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, kMcpXSize, nullptr);
+        ok = ok && MapViewOfFileEx(zero_page, FILE_MAP_ALL_ACCESS, 0, 0, kMcpXSize, b + kMcpXBase) == b + kMcpXBase;
         if (ok) {
             g_base = b;
             break;
@@ -53,6 +58,8 @@ bool Init() {
         for (auto& c : cuts) VirtualFree(b + c[0], 0, MEM_RELEASE);
         UnmapViewOfFile(b + kContiguousBase);
         UnmapViewOfFile(b + kWriteCombineBase);
+        UnmapViewOfFile(b + kMcpXBase);
+        CloseHandle(zero_page);
     }
 #else
     void* p = mmap(reinterpret_cast<void*>(0x100000000ull), size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
@@ -60,7 +67,8 @@ bool Init() {
     int fd = g_base ? memfd_create("ram", 0) : -1;
     if (fd < 0 || ftruncate(fd, kPhysicalSize) ||
         mmap(g_base + kContiguousBase, kPhysicalSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED ||
-        mmap(g_base + kWriteCombineBase, kPhysicalSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED)
+        mmap(g_base + kWriteCombineBase, kPhysicalSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED ||
+        mmap(g_base + kMcpXBase, kMcpXSize, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED | MAP_ANONYMOUS, -1, 0) == MAP_FAILED)
         g_base = nullptr;
 #endif
     if (!g_base) {

@@ -51,6 +51,8 @@ struct FixedKey {
                            // diffuse, specular, ambient, emissive (material when the vertex lacks that colour)
     uint32_t types = 0;    // D3DLIGHTTYPE per light, 2 bits each, 0 off
     uint32_t tex[4] = {};  // per stage: coordinate set, texgen at bit 4, D3DTTFF count at bit 8, projected bit 11, set size at bit 12
+    uint32_t blend = 0;    // D3DRS_VERTEXBLEND (the NV2A skin mode): 1 3 5 two to four matrices, the last weight implied;
+                           // 2 4 6 two to four matrices, every weight given
 };
 FixedKey MakeFixedKey(const State& s);
 std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode = 0, const FixedKey& f = {});
@@ -90,7 +92,8 @@ struct DrawConstants {
     float bump[4][4];   // 00 01 10 11
     float bumpl[4][4];  // scale offset
     float wvp[16];      // fixed function
-    float ext[4];       // a backend extension's, declared by ShaderHooks::Constants
+    float ext[4];       // a backend extension's, declared by ShaderHooks::Constants as one float4: it must stay 16 bytes or
+                        // every constant after it is read from the wrong place
     float spread[4][4]; // kTexWide: tap step in uv, taps per axis
     // fixed function, lit in view space
     float wv[16];
@@ -100,6 +103,14 @@ struct DrawConstants {
     float amb[4];        // D3DRS_AMBIENT
     float lt[8][7][4];   // per light: diffuse, specular, ambient, position range, direction falloff, attenuation, cos theta/2 phi/2
     float rtshift[4];    // per kTexTarget stage: host pixels its reads move along x and y, negative up and left
+    float vattr[16][4];  // State::vattr, read for the vertex registers a draw does not supply
+    float sblend[4];     // x: 1 the positive, 2 the negative part of the output read as signed bytes (signed blends);
+                         // y: output alpha scale less 1, z: output colour and alpha scale less 1 (screen effects);
+                         // w: colour times alpha scale less 1, alpha raised first (D3D12Backend::ScaleTextureEffect)
+    // vertex blending: world 0 to 3 (D3DTS_WORLDMATRIX(n)) by view and projection, by view, and its normal matrix
+    float bwvp[4][16];
+    float bwv[4][16];
+    float bwvn[4][16];
 };
 
 }  // namespace gpu

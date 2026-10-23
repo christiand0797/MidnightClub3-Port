@@ -54,6 +54,11 @@ const char* kCommonTail = R"(    float4 spread[4];
     float4 amb;
     float4 lt[56];
     float4 rtshift;
+    float4 vattr[16];
+    float4 sblend;
+    float4x4 bwvp[4];
+    float4x4 bwv[4];
+    float4x4 bwvn[4];
 };
 )";
 
@@ -132,7 +137,7 @@ std::string Src(const Tok& k, int which, uint16_t regs) {
         base = reg == 12 ? "oPos" : F("R%u", reg);
     } else if (mux == 2) {
         uint32_t v = k.f(1, 9, 4);
-        base = (regs >> v) & 1 ? F("i.v%u", v) : (v == 3 ? "float4(1,1,1,1)" : "float4(0,0,0,1)");
+        base = (regs >> v) & 1 ? F("i.v%u", v) : F("vattr[%u]", v);  // the inline value, as the console reads it
     } else {
         uint32_t cr = k.f(1, 13, 8);
         base = k.f(3, 1, 1) ? F("c[clamp(a0 + %u, 0, 191)]", cr) : F("c[%u]", cr);
@@ -623,6 +628,9 @@ PixelKey MakePixelKey(const State& s, const TexInfo tex[4]) {
     bool program = (s.vs_handle & 1) && s.vs && !s.vs->program.empty();
     for (int i = 0; i < 4; i++) {
         const auto& t = s.tss[size_t(i)];
+        // A fixed-function stage selecting a missing texture terminates the cascade.
+        // Otherwise a later unbound SELECTARG1 stage replaces the movie/UI with the white fallback texture.
+        if (!tex[i].kind && (t[kTssColorArg1] & 0xF) == 2) break;  // D3DTA_TEXTURE
         uint32_t v[9] = {t[kTssColorOp], t[kTssColorArg1], t[kTssColorArg2], t[kTssColorArg0], t[kTssAlphaOp],
                          t[kTssAlphaArg1],  t[kTssAlphaArg2], t[kTssAlphaArg0], t[kTssResultArg]};
         std::memcpy(k.ff[i], v, sizeof(v));
@@ -690,6 +698,7 @@ std::string VertexProgramHlsl(const std::vector<uint32_t>& prog, uint16_t regs, 
 
 FixedKey MakeFixedKey(const State& s) {
     FixedKey f;
+    f.blend = s.rs[kRsVertexBlend] & 7;
     if (s.rs[kRsLighting]) {
         f.light = 1 | (s.rs[kRsSpecularEnable] ? 2 : 0) | (s.rs[kRsLocalViewer] ? 4 : 0) | (s.rs[kRsNormalizeNormals] ? 8 : 0);
         if (s.rs[kRsColorVertex])
@@ -721,7 +730,10 @@ std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode,
     s += kVsHelpers;
     s += VsInputs(regs, decode);
     s += kVsPrologue;
-    auto v = [&](int r, const char* def) { return (regs >> r) & 1 ? F("i.v%d", r) : std::string(def); };
+    // a register the vertices lack reads its inline value, as on the console; position has none worth reading
+    auto v = [&](int r, const char* def) {
+        return (regs >> r) & 1 ? F("i.v%d", r) : r == 0 ? std::string(def) : F("vattr[%d]", r);
+    };
     bool lit = !pretransformed && (f.light & 1);
     if (pretransformed) {
         s += "    float4 rhw = " + v(0, "float4(0,0,0,1)") + ";\n";
@@ -729,17 +741,40 @@ std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode,
         s += "    oPos = float4(rhw.xy, rhw.z / surf.z, w);\n";
     } else {
         s += "    float4 ip = float4(" + v(0, "float4(0,0,0,1)") + ".xyz, 1);\n";
-        s += "    float4 cp = mul(ip, wvp);\n";
-        s += "    float3 vp = mul(ip, wv).xyz;\n";
-        s += "    float3 vn = mul(float4(" + v(2, "float4(0,0,0,0)") + ".xyz, 0), wvn).xyz;\n";
+        // only vertices that carry blend weights (register 1) are blended: geometry drawn without them while the
+        // state is still on from a skinned draw keeps its plain world transform
+        if (f.blend >= 1 && f.blend <= 6 && ((regs >> 1) & 1)) {
+            // the console's vertex blending: the weights in register 1 mix world 0 to 3; odd modes leave the last
+            // weight to make the sum one
+            uint32_t n = (f.blend + 3) / 2;
+            bool implied = f.blend & 1;
+            s += "    float4 bw = " + v(1, "float4(0,0,0,0)") + ";\n";
+            s += "    float bwt[4] = {bw.x, bw.y, bw.z, bw.w};\n";
+            if (implied) {
+                s += "    float bsum = 0;\n";
+                s += F("    for (int k = 0; k < %u; k++) bsum += bwt[k];\n", n - 1);
+                s += F("    bwt[%u] = 1 - bsum;\n", n - 1);
+            }
+            s += "    float4 cp = 0;\n    float3 vp = 0, vn = 0;\n";
+            s += "    float4 inrm = float4(" + v(2, "float4(0,0,0,0)") + ".xyz, 0);\n";
+            s += F("    for (int k = 0; k < %u; k++) {\n", n);
+            s += "        cp += bwt[k] * mul(ip, bwvp[k]);\n";
+            s += "        vp += bwt[k] * mul(ip, bwv[k]).xyz;\n";
+            s += "        vn += bwt[k] * mul(inrm, bwvn[k]).xyz;\n";
+            s += "    }\n";
+        } else {
+            s += "    float4 cp = mul(ip, wvp);\n";
+            s += "    float3 vp = mul(ip, wv).xyz;\n";
+            s += "    float3 vn = mul(float4(" + v(2, "float4(0,0,0,0)") + ".xyz, 0), wvn).xyz;\n";
+        }
         if (f.light & 8) s += "    vn = dot(vn, vn) > 0 ? normalize(vn) : vn;\n";
     }
     if (lit) {
         // D3DMCS: 1 the vertex diffuse, 2 its specular, else the material
         auto src = [&](int field, const char* mat) {
             uint32_t m = (f.light >> (8 + field * 2)) & 3;
-            if (m == 1 && ((regs >> 3) & 1)) return std::string("i.v3");
-            if (m == 2 && ((regs >> 4) & 1)) return std::string("i.v4");
+            if (m == 1) return v(3, "");
+            if (m == 2) return v(4, "");
             return std::string(mat);
         };
         s += "    float4 md = " + src(0, "mat[0]") + ", ms = " + src(1, "mat[2]") + ", ma = " + src(2, "mat[1]") +
@@ -900,7 +935,24 @@ std::string PixelHlsl(const PixelKey& k) {
         body += "cur.rgb = saturate(cur.rgb + v1.rgb);\n";
         body += "float4 outc = float4(lerp(fogin.rgb, cur.rgb, fogin.a), cur.a);\n";
     }
-    body += "alphatest(outc.a);\n" + Hooks().Output() + "return outc;\n}\n";
+    // the console's signed blends read colours as signed bytes; the draw runs as an add of the positive part and a
+    // reverse subtract of the negative one, this picks the part
+    body += "alphatest(outc.a);\n"
+            "if (sblend.x != 0) {\n"
+            "    float4 sb = round(saturate(outc) * 255);\n"
+            "    float4 sv = (sb >= 128 ? sb - 256 : sb) / 255;\n"
+            "    outc = sblend.x == 1 ? max(sv, 0) : max(-sv, 0);\n"
+            "}\n"
+            // the game's screen effects, scaled by the graphics settings (D3D12Backend::ScaleScreenEffect)
+            "outc.a *= 1 + sblend.y;\n"
+            "outc *= 1 + sblend.z;\n"
+            // a source-alpha blended draw made brighter (D3D12Backend::ScaleTextureEffect): alpha up to 1 first, the
+            // rest of the factor into the colour, so colour times alpha grows by 1 + sblend.w
+            "if (sblend.w != 0) {\n"
+            "    float sa = outc.a * (1 + sblend.w), na = saturate(sa);\n"
+            "    outc.rgb *= na > 0 ? sa / na : 0;\n"
+            "    outc.a = na;\n"
+            "}\n" + Hooks().Output() + "return outc;\n}\n";
     s += body;
     return k.quad ? QuadHlsl(std::move(s)) : s;
 }

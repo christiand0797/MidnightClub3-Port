@@ -1,0 +1,3 @@
+# downloaded model weights (fetch with: py -3.12 tools/pbr/generate.py --download-model)
+models/
+__pycache__/

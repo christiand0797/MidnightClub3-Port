@@ -9,6 +9,8 @@ constexpr uint32_t kUserHigh = 0x7FFE0000;
 constexpr uint32_t kContiguousBase = 0x80000000;  // guest VA = kContiguousBase | physical
 constexpr uint32_t kPhysicalSize = 64u << 20;
 constexpr uint32_t kWriteCombineBase = 0xF0000000;
+constexpr uint32_t kMcpXBase = 0xFE000000;         // MCPX registers (audio, USB, etc.)
+constexpr uint32_t kMcpXSize = 0x01000000;         // 16 MB
 constexpr uint32_t kKernelDataBase = 0x80000000;   // first physical megabyte holds kernel variables
 constexpr uint32_t kKernelDataSize = 0x00100000;
 constexpr uint32_t kSystemBase = 0xB0000000;       // pool, system memory, thread blocks

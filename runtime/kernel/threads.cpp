@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 
 #include "kernel/kernel.h"
@@ -25,6 +26,20 @@ std::atomic<uint32_t> g_next_id{0x10};
 // guest structures per thread
 constexpr uint32_t kKpcrSize = 0x400;
 constexpr uint32_t kEthreadSize = 0x200;
+constexpr uint32_t kKprocessSize = 0x40;
+
+// the one guest process every thread belongs to: KTHREAD.ApcState.Process. XAPI writes through it (the quantum at
+// +0x14 when the title sets its process quantum, sub_0001354A), so it must point at real memory
+uint32_t Process() {
+    static uint32_t process = [] {
+        uint32_t p = mem::AllocSystem(kKprocessSize, 64);
+        std::memset(HostPtr(p), 0, kKprocessSize);
+        G<uint8_t>(p + 0) = 3;  // dispatcher type ProcessObject
+        G<uint8_t>(p + 2) = uint8_t(kKprocessSize / 4);
+        return p;
+    }();
+    return process;
+}
 
 void SetupGuestBlocks(Thread& t, uint32_t stack_size, uint32_t tls_size) {
     stack_size = std::max<uint32_t>(stack_size, 0x10000);
@@ -36,6 +51,8 @@ void SetupGuestBlocks(Thread& t, uint32_t stack_size, uint32_t tls_size) {
     // TLS sits at the top of the stack: StackBase + tls_index * 4 must equal TlsData
     t.tls = t.stack_top - tls_size;
     uint32_t k = t.kpcr;
+    std::memset(HostPtr(k), 0, kKpcrSize);  // the blocks are read whole by the title: nothing left over
+    std::memset(HostPtr(t.ethread), 0, kEthreadSize);
     W32(k + 0x00, 0xFFFFFFFF);                  // NtTib.ExceptionList
     W32(k + 0x04, t.stack_top);                 // NtTib.StackBase
     W32(k + 0x08, t.stack_top - stack_size);    // NtTib.StackLimit
@@ -50,6 +67,11 @@ void SetupGuestBlocks(Thread& t, uint32_t stack_size, uint32_t tls_size) {
     W32(e + 0x1C, t.stack_top);                 // KTHREAD.StackBase
     W32(e + 0x20, t.stack_top - stack_size);    // KTHREAD.StackLimit
     W32(e + 0x28, t.tls);                       // KTHREAD.TlsData
+    W32(e + 0x34, e + 0x34);                    // KTHREAD.ApcState.ApcListHead[KernelMode], empty
+    W32(e + 0x38, e + 0x34);
+    W32(e + 0x3C, e + 0x3C);                    // ApcListHead[UserMode], empty
+    W32(e + 0x40, e + 0x3C);
+    W32(e + 0x44, Process());                   // KTHREAD.ApcState.Process
     W32(e + 0x12C, t.id);                       // ETHREAD.UniqueThread
 }
 

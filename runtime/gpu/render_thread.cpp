@@ -75,7 +75,8 @@ std::vector<Range> StateRanges() {
         {At(s, &s.scissor_count), At(s, &s.transforms) - At(s, &s.scissor_count)},
         {At(s, &s.transforms[2]), 2 * sizeof(s.transforms[0])},
         {At(s, &s.transforms[16]), 4 * sizeof(s.transforms[0])},
-        {At(s, &s.transforms[256]), sizeof(s.transforms[0])},
+        // Fixed-function vertex blending reads WORLD0 through WORLD3, not only the first world matrix.
+        {At(s, &s.transforms[256]), 4 * sizeof(s.transforms[0])},
         {At(s, &s.material), sizeof(State) - At(s, &s.material)},
     };
 }

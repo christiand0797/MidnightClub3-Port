@@ -1,0 +1,10 @@
+# Optional host settings. Copy beside mc3.exe as config/mc3_enhancements.toml.
+# Display, graphics, media, and tuning controls live in settings.toml and the F1 overlay.
+[render]
+force_1080p = false
+force_widescreen = false
+
+[input]
+# Radial stick deadzones, rescaled from inner to outer. Both controller sticks use these values.
+deadzone_inner = 0.15
+deadzone_outer = 0.95

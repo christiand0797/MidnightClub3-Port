@@ -36,6 +36,8 @@ struct Target {
     DXGI_FORMAT fmt = DXGI_FORMAT_B8G8R8A8_UNORM;
     float range = 1;         // colour held divided by it until the extension resolves the target
     uint64_t tag = ~0ull;    // the extension's
+    bool screen_copy = false;  // its last draw copied a full screen target into it (the glow source, not the
+                               // headlight volumes): tells the game's two additive composites apart
 };
 
 // what the renderer lends an extension, on the render thread

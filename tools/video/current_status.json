@@ -1,0 +1,858 @@
+{
+  "requested_model": "realesrgan-x4plus",
+  "movies": 106,
+  "recorded_complete": 48,
+  "remaining_frames": 66188,
+  "estimated_hours_at_2_6_seconds_per_frame": 47.80244444444445,
+  "note": "Marker inventory only; not a validation result or guaranteed ETA.",
+  "details": [
+    {
+      "movie": "rockstar.bik",
+      "frames": 210,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "sdlogo.bik",
+      "frames": 240,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "mc3intro.bik",
+      "frames": 2408,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rninja.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rduc1000.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rskully.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rcuevito.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rescext.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rg55.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rcien.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rsl55.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rme412.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/r300c.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/r68corv.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/ris300.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rskyline.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rbelair.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rcl55.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rfleetln.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rgroupd.bik",
+      "frames": 444,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rcad16.bik",
+      "frames": 780,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rsmart.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rchingon.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rh3t.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rf355.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rcharger.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rzonda.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rsport.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rdeville.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rcobalt.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rg35.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rmagnum.bik",
+      "frames": 540,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rgroupc.bik",
+      "frames": 806,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "reward/rgroupb.bik",
+      "frames": 1161,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/sqsuv.bik",
+      "frames": 591,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/slastour.bik",
+      "frames": 1127,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/sphil.bik",
+      "frames": 937,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/sgameout.bik",
+      "frames": 969,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/sqtuner.bik",
+      "frames": 996,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/sqperfom.bik",
+      "frames": 1045,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/sqluxury.bik",
+      "frames": 1049,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/swcrace.bik",
+      "frames": 1100,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/stokmout.bik",
+      "frames": 1649,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/sqmuscle.bik",
+      "frames": 1497,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/svincint.bik",
+      "frames": 1603,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/satlcut.bik",
+      "frames": 1807,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/stokmech.bik",
+      "frames": 2210,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/sdetcut.bik",
+      "frames": 1875,
+      "published": true,
+      "recorded_model": "realesrgan-x4plus",
+      "needs_model": false,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/saponint.bik",
+      "frames": 2136,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/sqsportb.bik",
+      "frames": 2360,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/sgameint.bik",
+      "frames": 2972,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "story/suschamp.bik",
+      "frames": 15598,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/trlogos.bik",
+      "frames": 270,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tmovers.bik",
+      "frames": 436,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tcircuit.bik",
+      "frames": 434,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/thill.bik",
+      "frames": 484,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/t180.bik",
+      "frames": 473,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/thead.bik",
+      "frames": 487,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tunochek.bik",
+      "frames": 516,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/taircont.bik",
+      "frames": 517,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tnitro.bik",
+      "frames": 602,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tautocro.bik",
+      "frames": 595,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tburnout.bik",
+      "frames": 630,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tordchek.bik",
+      "frames": 635,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tsst.bik",
+      "frames": 720,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/thydrolc.bik",
+      "frames": 711,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/ttourna.bik",
+      "frames": 736,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tusercam.bik",
+      "frames": 844,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tingame.bik",
+      "frames": 832,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/t2wheel.bik",
+      "frames": 815,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tdriving.bik",
+      "frames": 846,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/troar.bik",
+      "frames": 913,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tinzone.bik",
+      "frames": 947,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tcustom.bik",
+      "frames": 1140,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tagro.bik",
+      "frames": 1077,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tsiderac.bik",
+      "frames": 1270,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/twtrans.bik",
+      "frames": 1542,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tnavsys.bik",
+      "frames": 1605,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tokyotut/tnavimap.bik",
+      "frames": 1484,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/trlogos.bik",
+      "frames": 270,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tmovers.bik",
+      "frames": 436,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tcircuit.bik",
+      "frames": 434,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/thill.bik",
+      "frames": 484,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/t180.bik",
+      "frames": 473,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/thead.bik",
+      "frames": 487,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tunochek.bik",
+      "frames": 516,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/taircont.bik",
+      "frames": 517,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tnitro.bik",
+      "frames": 602,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tautocro.bik",
+      "frames": 595,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tburnout.bik",
+      "frames": 630,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tordchek.bik",
+      "frames": 635,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tsst.bik",
+      "frames": 720,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/thydrolc.bik",
+      "frames": 711,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/ttourna.bik",
+      "frames": 736,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tusercam.bik",
+      "frames": 844,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tingame.bik",
+      "frames": 832,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/t2wheel.bik",
+      "frames": 815,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tdriving.bik",
+      "frames": 846,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/troar.bik",
+      "frames": 913,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tinzone.bik",
+      "frames": 947,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tcustom.bik",
+      "frames": 1140,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tagro.bik",
+      "frames": 1077,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tsiderac.bik",
+      "frames": 1270,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/twtrans.bik",
+      "frames": 1542,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tnavsys.bik",
+      "frames": 1605,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    },
+    {
+      "movie": "tutorial/tnavimap.bik",
+      "frames": 1484,
+      "published": true,
+      "recorded_model": "unrecorded",
+      "needs_model": true,
+      "has_provenance": false
+    }
+  ]
+}

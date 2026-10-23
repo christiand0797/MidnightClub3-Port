@@ -23,6 +23,7 @@
 
 #include "app/app.h"
 #include "xdk/hle.h"
+#include "xdk/winsock_version.h"
 
 using kernel::HostPtr;
 using kernel::R32;
@@ -367,11 +368,12 @@ HLE_STDCALL(XNetStartup, 1) {
     return 0;
 }
 HLE_STDCALL(WSAStartup, 2) {
+    uint16_t version = xnet::NegotiateWinsockVersion(uint16_t(a[0]));
+    if (!version) return WSAVERNOTSUPPORTED;
+    if (!a[1]) return WSAEFAULT;
     Init();
-    if (a[1]) {
-        std::memset(HostPtr(a[1]), 0, 400);
-        W32(a[1], 0x02020202);  // wVersion, wHighVersion
-    }
+    std::memset(HostPtr(a[1]), 0, 400);  // guest WSADATA has the 32-bit layout
+    W32(a[1], uint32_t(version) | 0x02020000u);
     return 0;
 }
 HLE_STDCALL(XNetGetEthernetLinkStatus, 0) { return kLinkUp; }

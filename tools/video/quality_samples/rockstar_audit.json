@@ -1,0 +1,29 @@
+{
+  "mode": "audit",
+  "requested_model": "realesrgan-x4plus",
+  "movies": 1,
+  "covers_all_sources": false,
+  "verified": 1,
+  "all_requested_model_validated": true,
+  "failed": 0,
+  "remaining_frames": 0,
+  "details": [
+    {
+      "movie": "rockstar.bik",
+      "frames": 210,
+      "status": "verified",
+      "output_validated": true,
+      "recorded_model": "realesrgan-x4plus",
+      "output": {
+        "width": 1920,
+        "height": 1440,
+        "fps": "2997/100",
+        "frames": 210,
+        "codec": "h264",
+        "pix_fmt": "yuv420p"
+      },
+      "historical_source_and_weights_verified": false
+    }
+  ],
+  "updated_at": "2026-10-23T05:46:43.305702+00:00"
+}

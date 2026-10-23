@@ -29,7 +29,22 @@ static int RunNumber(const fs::path& file, const std::string& prefix) {
     return std::atoi(name.c_str() + prefix.size() + 1);
 }
 
+// the file is flushed a few times a second, so a live run can be followed and a hard kill loses little
+static void StartFlusher() {
+    static std::once_flag once;
+    std::call_once(once, [] {
+        std::thread([] {
+            for (;;) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                std::lock_guard<std::mutex> lock(g_mutex);
+                if (g_file) std::fflush(g_file);
+            }
+        }).detach();
+    });
+}
+
 void Init(const std::string& dir, const std::string& prefix, bool append) {
+    StartFlusher();
     std::lock_guard<std::mutex> lock(g_mutex);
     std::error_code ec;
     fs::create_directories(dir, ec);
@@ -52,7 +67,12 @@ void Init(const std::string& dir, const std::string& prefix, bool append) {
 const std::string& Path() { return g_path; }
 
 void Write(Level lv, const char* fmt, ...) {
-    if (!kVerbose && lv < Level::Error) return;
+    // Keep release logs quiet by default, but allow boot diagnostics without recompiling the game.
+    static const bool verbose = kVerbose || [] {
+        const char* value = std::getenv("XBE_VERBOSE");
+        return value && value[0] && value[0] != '0';
+    }();
+    if (!verbose && lv < Level::Error) return;
     char msg[4096];
     va_list ap;
     va_start(ap, fmt);

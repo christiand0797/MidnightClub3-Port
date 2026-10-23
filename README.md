@@ -1,3 +1,19 @@
+# Midnight Club 3: DUB Edition Remix — native Windows port
+
+This repository contains the native x64 port, its Xbox API compatibility runtime, build and media tools, regression
+checks, and reverse-engineering documentation. The original x86 game is translated to C++ ahead of time and built
+for Windows with Direct3D 12 and XAudio2.
+
+Start with [the port instructions](PORTABLE_README.md), [the current handoff](docs/HANDOFF.md), and
+[the active continuation ledger](docs/AUTONOMOUS_RUN.md). Build with `Build-MC3.ps1` and launch with `Launch-MC3.ps1`.
+The canonical executable is `templates/game/out/native/mc3.exe`.
+
+The Git source tree excludes original game data, generated code, downloaded model weights and build outputs. Full
+project snapshots are handled separately because the local project contains files above GitHub's Git size limit.
+The current renderer remains active; [PBR research](docs/PBR_PLAN.md) is a future, separately gated conversion.
+
+The upstream framework documentation follows, with its original attribution and license retained.
+
 # Xbox XBE Recomp
 
 A tool for creating unofficial native PC ports of original Xbox games. Games are statically recompiled from their x86 XBE into native 64 bit Windows executables. The game's x86 code is translated to C++ ahead of time. The Xbox kernel and the XDK libraries (Direct3D 8, DirectSound, XAPI, XNet) are implemented at the API level on Windows. Everything is drawn with a native Direct3D 12 renderer and played through XAudio2.

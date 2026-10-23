@@ -1,14 +1,30 @@
-// controllers through SDL: Xbox, PlayStation and Switch pads read into the console controller's report
+// SDL controllers, foreground keyboard fallback, and optional deterministic controller scripts.
 #include "core/input.h"
+#include "core/input_mapping.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iterator>
 #include <mutex>
+#include <optional>
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 
 #include <SDL3/SDL.h>
 
 #include "app/app.h"
 #include "core/log.h"
+#include "gpu/backend.h"
 
 namespace input {
 
@@ -18,6 +34,137 @@ namespace {
 std::mutex g_lock;
 bool g_sdl = false;
 SDL_Gamepad* g_pads[4] = {};
+bool g_script_enabled = false;
+Pad g_raw[4];             // each port as last polled, before the menu blanks it
+bool g_menu_combo = false;  // Back + Y held at the last poll
+std::vector<PadScriptPress> g_script;
+std::optional<std::chrono::steady_clock::time_point> g_script_start;
+
+void LoadPadScript() {
+    const wchar_t* value = _wgetenv(L"XBE_PAD_SCRIPT");
+    if (!value || !*value) return;
+    // An explicitly requested script controls port 0 even if it is empty or invalid.
+    // This prevents keyboard or hardware state from changing a deterministic run.
+    g_script_enabled = true;
+    std::filesystem::path path(value);
+    if (!path.is_absolute()) {
+        LOGE("input: XBE_PAD_SCRIPT requires an absolute path");
+        return;
+    }
+    std::ifstream file(path);
+    if (!file) {
+        LOGE("input: could not open XBE_PAD_SCRIPT");
+        return;
+    }
+    std::vector<PadScriptPress> presses;
+    std::string line;
+    size_t line_number = 0;
+    while (std::getline(file, line)) {
+        ++line_number;
+        PadScriptPress press;
+        switch (ParsePadScriptLine(line, press)) {
+        case PadScriptLine::Empty: break;
+        case PadScriptLine::Valid: presses.push_back(std::move(press)); break;
+        case PadScriptLine::Invalid:
+            LOGE("input: invalid XBE_PAD_SCRIPT line %zu; expected milliseconds buttons duration_ms", line_number);
+            return;
+        }
+    }
+    if (file.bad()) {
+        LOGE("input: failed while reading XBE_PAD_SCRIPT");
+        return;
+    }
+    g_script = std::move(presses);
+    LOGR("input: controller script enabled, %zu presses; time starts at first port 0 poll", g_script.size());
+}
+
+// XBE_PAD_LIVE: a file a test harness appends "buttons duration_ms" lines to; each new line is pressed on port 0
+// from the moment it is read, on top of the player's controller and keyboard. Lets a run be driven step by step
+// without window focus or a fixed timeline, and without taking the controls away from the player.
+std::filesystem::path g_live_path;
+std::vector<PadScriptPress> g_live;
+const auto g_live_start = std::chrono::steady_clock::now();
+uintmax_t g_live_read = 0;
+std::string g_live_partial;
+std::chrono::steady_clock::time_point g_live_checked;
+
+void LoadPadLive() {
+    const wchar_t* value = _wgetenv(L"XBE_PAD_LIVE");
+    if (!value || !*value) return;
+    g_live_path = value;
+    std::error_code ec;
+    g_live_read = std::filesystem::exists(g_live_path, ec) ? std::filesystem::file_size(g_live_path, ec) : 0;
+    LOGR("input: live controller file %s, its presses add to port 0", g_live_path.string().c_str());
+}
+
+// caller holds g_lock; the presses held now
+Pad LivePad() {
+    const auto now = std::chrono::steady_clock::now();
+    const int64_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - g_live_start).count();
+    if (now - g_live_checked < std::chrono::milliseconds(20)) return ScriptPad(g_live, elapsed_ms);
+    g_live_checked = now;
+    std::error_code ec;
+    uintmax_t size = std::filesystem::file_size(g_live_path, ec);
+    if (ec || size <= g_live_read) {
+        if (!ec && size < g_live_read) g_live_read = size;  // truncated: start over from its end
+        return ScriptPad(g_live, elapsed_ms);
+    }
+    std::ifstream file(g_live_path, std::ios::binary);
+    file.seekg(std::streamoff(g_live_read));
+    std::string chunk(size_t(size - g_live_read), '\0');
+    file.read(chunk.data(), std::streamsize(chunk.size()));
+    g_live_read += uintmax_t(file.gcount());
+    g_live_partial.append(chunk.data(), size_t(file.gcount()));
+    size_t nl;
+    while ((nl = g_live_partial.find('\n')) != std::string::npos) {
+        std::string line = g_live_partial.substr(0, nl);
+        g_live_partial.erase(0, nl + 1);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line == "CAPTURE") {  // the next frame is saved as F3 would, with XBE_CAPTURE_DIR set
+            LOGR("input: live capture requested");
+            gpu::g_capture = true;
+            continue;
+        }
+        PadScriptPress press;
+        switch (ParsePadScriptLine("0 " + line, press)) {
+            case PadScriptLine::Empty: break;
+            case PadScriptLine::Valid:
+                press.milliseconds = elapsed_ms;
+                LOGR("input: live press %s for %lld ms", press.buttons.c_str(), (long long)press.duration_ms);
+                g_live.push_back(std::move(press));
+                break;
+            case PadScriptLine::Invalid: LOGE("input: live controller line not understood: %s", line.c_str()); break;
+        }
+    }
+    // presses that ended long ago no longer matter
+    std::erase_if(g_live, [&](const PadScriptPress& x) { return x.milliseconds + x.duration_ms < elapsed_ms - 1000; });
+    return ScriptPad(g_live, elapsed_ms);
+}
+
+Pad PollKeyboard() {
+    HWND window = static_cast<HWND>(app::Window());
+    const bool foreground = window && window == GetForegroundWindow();
+    if (!foreground) return KeyboardPad({}, false);
+    auto down = [](int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; };
+    KeyboardState keys;
+    keys.enter = down(VK_RETURN);
+    keys.space = down(VK_SPACE);
+    keys.escape = down(VK_ESCAPE);
+    keys.backspace = down(VK_BACK);
+    keys.up = down(VK_UP);
+    keys.down = down(VK_DOWN);
+    keys.left = down(VK_LEFT);
+    keys.right = down(VK_RIGHT);
+    keys.w = down('W');
+    keys.s = down('S');
+    keys.a = down('A');
+    keys.d = down('D');
+    keys.q = down('Q');
+    keys.e = down('E');
+    keys.x = down('X');
+    keys.y = down('Y');
+    return KeyboardPad(keys, true);
+}
 
 void AddPad(SDL_JoystickID id) {
     for (SDL_Gamepad* pad : g_pads)
@@ -38,13 +185,34 @@ void RemovePad(SDL_JoystickID id) {
     }
 }
 
+// app::Settings deadzone_inner/outer on one stick, radial: the direction is kept and the length remapped so inner
+// reads centred and outer reads full. Each axis is clamped after, not the length, so a pad whose gate reaches the
+// corners still reads full on both axes there.
+void Deadzone(int16_t& x, int16_t& y) {
+    const app::Settings& s = app::Get();
+    const float inner = std::clamp(s.deadzone_inner, 0.0f, 0.9f);
+    const float outer = std::clamp(s.deadzone_outer, inner + 0.05f, 1.0f);
+    if (inner <= 0.0f && outer >= 1.0f) return;  // as the pad reports it
+    const float fx = std::max(x / 32767.0f, -1.0f), fy = std::max(y / 32767.0f, -1.0f);
+    const float len = std::sqrt(fx * fx + fy * fy);
+    if (len <= inner) {
+        x = y = 0;
+        return;
+    }
+    const float k = (len - inner) / (outer - inner) / len;
+    x = int16_t(std::lround(std::clamp(fx * k, -1.0f, 1.0f) * 32767.0f));
+    y = int16_t(std::lround(std::clamp(fy * k, -1.0f, 1.0f) * 32767.0f));
+}
+
 // once a millisecond at most, however many ports and threads read
 void UpdatePads() {
     static uint64_t last = 0;
     uint64_t now = SDL_GetTicks();
     if (!g_sdl || now == last) return;
     last = now;
-    SDL_PumpEvents();
+    // Guest threads poll controllers; SDL_PumpEvents is restricted to the main thread.
+    // This API explicitly supports any thread and refreshes joystick/gamepad state directly.
+    SDL_UpdateGamepads();
     SDL_Event e;
     while (SDL_PeepEvents(&e, 1, SDL_GETEVENT, SDL_EVENT_FIRST, SDL_EVENT_LAST) == 1) {
         if (e.type == SDL_EVENT_GAMEPAD_ADDED) AddPad(e.gdevice.which);
@@ -55,16 +223,23 @@ void UpdatePads() {
 }  // namespace
 
 void Init() {
+    {
+        std::lock_guard lock(g_lock);
+        LoadPadScript();
+        LoadPadLive();
+    }
+    LOGR("input: keyboard port 0 fallback: Enter Start, Space A, Escape B, Backspace Back, arrows D-pad, W/S gas/brake, A/D steer, Q/E black/white, X/Y");
     // WGI reads the triggers apart and HIDAPI takes PlayStation and Switch pads. Reads come from the guest's threads,
     // so SDL's own thread takes the device notices.
     SDL_SetHint(SDL_HINT_JOYSTICK_THREAD, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_WGI, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT, "0");
-    SDL_SetHint(SDL_HINT_XINPUT_ENABLED, "0");
-    SDL_SetHint(SDL_HINT_JOYSTICK_DIRECTINPUT, "0");
+    SDL_SetHint(SDL_HINT_XINPUT_ENABLED, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_DIRECTINPUT, "1");
     if (!SDL_Init(SDL_INIT_GAMEPAD)) {
-        LOGE("input: SDL failed to start, no controllers: %s", SDL_GetError());
+        LOGE("input: SDL controller initialization failed; keyboard fallback remains available: %s", SDL_GetError());
         return;
     }
     int v = SDL_GetVersion();
@@ -83,7 +258,13 @@ Pad Poll(int port) {
     {
         std::lock_guard lock(g_lock);
         UpdatePads();
-        if (SDL_Gamepad* pad = port >= 0 && port < 4 ? g_pads[port] : nullptr) {
+        SDL_Gamepad* pad = port >= 0 && port < 4 ? g_pads[port] : nullptr;
+        if (port == 0 && g_script_enabled) {
+            const auto now = std::chrono::steady_clock::now();
+            if (!g_script_start) g_script_start = now;
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - *g_script_start).count();
+            p = ScriptPad(g_script, elapsed);
+        } else if (pad) {
             p.connected = true;
             constexpr SDL_GamepadButton kButtons[] = {
                 SDL_GAMEPAD_BUTTON_DPAD_UP,   SDL_GAMEPAD_BUTTON_DPAD_DOWN,  SDL_GAMEPAD_BUTTON_DPAD_LEFT,
@@ -105,10 +286,36 @@ Pad Poll(int port) {
             p.ly = int16_t(-1 - axis(SDL_GAMEPAD_AXIS_LEFTY));
             p.rx = int16_t(axis(SDL_GAMEPAD_AXIS_RIGHTX));
             p.ry = int16_t(-1 - axis(SDL_GAMEPAD_AXIS_RIGHTY));
+            Deadzone(p.lx, p.ly);
+            Deadzone(p.rx, p.ry);
         }
+        // Keyboard remains usable while a controller is paired. Neutral keys preserve its analog sticks/triggers.
+        if (port == 0 && !g_script_enabled) p = MergeKeyboard(p, PollKeyboard());
+        if (port == 0 && !g_script_enabled && !g_live_path.empty()) p = MergeKeyboard(p, LivePad());
+    }
+    {
+        std::lock_guard lock(g_lock);
+        if (port >= 0 && port < 4) g_raw[port] = p;
+        // Back + Y on the first controller opens and closes the settings menu
+        if (port == 0) {
+            bool combo = (p.buttons & 32) && p.analog[3] > 128;
+            if (combo && !g_menu_combo) app::ToggleMenu();
+            g_menu_combo = combo;
+        }
+    }
+    // the menu has the controls: the game sees a pad with nothing held
+    if (app::MenuOpen()) {
+        Pad idle;
+        idle.connected = p.connected;
+        return idle;
     }
     if (app::kGame.pad) app::kGame.pad(port, p);
     return p;
+}
+
+Pad RawPad(int port) {
+    std::lock_guard lock(g_lock);
+    return port >= 0 && port < 4 ? g_raw[port] : Pad{};
 }
 
 // the motors run until set again

@@ -1,0 +1,23 @@
+{
+  "source": "C:\\Users\\purpl\\Desktop\\MidnightClub3-Port\\templates\\game\\assets\\video\\mc3intro.bik",
+  "source_sha256": "cb22217b41f94c35dbf006425ce7bc4c49b00d25625db1ff1d78a70cdb906fa9",
+  "frame_index": 1000,
+  "comparisons": [
+    {
+      "model": "realesrgan-x4plus",
+      "seconds": 11.01600000000326,
+      "output_sha256": "2abd874ed19674dead872620c7e93bbd630e328376ffdf8d865e409c5dd22fc3"
+    },
+    {
+      "model": "ultrasharp-4x",
+      "seconds": 10.73399999999674,
+      "output_sha256": "8f956b8e88a73ac879fc88d396eedaa733038edf1f05091a7a23fde93182764c"
+    },
+    {
+      "model": "remacri-4x",
+      "seconds": 10.922000000020489,
+      "output_sha256": "d1051ee11237b623d40783e5ec2ffb47f7e697266fcab6946a01ff4e42e248e6"
+    }
+  ],
+  "note": "All neural candidates use the original Bink frame. Edge detail alone does not establish faithful reconstruction or temporal stability."
+}

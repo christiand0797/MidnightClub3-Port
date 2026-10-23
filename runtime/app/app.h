@@ -23,6 +23,49 @@ struct Settings {
     bool vsync = true;
     uint32_t aniso = 0;              // 0 as the game asks
     std::string join_ip;                   // co-op: a host past the LAN the system link search also asks
+
+    // [graphics] in the settings file, changed live from the settings menu (settings_menu.cpp)
+    struct Graphics {
+        bool post = true;           // the present runs the chain below; off: the console's picture as it was
+        uint32_t aa = 1;            // 0 off, 1 FXAA
+        float aa_strength = 1.0f;   // 0..1
+        float sharpen = 0.35f;      // AMD CAS, 0 off .. 1
+        float brightness = 0.0f;    // -0.5..0.5 added
+        float contrast = 1.0f;      // 0.5..1.5 about mid grey
+        float saturation = 1.0f;    // 0..2
+        float vibrance = 0.0f;      // -1..1, boosts dull colours more than vivid ones
+        float gamma = 1.0f;         // 0.5..2 exponent applied before the rest
+        bool sixty = true;          // 60 fps game timing; false: the console's 30 fps lock
+        float motion_blur = 1.0f;   // the game's speed blur, 0 off .. 1 as the console (2 doubled)
+        float glow = 1.0f;          // the game's light glow, 0 off .. 2
+        float headlights = 1.0f;    // the headlight pools on the road, 0 off .. 2
+        float neon = 2.0f;          // car neon underglow (vp_neon / fx_car_neon_glow draws), 0 off, 1 as the console .. 4
+        bool show_fps = false;      // a small counter in the corner
+        bool texture_pack = true;   // textures/replace/<hash>.png in place of the console's textures
+        bool texture_dump = false;  // every texture seen saved to textures/dump/<hash>.png, for making packs
+        // 0 as the console; 1 full: the sharpest mip always allowed, no blurring bias, a slight sharpening one, 16x
+        // anisotropic; 2 max: only the sharpest mip, whatever the distance (may shimmer)
+        uint32_t texture_detail = 1;
+        bool hd_movies = true;      // video_hd/<path>.mp4 shown in place of a Bink movie the title plays
+        float lod = 1.0f;           // model LOD switch, prop cull and far clip distances, times (lod.cpp)
+        float fov_scale = 1.0f;     // the driving camera's vertical field of view, times (fov.cpp)
+    } graphics;
+
+    // [tuning] in the settings file, changed live from the settings menu: cars past the garage's steps
+    // (templates/game/src/game/tuning.cpp)
+    struct Tuning {
+        bool garage_extended = true;          // extended choices in the game's wheel/suspension menus
+        float ride_front = 0, ride_rear = 0;  // metres added to each axle's suspension offset, + raises
+        float wheel_limit = 1.6f;             // the largest wheel and tire each car takes, times the car's own
+    } tuning;
+
+    // config/mc3_enhancements.toml beside the exe (settings.cpp), changed live from the settings menu
+    bool force_1080p = false;       // [render] the output is 1920x1080 whatever width/height say (app::Output)
+    bool force_widescreen = false;  // [render] the console reports a widescreen TV whatever the output's shape
+    // [input] radial stick deadzones, both sticks of every controller (core/input.cpp): below inner the stick reads
+    // centred, from outer on it reads full, between the two it is rescaled so the whole range stays usable
+    float deadzone_inner = 0.15f;   // 0..0.9 of full deflection
+    float deadzone_outer = 0.95f;   // inner + 0.05 .. 1
 };
 
 Settings& Get();
@@ -62,6 +105,12 @@ void FinishHandover();  // any thread but the window thread's: opens the game wi
 
 // held around ImGui: the window thread's messages and the renderer's frame
 std::recursive_mutex& UiLock();
+
+// the in-game graphics settings menu (settings_menu.cpp): F1, or Back + Y on a controller. While it is open the
+// game's controllers read neutral and the menu takes the input.
+bool MenuOpen();
+void ToggleMenu();
+void DrawSettingsMenu(float fps);  // the renderer, inside its ImGui frame, under UiLock
 
 // what the game repo defines once
 struct Option {  // a setting in the settings file, flag or value

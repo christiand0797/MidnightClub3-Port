@@ -1,0 +1,38 @@
+{
+  "name": "mc3",
+  "engine": "generic",
+  "build": {
+    "cmd": "powershell -NoProfile -ExecutionPolicy Bypass -File Build-MC3.ps1 -Jobs 8"
+  },
+  "launch": {
+    "cmd": "out/native/mc3.exe",
+    "args": [
+      "--disc",
+      "${MC3_DISC}"
+    ],
+    "cwd": "templates/game",
+    "env": {
+      "XBE_PAD_SCRIPT": "${MC3_PAD_SCRIPT}",
+      "XBE_CAPTURE_DIR": "captures",
+      "XBE_PERF": "1",
+      "XBE_VERBOSE": "1",
+      "XBE_CAPTURE_FRAME": "${MC3_CAPTURE_FRAME}",
+      "XBE_PAD_LIVE": "${MC3_PAD_LIVE}",
+      "XBE_CAPTURE_SNAP": "${MC3_SNAP}",
+      "XBE_CAPTURE_SNAP_TEX": "${MC3_SNAP_TEX}"
+    }
+  },
+  "log": {
+    "stdout": false,
+    "paths": [
+      "templates/game/out/native/logs/mc3.log"
+    ]
+  },
+  "ready": "perf: ",
+  "window": "Midnight Club 3",
+  "sourceRoots": [
+    "runtime",
+    "templates/game/src"
+  ],
+  "vars": {}
+}

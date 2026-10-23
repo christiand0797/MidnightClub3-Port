@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <chrono>
 #include <csignal>
+#include <cstring>
 #include <cwchar>
 #include <thread>
 
@@ -36,8 +37,48 @@ constexpr UINT kApplyDisplay = WM_APP + 1, kOpenWindow = WM_APP + 2;
 bool g_mode_changed = false;
 bool g_apply_posted = false;  // a display apply is waiting in the queue or running
 
+// the faulting host stack by name from the pdb beside the exe: recompiled guest functions are sub_XXXXXXXX, so
+// this names both the guest code and the runtime function that failed without opening the dump
+void LogHostStack(const CONTEXT* fault) {
+    HANDLE proc = GetCurrentProcess(), thread = GetCurrentThread();
+    SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
+    if (!SymInitializeW(proc, ExeDir().c_str(), TRUE)) return;
+    CONTEXT ctx = *fault;
+    STACKFRAME64 frame{};
+    frame.AddrPC = {ctx.Rip, 0, AddrModeFlat};
+    frame.AddrFrame = {ctx.Rbp, 0, AddrModeFlat};
+    frame.AddrStack = {ctx.Rsp, 0, AddrModeFlat};
+    alignas(SYMBOL_INFO) char buf[sizeof(SYMBOL_INFO) + 256];
+    for (int i = 0; i < 24; i++) {
+        if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, proc, thread, &frame, &ctx, nullptr, SymFunctionTableAccess64,
+                         SymGetModuleBase64, nullptr) ||
+            !frame.AddrPC.Offset)
+            break;
+        auto* sym = reinterpret_cast<SYMBOL_INFO*>(buf);
+        sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+        sym->MaxNameLen = 255;
+        DWORD64 disp = 0;
+        DWORD line_disp = 0;
+        IMAGEHLP_LINE64 line{sizeof(IMAGEHLP_LINE64)};
+        const char* name = SymFromAddr(proc, frame.AddrPC.Offset, &disp, sym) ? sym->Name : "?";
+        if (SymGetLineFromAddr64(proc, frame.AddrPC.Offset, &line_disp, &line)) {
+            const char* file = std::strrchr(line.FileName, '\\');
+            LOGE("  host #%02d %s+0x%llX  %s:%lu", i, name, (unsigned long long)disp, file ? file + 1 : line.FileName,
+                 line.LineNumber);
+        } else {
+            LOGE("  host #%02d %s+0x%llX  (%p)", i, name, (unsigned long long)disp, (void*)frame.AddrPC.Offset);
+        }
+    }
+    SymCleanup(proc);
+}
+
 // crash dump in CrashDumps beside the exe
 LONG WINAPI WriteCrashDump(EXCEPTION_POINTERS* e) {
+    if (e && e->ContextRecord && e->ExceptionRecord->ExceptionCode != 0x406D1388) {  // not a thread-name notice
+        LOGE("exception %08lX at %p (host stack follows)", e->ExceptionRecord->ExceptionCode, e->ExceptionRecord->ExceptionAddress);
+        LogHostStack(e->ContextRecord);
+        logx::Flush();
+    }
     // the dump holds no guest memory: the guest registers and return addresses go to the log
     if (kernel::Thread* t = kernel::Current(); e && t && t->ctx) {
         auto* r = e->ExceptionRecord;
@@ -128,6 +169,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_KEYDOWN:
             if (wp == VK_F3) DumpThreads();
+            if (wp == VK_F4 && !(lp & (1 << 30))) {  // the next frame saved to captures/<time>/ (frame.txt, targets)
+                LOGR("input: F4 capture requested");
+                gpu::g_capture = true;
+            }
+            if (wp == VK_F1 && !(lp & (1 << 30))) ToggleMenu();  // not on key repeat
             return 0;
         case WM_ACTIVATE:
             if (LOWORD(wp) == WA_INACTIVE) {

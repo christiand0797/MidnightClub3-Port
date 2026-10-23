@@ -7,6 +7,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <cwctype>
@@ -62,6 +63,40 @@ bool ReadHostFile(const fs::path& path, std::vector<uint8_t>& out) {
 }  // namespace
 
 bool FindGame(GameFiles& game) {
+    // An explicit image permits a native build to read the user's original disc in place.
+    // Parse Windows quoting rules so paths containing spaces and non-ASCII text are preserved.
+    int argc = 0;
+    wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    fs::path requested_disc;
+    bool explicit_disc = false;
+    if (argv) {
+        for (int i = 1; i < argc; i++) {
+            if (std::wstring_view(argv[i]) != L"--disc") continue;
+            explicit_disc = true;
+            if (i + 1 < argc) requested_disc = argv[++i];
+            break;
+        }
+        LocalFree(argv);
+    }
+    if (explicit_disc) {
+        auto disc = std::make_unique<kernel::Disc>();
+        std::vector<uint8_t> xbe;
+        std::string error;
+        if (requested_disc.empty()) error = "--disc requires the path to an Xbox disc image.";
+        else if (!disc->Open(requested_disc, error)) {}
+        else if (!disc->Load(IMAGE_XBE, xbe)) error = "The disc does not contain " IMAGE_XBE ".";
+        else if (Sha1(xbe) != kImageSha1) error = "The disc's XBE does not match this native build. Rebuild from this disc first.";
+        else {
+            LOGR("Game: %s in %s, sha1 %s", IMAGE_XBE, requested_disc.string().c_str(), kImageSha1);
+            game = {requested_disc.parent_path(), std::move(xbe)};
+            kernel::MountDisc(std::move(disc));
+            return true;
+        }
+        LOGE("game: --disc: %s", error.c_str());
+        std::wstring message(error.begin(), error.end());
+        MessageBoxW(nullptr, message.c_str(), kGame.short_title, MB_ICONERROR);
+        return false;
+    }
     fs::path assets = FindAssets();
     std::vector<fs::path> isos;
     std::error_code ec;

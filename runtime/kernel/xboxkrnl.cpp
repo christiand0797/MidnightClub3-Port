@@ -673,6 +673,10 @@ KERNEL_EXPORT(246, ObReferenceObjectByHandle, 3) {
     uint32_t h = a[0];
     ObjectRef o = h == 0xFFFFFFFE ? CurrentRef() : FromHandle(h);
     if (!o) return kInvalidHandle;
+    if (o->type == ObjType::File) {
+        W32(a[2], FileObjectBody(o));
+        return kSuccess;
+    }
     if (!o->guest) {
         uint32_t body = mem::AllocSystem(32);
         Bind(o, body);

@@ -185,6 +185,14 @@ struct State {
     uint32_t light_enable = 0;                         // bit per light
     float ss_offset_x = 0, ss_offset_y = 0;
     float zscale = 16777215.0f;  // depth buffer units per 1.0
+    // NV2A inline vertex attributes: what a draw reads for a register its vertices do not carry. The title sets them
+    // with SetVertexData* in the push buffer and they persist; diffuse starts white, the rest at 0 0 0 1.
+    std::array<std::array<float, 4>, 16> vattr = [] {
+        std::array<std::array<float, 4>, 16> a{};
+        for (auto& v : a) v = {0, 0, 0, 1};
+        a[3] = {1, 1, 1, 1};
+        return a;
+    }();
 };
 
 }  // namespace gpu

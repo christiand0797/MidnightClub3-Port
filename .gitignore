@@ -3,3 +3,20 @@
 .vs/
 .vscode/
 .idea/
+/.local/
+
+# Local game data, generated media, and portable copies
+/*.iso
+/*.exe
+/*.lnk
+/desktop.ini
+/extracted/
+/upscaled/
+/repacked/
+/upscale_tools/
+/logs/
+/test_dxt3.dds
+
+# Python caches and locally downloaded PBR model weights
+__pycache__/
+*.py[cod]

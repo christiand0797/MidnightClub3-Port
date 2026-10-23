@@ -4,11 +4,14 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <map>
+#include <mutex>
 
 #include "kernel/disc.h"
 #include "kernel/kernel.h"
 #include "kernel/exports.h"
+#include "kernel/memory.h"
 
 namespace fs = std::filesystem;
 
@@ -587,40 +590,114 @@ KERNEL_EXPORT(226, NtSetInformationFile, 5) {
     return kSuccess;
 }
 
-KERNEL_EXPORT(218, NtQueryVolumeInformationFile, 5) {
-    uint32_t iosb = a[1], out = a[2], len = a[3], cls = a[4];
+namespace {
+
+// FS_INFORMATION_CLASS answers for a volume: the disc is GDFX in 2 KiB sectors, the hard disk FATX
+uint32_t QueryVolume(uint32_t out, uint32_t len, uint32_t cls, bool disc, uint32_t& info) {
     std::memset(HostPtr(out), 0, len);
+    const uint32_t sector = disc ? 2048 : 512, per_unit = disc ? 1 : 32;
+    auto need = [&](uint32_t n) { return len >= n; };
     switch (cls) {
         case 3:  // FileFsSizeInformation: 16 GiB total, 8 GiB free in 16 KiB units
-            W64(out, 0x100000);
-            W64(out + 8, 0x80000);
-            W32(out + 0x10, 32);
-            W32(out + 0x14, 512);
-            IoStatus(iosb, kSuccess, 0x18);
+            if (!need(0x18)) return kInfoLengthMismatch;
+            W64(out, disc ? 0x400000 : 0x100000);
+            W64(out + 8, disc ? 0 : 0x80000);
+            W32(out + 0x10, per_unit);
+            W32(out + 0x14, sector);
+            info = 0x18;
             return kSuccess;
         case 7:  // FileFsFullSizeInformation
-            W64(out, 0x100000);
-            W64(out + 8, 0x80000);
-            W64(out + 0x10, 0x80000);
-            W32(out + 0x18, 32);
-            W32(out + 0x1C, 512);
-            IoStatus(iosb, kSuccess, 0x20);
+            if (!need(0x20)) return kInfoLengthMismatch;
+            W64(out, disc ? 0x400000 : 0x100000);
+            W64(out + 8, disc ? 0 : 0x80000);
+            W64(out + 0x10, disc ? 0 : 0x80000);
+            W32(out + 0x18, per_unit);
+            W32(out + 0x1C, sector);
+            info = 0x20;
             return kSuccess;
         case 1:  // FileFsVolumeInformation
+            if (!need(0x18)) return kInfoLengthMismatch;
             W32(out + 8, 0x12345678);  // VolumeSerialNumber
-            IoStatus(iosb, kSuccess, 0x18);
+            info = 0x18;
             return kSuccess;
-        case 5:  // FileFsAttributeInformation: attributes, max name, name length, "FATX"
+        case 4:  // FileFsDeviceInformation: FILE_DEVICE_CD_ROM_FILE_SYSTEM 3 or FILE_DEVICE_DISK_FILE_SYSTEM 8
+            if (!need(8)) return kInfoLengthMismatch;
+            W32(out, disc ? 3 : 8);
+            W32(out + 4, disc ? 1 : 0);  // FILE_REMOVABLE_MEDIA
+            info = 8;
+            return kSuccess;
+        case 5:  // FileFsAttributeInformation: attributes, max name, name length, name
+            if (!need(16)) return kInfoLengthMismatch;
             W32(out, 0);
             W32(out + 4, 42);
             W32(out + 8, 4);
-            std::memcpy(HostPtr(out + 12), "FATX", 4);
-            IoStatus(iosb, kSuccess, 16);
+            std::memcpy(HostPtr(out + 12), disc ? "GDFX" : "FATX", 4);
+            info = 16;
             return kSuccess;
         default:
-            LOG_FIRST(8, "NtQueryVolumeInformationFile: class %u", cls);
+            LOG_FIRST(8, "query volume information: class %u", cls);
             return kInvalidParameter;
     }
+}
+
+}  // namespace
+
+KERNEL_EXPORT(218, NtQueryVolumeInformationFile, 5) {
+    uint32_t iosb = a[1], out = a[2], len = a[3], cls = a[4];
+    auto f = FileFromHandle(a[0]);
+    uint32_t info = 0;
+    uint32_t status = QueryVolume(out, len, cls, f && f->entry, info);
+    if (status == kSuccess) IoStatus(iosb, kSuccess, info);
+    return status;
+}
+
+// FILE_OBJECT bodies handed out by ObReferenceObjectByHandle, by guest address. The generic Bind stamps a serial
+// at +8, which for a file object is FsContext, so files keep their own table.
+namespace {
+std::mutex g_file_objects_lock;
+std::map<uint32_t, std::weak_ptr<File>> g_file_objects;
+}  // namespace
+
+uint32_t FileObjectBody(const ObjectRef& o) {
+    auto f = std::static_pointer_cast<File>(o);
+    std::lock_guard<std::mutex> lock(g_file_objects_lock);
+    if (f->guest) return f->guest;
+    // FILE_OBJECT: Type 0, DeviceObject +4, FsContext +8 (the file system's FCB), FsContext2 +0xC.
+    // XAPI's XGetFilePhysicalSortKey reads the FCB: GDFX keeps the starting sector at +0, FATX a flags byte at +0
+    // (bit 0 a directory) and the first cluster at +0x1C. Both orders place files as they lie on the medium.
+    uint32_t body = mem::AllocSystem(0x40), fcb = mem::AllocSystem(0x40);
+    std::memset(HostPtr(body), 0, 0x40);
+    std::memset(HostPtr(fcb), 0, 0x40);
+    W32(body + 8, fcb);
+    if (f->entry) {
+        W32(fcb, uint32_t(f->entry->offset / 2048));
+    } else {
+        uint32_t key = uint32_t(std::hash<std::string>{}(f->xbox)) & 0x0FFFFFFF;
+        G<uint8_t>(fcb) = f->dir ? 1 : 0;
+        W32(fcb + 0x1C, key ? key : 1);
+    }
+    f->guest = body;
+    g_file_objects[body] = f;
+    return body;
+}
+
+// NTSTATUS IoQueryVolumeInformation(FileObject, FsInformationClass, Length, FsInformation, ReturnedLength)
+KERNEL_EXPORT(76, IoQueryVolumeInformation, 5) {
+    uint32_t object = a[0], cls = a[1], len = a[2], out = a[3], returned = a[4];
+    std::shared_ptr<File> f;
+    {
+        std::lock_guard<std::mutex> lock(g_file_objects_lock);
+        auto it = g_file_objects.find(object);
+        if (it != g_file_objects.end()) f = it->second.lock();
+    }
+    if (!f) {
+        LOG_FIRST(8, "IoQueryVolumeInformation: %08X is not a file object", object);
+        return kInvalidHandle;
+    }
+    uint32_t info = 0;
+    uint32_t status = QueryVolume(out, len, cls, f->entry != nullptr, info);
+    if (returned) W32(returned, status == kSuccess ? info : 0);
+    return status;
 }
 
 KERNEL_EXPORT(207, NtQueryDirectoryFile, 10) {
