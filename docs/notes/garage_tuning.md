@@ -1,5 +1,12 @@
 # Garage tuning: extended ride height / rims / tires, player-only tuning
 
+**2026-10-23 continuation:** see [garage_expansion.md](garage_expansion.md) for the current both-side visual fit
+fix, live camber/offset and physics controls, actual pneumatic endpoint hooks, UI entry and whole-catalogue tests.
+The latest [tire profile expansion](garage_profiles.md) adds 26 append-only profiles, 34 total.
+The [driving ownership repair](vehicle_ownership.md) fixes stack-factory rejection and documents recovery tests.
+Actual chassis-floor/spark and extreme-width/camber limits are tracked in [road_scrape.md](road_scrape.md).
+Older guesses below are historical; the new note explicitly records the corrected addresses and evidence.
+
 2026-10-21. Code: `templates/game/src/game/garage.cpp` (new), `templates/game/src/game/tuning.cpp` (changed).
 Setting: `[tuning] garage_extended` (bool, default true; lead wired app.h/settings.cpp/F1 "Extended garage choices").
 All addresses are default.xbe guest VAs. Disassembly helpers used: scratchpad `garage/gd.py` (`<va> [n]`, `-f <va>`
@@ -259,11 +266,39 @@ adding new hooks: hooking disposal as though it were setup would edit freed obje
 ### Direct-to-garage preview ownership and contact diagnosis
 
 The garage owns two preview slots: car pointers at +0x714/+0x718, CarCfgs at +0x71C/+0x720 and selected slot at
-+0x72C. Its creation path is 0x13C8E0, calling 0x2CBAE0 and storing the returned car at 0x13C972. A player factory
-hook alone does not establish ownership of every direct-to-garage preview. The status-pass hook now identifies a
++0x72C. Its creation path is 0x13C8E0, calling 0x2CBAE0 and storing the returned car at 0x13C972. The initial leaf
+factory hook rejected valid stack factories (see the later correction below). The status-pass hook identifies a
 previously unowned selected garage car as a player preview, then applies tuning immediately. A concrete known
 computer owner remains excluded. Destructor retirement uses the existing car-owner path. The regression tests
 direct-to-garage registration, repeated refresh without duplicate rebasing, and refusal to promote a known AI car.
+
+### Driving ownership and stack-factory correction
+
+The later garage-to-street failure was reproduced by the parent: the concrete human driving car had no tuning
+registration, and both wheel tune/cached suspension offsets remained at the purchased value despite an additional
+saved F1 ride adjustment. The factory hooks used `Plausible(factory)`, whose heap-style range stops below
+`0x84000000`. Guest stacks start at `0xD0000000`, and original `0x2C004C..0x2C0059` constructs/uses the human
+factory through `esp`-relative addresses. Both factory wrappers now use committed-range checks with 64-bit end
+arithmetic. This accepts real stack factories and rejects uncommitted/overflowing ranges.
+
+The defensive `GarageRefreshPlayerCar(car)` also recovers new/rebound driving ownership at `0xFFD90` entry.
+It requires `car+0x5E==0`, a committed human controller at `car+4` with vtable `0x47684C`, and its backpointer at
+`controller+0x50==car`, plus committed actual vehSim/CarCfg ranges. These fields come from `0x2CB320`, constructor
+`0x2C9970` and initializer `0x2C89F0`. `car+0x14` is damage, not input; `+0x18` is feedback/rumble. Shared cfg alone
+cannot promote a concrete AI. Normal unchanged frames neither rebind nor rebase.
+
+Recovery requests dirty `0x81` on the actual cfg. The original same-frame refresh then writes purchased values
+in `0x121970` before `TuningCarCfgApplied` adds PC tuning. Directly rebasing during late recovery could double-add
+an already tuned offset. Stale simulation aliases are retired before the new binding, including when the repaired
+factory already registered it, so a delayed old destructor cannot erase the replacement's tuning.
+
+The production garage regression passes recognition/rejection by controller identity, both shared-cfg directions,
+unchanged-frame deduplication, deferred baseline notification, human-to-AI transition, new car/sim reuse and delayed
+destruction with/without prior factory registration. A Windows sparse guest fixture reserves virtual address space
+without allocating 4 GiB of RAM and runs the actual wrapper against a committed factory at `0xD1234000`; uncommitted
+and wrapping factories are rejected. Original generated profile getter/setter and string-table teardown fixtures
+continue to pass. Native street retention remains a separate parent-controlled game check; see
+[vehicle_ownership.md](vehicle_ownership.md) for complete evidence and timing.
 
 `tuning.cpp` also wraps the original **0xA7250** wheel solver without modifying its input/output. For extended-low
 player wheels it samples `garage: wheel contact sim ... requested ... actual ... offset ... stop ... extension ...`

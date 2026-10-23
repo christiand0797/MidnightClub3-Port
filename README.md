@@ -1,16 +1,50 @@
 # Midnight Club 3: DUB Edition Remix — native Windows port
 
-This repository contains the native x64 port, its Xbox API compatibility runtime, build and media tools, regression
-checks, and reverse-engineering documentation. The original x86 game is translated to C++ ahead of time and built
-for Windows with Direct3D 12 and XAudio2.
+Play the native Windows x64 port with Direct3D 12 and XAudio2. The original x86
+game is translated to C++ ahead of time; no emulator is needed.
 
-Start with [the port instructions](PORTABLE_README.md), [the current handoff](docs/HANDOFF.md), and
-[the active continuation ledger](docs/AUTONOMOUS_RUN.md). Build with `Build-MC3.ps1` and launch with `Launch-MC3.ps1`.
-The canonical executable is `templates/game/out/native/mc3.exe`.
+## Download and play
 
-The Git source tree excludes original game data, generated code, downloaded model weights and build outputs. Full
-project snapshots are handled separately because the local project contains files above GitHub's Git size limit.
-The current renderer remains active; [PBR research](docs/PBR_PLAN.md) is a future, separately gated conversion.
+Use the **complete-content Windows portable ZIP** on the
+[v0.3.0 development release page](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.0-dev.20261023).
+This release is currently a **draft awaiting final validation**; its public link
+becomes available after publication. Release notes state the actual tested
+features and known limitations. Choose `MidnightClub3-Native-…-win64.zip`.
+
+1. Extract the entire ZIP into a writable folder.
+2. Double-click **mc3.exe**. First launch downloads and verifies the matching
+   content, creates a desktop shortcut and starts the game. Allow about 30 GB
+   free for the current content and setup's temporary files.
+3. Press **F1** or controller **Back + Y** for PC settings; **F2** opens Vehicle
+   tuning directly.
+
+[Read the complete player guide](docs/PLAYER_GUIDE.md) for every Display, Vehicle,
+Input, Quality, Picture and Info option, units, defaults, saving and
+troubleshooting. [Installation instructions](docs/INSTALL.md) cover offline
+content, own-disc builds, updates and moving the game to another PC.
+
+The current native build passed a **Golf R32 garage-to-street check**: ride-height
+changes applied immediately, and ride, camber, wheel offset and engine-power
+values survived leaving the garage. **19 regression tests pass**, including the
+original game's refresh instructions. See the [validation record](docs/notes/live_vehicle_tuning.md)
+for the tested values and remaining limits. The ±2 m ride range is implemented;
+physical fit at every extreme on every car remains unverified.
+
+GitHub's automatic **Source code** ZIP is for development. Use the named portable
+release asset to play. The current additional media pass and the all-car tuning
+validation are ongoing; [PBR conversion](docs/PBR_PLAN.md) is future work.
+
+## Development
+
+This source repository includes the compatibility runtime, build and media tools,
+regression checks and reverse-engineering notes. Start with
+[the port instructions](PORTABLE_README.md), [the current handoff](docs/HANDOFF.md)
+and [the continuation ledger](docs/AUTONOMOUS_RUN.md). Build with `Build-MC3.ps1`
+and launch locally with `Launch-MC3.ps1`; the development executable is
+`templates/game/out/native/mc3.exe`.
+
+The Git source tree excludes original game data, generated code, model weights
+and build outputs. Complete private project snapshots are published separately.
 
 The upstream framework documentation follows, with its original attribution and license retained.
 

@@ -456,9 +456,9 @@ void DrawSettingsMenu(float fps) {
                   "after changing this. Previously saved extended values remain readable when disabled.");
             ImGui::Separator();
             ImGui::TextDisabled("Stance / front and rear");
-            Slider("Ride height front", &s.tuning.ride_front, -0.5f, 0.5f, "%+.3f m",
+            Slider("Ride height front", &s.tuning.ride_front, -2.0f, 2.0f, "%+.3f m",
                    "Added to your car's front suspension, on top of its garage setting: - lowers, + raises.");
-            Slider("Ride height rear", &s.tuning.ride_rear, -0.5f, 0.5f, "%+.3f m", nullptr);
+            Slider("Ride height rear", &s.tuning.ride_rear, -2.0f, 2.0f, "%+.3f m", nullptr);
             Check("Allow wheels to tuck into the body", &s.tuning.wheel_tuck,
                   "Keeps grounded tires at their contact position when lowered past the original range. "
                   "The fenders may intersect the tires.");

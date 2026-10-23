@@ -1,12 +1,18 @@
 // Actual garage hooks, with the original guest bodies and Flash/database APIs replaced by bounded fixtures.
 #include "app/app.h"
 #include "xdk/hle.h"
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 namespace fixture {
 std::vector<uint8_t> memory(0x600000);
@@ -16,8 +22,14 @@ constexpr uint32_t vm = 0x121000, vtable = 0x123000, member = 0x124000;
 struct Value { uint32_t payload = 0, type = 1; };
 struct Array { uint32_t value, object; std::vector<Value> items; std::set<size_t> members; };
 std::map<std::string, Array> arrays;
-std::vector<uint32_t> rides, widths;
+std::vector<uint32_t> rides, widths, profiles;
 std::map<uint32_t, bool> players;
+struct Binding { uint32_t sim, cfg; bool player; };
+std::map<uint32_t, Binding> bindings;
+unsigned bind_calls = 0;
+#ifdef _WIN32
+bool sparse_guest = false;
+#endif
 unsigned stock_ride_calls = 0, stock_available_calls = 0, cfg_applied_calls = 0;
 unsigned member_calls = 0;
 constexpr uint32_t globals[] = {0x5014D0, 0x5014D8, 0x5014D4, 0x501410, 0x501420, 0x50142C};
@@ -90,8 +102,8 @@ uint32_t String(const std::string& s) {
 }
 void Inline(uint32_t va, const std::string& s) { std::memcpy(memory.data() + va, s.c_str(), s.size() + 1); }
 void Database() {
-    for (auto row : {std::pair{0x100u, &rides}, std::pair{0xF8u, &widths}}) {
-        uint32_t data = row.first == 0x100 ? 0x25000 : 0x26000;
+    for (auto row : {std::pair{0x100u, &rides}, std::pair{0xF8u, &widths}, std::pair{0xF0u, &profiles}}) {
+        uint32_t data = row.first == 0x100 ? 0x25000 : row.first == 0xF8 ? 0x26000 : 0x26400;
         kernel::W32(db + row.first, data);
         kernel::W16(db + row.first + 4, uint16_t(row.second->size()));
         for (size_t i = 0; i < row.second->size(); ++i) kernel::W32(data + uint32_t(i) * 4, (*row.second)[i]);
@@ -117,7 +129,15 @@ X86Context Call(Hook hook, uint32_t self = 0, std::initializer_list<uint32_t> ar
 }
 namespace app { Settings& Get() { static Settings settings; return settings; } }
 namespace logx { void Write(Level, const char*, ...) {} }
-namespace mem { bool IsCommitted(uint32_t va) { return va >= 0x10000 && va < fixture::memory.size(); } }
+namespace mem { bool IsCommitted(uint32_t va) {
+#ifdef _WIN32
+    if (fixture::sparse_guest) {
+        MEMORY_BASIC_INFORMATION region{};
+        return VirtualQuery(kernel::g_base + va, &region, sizeof(region)) && region.State == MEM_COMMIT;
+    }
+#endif
+    return va >= 0x10000 && va < fixture::memory.size();
+} }
 namespace kernel {
 uint8_t* g_base = fixture::memory.data();
 std::string ReadCString(uint32_t va, size_t max) {
@@ -131,15 +151,15 @@ uint32_t CallGuest(X86Context& ctx, uint32_t fn, const uint32_t* a, size_t count
     using namespace fixture;
     if (fn == 0x1B3B90) {
         assert(count == 1);
-        if (a[0] == 0x2000 && !allocations.contains(0x30000)) return Allocate(a[0], 0x30000);
+        if (a[0] == 0x8000 && !allocations.contains(0x30000)) return Allocate(a[0], 0x30000);
         if (fail_label_allocation) { fail_label_allocation = false; return 0; }
         return Allocate(a[0]);
     }
     if (fn == 0x1B3C00) { assert(count == 1); Free(a[0]); return 0; }
     if (fn == 0x0EA750) { assert(ctx.ecx == string_table && count == 1); return TextEntry(ReadCString(a[0])); }
-    if (fn == 0x274A80 || fn == 0x2749C0) {
+    if (fn == 0x274A80 || fn == 0x2749C0 || fn == 0x274980) {
         assert(ctx.ecx == db && count == 1);
-        (fn == 0x274A80 ? rides : widths).push_back(a[0]); Database(); return 0;
+        (fn == 0x274A80 ? rides : fn == 0x2749C0 ? widths : profiles).push_back(a[0]); Database(); return 0;
     }
     if (fn == member) {
         assert(count == 2);
@@ -182,8 +202,15 @@ uint32_t CallGuest(X86Context& ctx, uint32_t fn, const uint32_t* a, size_t count
 }
 }
 void TuningSetPlayerSim(uint32_t sim, bool player) { fixture::players[sim] = player; }
-void TuningForgetSim(uint32_t sim) { fixture::players.erase(sim); }
-void TuningBindCar(uint32_t, uint32_t, uint32_t, bool) {}
+void TuningForgetSim(uint32_t sim) {
+    fixture::players.erase(sim);
+    std::erase_if(fixture::bindings, [sim](const auto& item) { return item.second.sim == sim; });
+}
+void TuningBindCar(uint32_t car, uint32_t sim, uint32_t cfg, bool player) {
+    ++fixture::bind_calls;
+    if (player) fixture::bindings[car] = {sim, cfg, player};
+    else fixture::bindings.erase(car);
+}
 namespace app { void GarageTuningActive() {} }
 void TuningCarCfgApplied(uint32_t) { ++fixture::cfg_applied_calls; }
 
@@ -191,6 +218,14 @@ X86_FUNC(__imp__sub_00270C10) { ctx.esp += 4; }
 X86_FUNC(__imp__sub_00270BE0) { ++fixture::stock_ride_calls; x87_push(ctx, 0.025); ctx.esp += 8; }
 X86_FUNC(__imp__sub_00272FC0) { x87_push(ctx, 0.195); ctx.esp += 8; }
 X86_FUNC(__imp__sub_00270C00) { x87_push(ctx, 0.195); ctx.esp += 4; }
+#ifndef MC3_TEST_REAL_PROFILE_READERS
+X86_FUNC(__imp__sub_00270B40) { x87_push(ctx, 0); ctx.esp += 4; }
+X86_FUNC(__imp__sub_00270B60) { ctx.eax = 0; ctx.esp += 4; }
+X86_FUNC(__imp__sub_00270BC0) { x87_push(ctx, 0); ctx.esp += 4; }
+X86_FUNC(__imp__sub_00272FE0) { x87_push(ctx, 0); ctx.esp += 12; }
+#else
+X86_EXTERN_FUNC(FixtureGarageSetProfile);
+#endif
 X86_FUNC(__imp__sub_00145DC0) { ++fixture::stock_available_calls; ctx.eax = 0; ctx.esp += 12; }
 X86_FUNC(__imp__sub_001465E0) { ctx.esp += 8; }
 X86_FUNC(__imp__sub_001519D0) { ctx.esp += 4; }
@@ -209,6 +244,8 @@ X86_EXTERN_FUNC(FixtureGarageLeaveForSave);
 #define DECLARE(name) X86_EXTERN_FUNC(sub_##name)
 DECLARE(00270C10); DECLARE(00270BE0); DECLARE(00272FC0); DECLARE(00270C00); DECLARE(00145DC0);
 DECLARE(001465E0); DECLARE(00121970); DECLARE(002CBDE0); DECLARE(001FAE10); DECLARE(000FFBA0);
+DECLARE(00270B40); DECLARE(00270B60); DECLARE(00270BC0); DECLARE(00272FE0);
+void GarageRefreshPlayerCar(uint32_t car);
 
 int main() {
     using namespace fixture; using kernel::W32;
@@ -219,11 +256,22 @@ int main() {
     }
     for (int i = 0; i < 9; ++i) { widths.push_back(String("tw_" + std::to_string(195 + i * 20))); W32(0x471ADC + i * 4, widths.back()); }
     for (int i = 0; i < 17; ++i) W32(0x4719C8 + i * 4, String("rim_" + std::to_string(12 + i)));
+    constexpr float stock_ratios[] = {.415532f, .47585f, .538852f, .6f, .66f, .725f, .782f, .83f};
+    for (unsigned i = 0; i < 8; ++i) {
+        profiles.push_back(String("Profile_" + std::to_string(i)));
+        W32(0x471938 + i * 4, profiles.back());
+        kernel::G<float>(0x471958 + i * 4) = stock_ratios[i];
+    }
+    constexpr float stock_rim_values[] = {.381f, .4064f, .4318f, .4572f, .4826f, .508f, .5334f, .5588f,
+        .5842f, .6096f, .635f, .6604f, .6858f, .7112f, .7366f, .762f, .7874f}; // exact original calibrated table
+    for (unsigned rim = 12; rim <= 28; ++rim) kernel::G<float>(0x4B3910 + rim * 4) = stock_rim_values[rim - 12];
+    kernel::G<float>(0x447C18) = .5f;
+    kernel::G<float>(0x44CE68) = 10000.0f; // original automatic-profile search's initial error
     Database();
     Call(sub_00270C10);
-    assert(rides.size() == 29 && widths.size() == 38);
+    assert(rides.size() == 29 && widths.size() == 38 && profiles.size() == 34);
     assert(kernel::ReadCString(rides[15]) == "rh_900" && kernel::ReadCString(rides[28]) == "rh+1200");
-    Call(sub_00270C10); assert(rides.size() == 29 && widths.size() == 38); // reinitialization never duplicates indices
+    Call(sub_00270C10); assert(rides.size() == 29 && widths.size() == 38 && profiles.size() == 34); // no duplicate codes
     assert(kernel::ReadCString(widths[15]) == "tw_155" && kernel::ReadCString(widths[22]) == "tw_555");
     assert(kernel::ReadCString(widths[23]) == "tw_105" && kernel::ReadCString(widths[37]) == "tw_755");
     constexpr uint32_t cfg = 0x150000;
@@ -239,12 +287,70 @@ int main() {
     ctx = Call(sub_00272FC0, cfg, {0}); assert(std::abs(ctx.st[ctx.top] - 0.755) < 1e-6);
     ctx = Call(sub_00270C00, 0, {23}); assert(std::abs(ctx.st[ctx.top] - 0.105) < 1e-6);
 
+    // Every new profile, every original rim size and both independent axle bytes agree in physical/visual size.
+    // Turning off the extended menu must not reinterpret a car saved with an extended profile.
+    assert(kernel::ReadCString(profiles[8]) == "Profile_PC_300" && kernel::ReadCString(profiles[33]) == "Profile_PC_975");
+    for (unsigned profile = 8; profile < profiles.size(); ++profile) {
+        const float ratio = std::stof(kernel::ReadCString(profiles[profile]).substr(11)) / 1000;
+        ctx = Call(sub_00270BC0, 0, {profile});
+        assert(ctx.esp == stack + 4 && std::abs(ctx.st[ctx.top] - ratio) < 1e-6);
+        for (unsigned rim = 12; rim <= 28; ++rim) {
+            const double expected = stock_rim_values[rim - 12] / ratio;
+            const auto visual = Call(sub_00270B40, 0, {rim, profile});
+            assert(visual.esp == stack + 4 && std::abs(visual.st[visual.top] - expected) < 1e-6);
+            for (unsigned axle = 0; axle < 2; ++axle) {
+                fixture::memory[cfg + 0x1A + axle] = uint8_t(rim);
+                fixture::memory[cfg + 0x1C + axle] = uint8_t(profile);
+                const auto physical = Call(sub_00272FE0, cfg, {axle, 0});
+                assert(physical.esp == stack + 12 && std::abs(physical.st[physical.top] - expected) < 1e-6);
+                assert(std::abs(physical.st[physical.top] - visual.st[visual.top]) < 1e-7);
+            }
+        }
+    }
+    // A malformed signed profile byte falls back to the last stock ratio instead of reading unrelated memory.
+    fixture::memory[cfg + 0x1A] = 20; fixture::memory[cfg + 0x1C] = 254;
+    ctx = Call(sub_00272FE0, cfg, {0, 0});
+    assert(std::abs(ctx.st[ctx.top] - .5842f / stock_ratios[7]) < 1e-6);
+    for (uint32_t profile : {34u, 127u, 128u, 254u, 0xFFFFFFFFu}) {
+        ctx = Call(sub_00270BC0, 0, {profile});
+        assert(std::abs(ctx.st[ctx.top] - stock_ratios[7]) < 1e-6);
+    }
+    auto bits = [](float value) { uint32_t out; std::memcpy(&out, &value, 4); return out; };
+    ctx = Call(sub_00270B60, 0, {33, 20, 15, bits(0), bits(2), bits(1)});
+    assert((ctx.eax & 255) == 1 && ctx.esp == stack + 4);
+    ctx = Call(sub_00270B60, 0, {8, 28, 0, bits(0), bits(2), bits(.5f)});
+    assert((ctx.eax & 255) == 0); // the thick profile really exceeds the radius cap
+#ifdef MC3_TEST_REAL_PROFILE_READERS
+    // Original stock reads and automatic (-1) selection still use the original generated code.
+    for (unsigned profile = 0; profile < 8; ++profile) {
+        ctx = Call(sub_00270BC0, 0, {profile});
+        assert(std::abs(ctx.st[ctx.top] - stock_ratios[profile]) < 1e-7);
+        ctx = Call(sub_00270B40, 0, {20, profile});
+        assert(std::abs(ctx.st[ctx.top] - double(.5842f) / stock_ratios[profile]) < 1e-6);
+    }
+    for (unsigned axle = 0; axle < 2; ++axle) {
+        fixture::memory[cfg + 0x1A + axle] = 20; fixture::memory[cfg + 0x1C + axle] = 255;
+        ctx = Call(sub_00272FE0, cfg, {axle, bits(.8f)});
+        assert(ctx.eax < 8 && std::abs(ctx.st[ctx.top] - double(.5842f) / stock_ratios[ctx.eax]) < 1e-6);
+        assert(fixture::memory[cfg + 0x1C + axle] == 255); // getter does not rewrite automatic choice
+    }
+    W32(0x2725EC + (0x19 - 1) * 4, 0x2723A6); // original type-to-case table entry for tire profile
+    for (unsigned axle = 0; axle < 2; ++axle)
+        for (unsigned profile = 0; profile < profiles.size(); ++profile) {
+            W32(cfg + 8, 0);
+            ctx = Call(FixtureGarageSetProfile, cfg, {0x19, axle, profile, 0});
+            assert(ctx.eax == 1 && ctx.esp == stack + 20);
+            assert(fixture::memory[cfg + 0x1C + axle] == profile && kernel::R32(cfg + 8) == 0x81);
+        }
+#endif
+
     W32(garage + 0x18, flash); W32(flash + 8, vm); W32(vtable + 0x24, member);
     W32(vm + 0x40, 0x127000); W32(vm + 0x44, 0x128000);
     for (unsigned i = 0; i < 6; ++i) W32(globals[i], 0x90000 + i * 16);
     Pool(100);
     Inline(garage + 0x3E4, "RimSizeNames"); Inline(garage + 0x416, "RimSizeStatus");
     W32(garage + 0x9CC, 0x18); Inline(0x44C498, "length");
+    Inline(0x44B5E4, "2");
     for (unsigned i = 0; i < 128; ++i) Inline(0x44C4C0 + i * 4, std::to_string(i));
     std::vector<Value> names;
     for (unsigned i = 0; i < 21; ++i) names.push_back({kernel::R32(0x4719C8 + (i % 17) * 4), 1});
@@ -278,8 +384,49 @@ int main() {
     assert(arrays["TiresWidthPrice"].items.back().payload == 75);
     for (unsigned i = 0; i < 6; ++i) assert(kernel::R32(globals[i]) == 0x90000 + i * 16);
 
+    Inline(garage + 0x3E4, "TiresProfileNames"); Inline(garage + 0x416, "TiresProfileStatus");
+    W32(garage + 0x9CC, 0x19);
+    std::vector<Value> stock_profiles;
+    for (unsigned i = 0; i < 8; ++i) stock_profiles.push_back({profiles[i], 1});
+    AddArray("TiresProfileNames", stock_profiles);
+    AddArray("TiresProfileStatus", std::vector<Value>(8, {String("2"), 1}));
+    AddArray("TiresProfilePrice", std::vector<Value>(8, {125, 3}));
+    Pool(93); // 26 extra members in each array + a 16-symbol reserve = 94 required.
+    const unsigned profile_before = member_calls;
+    Call(sub_001465E0, garage, {0});
+    assert(arrays["TiresProfileNames"].items.size() == 8 && member_calls == profile_before);
+    Pool(110);
+    Call(sub_001465E0, garage, {0});
+    assert(arrays["TiresProfileNames"].items.size() == 34 && arrays["TiresProfileStatus"].items.size() == 34);
+    assert(arrays["TiresProfilePrice"].items.size() == 34 && arrays["TiresProfilePrice"].items.back().payload == 125);
+    for (const auto& status : arrays["TiresProfileStatus"].items)
+        assert(status.type == 1 && kernel::ReadCString(status.payload) == "2");
+    assert(kernel::ReadCString(arrays["TiresProfileNames"].items.front().payload) == "Profile_PC_300");
+    assert(kernel::ReadCString(arrays["TiresProfileNames"].items.back().payload) == "Profile_PC_975");
+    std::set<unsigned> profile_codes;
+    double last_ratio = 0;
+    for (const auto& item : arrays["TiresProfileNames"].items) {
+        const auto found = std::find(profiles.begin(), profiles.end(), item.payload);
+        assert(found != profiles.end());
+        const unsigned code = unsigned(found - profiles.begin());
+        assert(profile_codes.insert(code).second);
+        const auto value = Call(sub_00270BC0, 0, {code});
+#ifdef MC3_TEST_REAL_PROFILE_READERS
+        assert(value.st[value.top] >= last_ratio); // menu sorts by thickness; save codes remain append-only
+        last_ratio = value.st[value.top];
+#else
+        (void)value; (void)last_ratio;
+#endif
+    }
+    assert(profile_codes.size() == 34);
+    const unsigned profile_refreshed = member_calls;
+    const uint32_t free_after_profiles = kernel::R32(vm + 0x24);
+    Call(sub_001465E0, garage, {0});
+    assert(member_calls == profile_refreshed && kernel::R32(vm + 0x24) == free_after_profiles);
+    for (unsigned i = 0; i < 6; ++i) assert(kernel::R32(globals[i]) == 0x90000 + i * 16);
+
 #ifdef MC3_TEST_REAL_STRING_DESTRUCTOR
-    // Opening width/ride menus installs the added labels. Purchasing a rim then leaving for save destroys the
+    // Opening profile/width/ride menus installs all added labels. Purchasing then leaving for save destroys the
     // same string tables through EA9F0 -> EA950 -> delete, the exact generated path in the native crash stack.
     for (unsigned visit = 0, recycled_table = 0; visit < 3; ++visit) {
         const uint32_t table = TextTable(recycled_table);
@@ -293,6 +440,9 @@ int main() {
         }
         assert(Wide(kernel::R32(text_entries.at("rh_900") + 8)) == "9\"\"");
         assert(Wide(kernel::R32(text_entries.at("tw_755_desc") + 8)) == "755 mm Tire Width");
+        assert(Wide(kernel::R32(text_entries.at("Profile_PC_975") + 8)) == "Profile ratio 97.5%");
+        assert(Wide(kernel::R32(text_entries.at("Profile_PC_300_desc") + 8)) ==
+               "Game profile ratio: 30%. Larger values make a thinner sidewall.");
         assert(Wide(kernel::R32(text_entries.at("tw_375") + 8)) == "Localized width");
         assert(frees > freed_before); // replaced placeholder allocations are released immediately
         const size_t allocated = allocations.size();
@@ -301,7 +451,7 @@ int main() {
         assert(allocations.size() == allocated && frees == freed); // repeated menu refresh keeps one owner
         for (const auto& [key, entry] : text_entries) {
             const uint32_t text = kernel::R32(entry + 8);
-            assert(allocations.contains(text) && (text < 0x30000 || text >= 0x32000));
+            assert(allocations.contains(text) && (text < 0x30000 || text >= 0x38000));
         }
         ctx = Call(FixtureGarageLeaveForSave, string_table);
         assert(ctx.esp == stack + 4 && kernel::R32(string_table) == 0);
@@ -356,4 +506,98 @@ int main() {
     assert(players[sim_a]);
     Call(sub_000FFBA0, car_b); assert(players[sim_a]);
     Call(sub_000FFBA0, car_c); assert(!players.contains(sim_a));
+
+    // A fully built human driving car missed by a leaf-factory hook is identified by its actual controller,
+    // including a backpointer. Sharing a human's cfg, or having only a damage/feedback component, is insufficient.
+    constexpr uint32_t driving = 0x146000, driving_sim = 0x166000, driving_cfg = 0x154000, controller = 0x168000;
+    auto driving_values = [&](uint32_t car, uint32_t sim, uint32_t config, uint32_t control) {
+        W32(car + 4, control); W32(car + 0x50, sim); W32(car + 0x64, config);
+        fixture::memory[car + 0x5E] = 0;
+        W32(control, 0x47684C); W32(control + 0x50, car);
+        W32(config + 8, 0);
+    };
+    driving_values(driving, driving_sim, driving_cfg, controller);
+    const unsigned recovery_before = bind_calls, applied_before = cfg_applied_calls;
+    W32(controller + 0x50, ai); // a controller belonging to another concrete car must not authorize this one
+    GarageRefreshPlayerCar(driving);
+    assert(!players.contains(driving_sim) && bind_calls == recovery_before && kernel::R32(driving_cfg + 8) == 0);
+    W32(controller + 0x50, driving); W32(controller, 0x454FB8); // damage-style vtable in the wrong slot
+    GarageRefreshPlayerCar(driving);
+    assert(!players.contains(driving_sim));
+    W32(controller, 0x47684C);
+    GarageRefreshPlayerCar(driving);
+    assert(players[driving_sim] && bindings.at(driving).cfg == driving_cfg && bind_calls == recovery_before + 1);
+    assert(kernel::R32(driving_cfg + 8) == 0x81 && cfg_applied_calls == applied_before);
+    W32(driving_cfg + 8, 0);
+    GarageRefreshPlayerCar(driving);
+    assert(bind_calls == recovery_before + 1 && kernel::R32(driving_cfg + 8) == 0);
+    // The baseline notification occurs only after the original CarCfg write, never directly on recognition.
+    Call(sub_00121970, driving_sim, {driving_cfg, 0});
+    assert(cfg_applied_calls == applied_before + 1 && players[driving_sim]);
+
+    constexpr uint32_t driving_ai = 0x147000, driving_ai_sim = 0x167000, ai_controller = 0x169000;
+    driving_values(driving_ai, driving_ai_sim, driving_cfg, ai_controller);
+    fixture::memory[driving_ai + 0x5E] = 1; // even a matching controller shape cannot override the AI flag
+    W32(0x175044, driving_ai); Call(sub_001FAE10, 0x175000);
+    const unsigned before_ai = bind_calls;
+    GarageRefreshPlayerCar(driving_ai);
+    Call(sub_00121970, driving_ai_sim, {driving_cfg, 0});
+    assert(!players[driving_ai_sim] && !bindings.contains(driving_ai) && bind_calls == before_ai + 1);
+
+    // A newly spawned driving car using another concrete address and a recycled simulation must survive the old
+    // object's delayed destructor. The old record/association is retired before the new binding is published.
+    constexpr uint32_t driving_new = 0x148000, driving_new_cfg = 0x155000, new_controller = 0x16A000;
+    driving_values(driving_new, driving_sim, driving_new_cfg, new_controller);
+    GarageRefreshPlayerCar(driving_new);
+    assert(players[driving_sim] && !bindings.contains(driving) && bindings.at(driving_new).cfg == driving_new_cfg);
+    Call(sub_000FFBA0, driving);
+    assert(players[driving_sim] && bindings.contains(driving_new));
+    Call(sub_000FFBA0, driving_new);
+    assert(!players.contains(driving_sim) && !bindings.contains(driving_new));
+    // A new concrete human may reuse an address previously recorded as AI; actual identity is required again.
+    fixture::memory[driving_ai + 0x5E] = 0;
+    GarageRefreshPlayerCar(driving_ai);
+    assert(players[driving_ai_sim] && bindings.contains(driving_ai));
+    fixture::memory[driving_ai + 0x5E] = 1;
+    GarageRefreshPlayerCar(driving_ai);
+    assert(!players[driving_ai_sim] && !bindings.contains(driving_ai) && kernel::R32(driving_cfg + 8) == 0x81);
+    Call(sub_00121970, driving_ai_sim, {driving_cfg, 0});
+    assert(!players[driving_ai_sim]); // shared human config cannot undo a concrete switch back to AI
+    Call(sub_000FFBA0, driving_ai);
+
+    // The repaired factory may already have registered both a stale address and its replacement. Alias retirement
+    // must precede the helper's unchanged fast path, otherwise delayed teardown still forgets the new driver.
+    driving_values(driving, driving_sim, driving_cfg, controller);
+    W32(0x176044, driving); Call(sub_002CBDE0, 0x176000);
+    driving_values(driving_new, driving_sim, driving_new_cfg, new_controller);
+    W32(0x177044, driving_new); Call(sub_002CBDE0, 0x177000);
+    GarageRefreshPlayerCar(driving_new);
+    assert(players[driving_sim] && bindings.contains(driving_new) && !bindings.contains(driving));
+    Call(sub_000FFBA0, driving);
+    assert(players[driving_sim] && bindings.contains(driving_new));
+    Call(sub_000FFBA0, driving_new);
+
+#ifdef _WIN32
+    // The real factory is an on-stack local at 0x2C004C..0x2C0059. Reserve a sparse guest address space so the
+    // production high-VA guard is tested with actual 0xD... addresses, without allocating 4 GiB of physical RAM.
+    auto* sparse = static_cast<uint8_t*>(VirtualAlloc(nullptr, size_t(1) << 32, MEM_RESERVE, PAGE_NOACCESS));
+    assert(sparse && VirtualAlloc(sparse, memory.size(), MEM_COMMIT, PAGE_READWRITE) == sparse);
+    std::memcpy(sparse, memory.data(), memory.size());
+    constexpr uint32_t high_factory = 0xD1234000;
+    assert(VirtualAlloc(sparse + high_factory, 0x1000, MEM_COMMIT, PAGE_READWRITE) == sparse + high_factory);
+    kernel::g_base = sparse; sparse_guest = true;
+    W32(high_factory + 0x44, driving);
+    Call(sub_002CBDE0, high_factory);
+    assert(players[driving_sim] && bindings.at(driving).cfg == driving_cfg);
+    Call(sub_000FFBA0, driving);
+    Call(sub_001FAE10, high_factory);
+    assert(!players[driving_sim] && !bindings.contains(driving));
+    Call(sub_000FFBA0, driving);
+    const unsigned before_invalid_factory = bind_calls;
+    Call(sub_002CBDE0, 0xFFFFFFF0); // adding factory+0x44 would wrap into a low address
+    Call(sub_002CBDE0, high_factory + 0x1000); // reserved but not committed
+    assert(bind_calls == before_invalid_factory);
+    sparse_guest = false; kernel::g_base = memory.data();
+    assert(VirtualFree(sparse, 0, MEM_RELEASE));
+#endif
 }

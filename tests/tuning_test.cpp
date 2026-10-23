@@ -87,6 +87,8 @@ void TuningSetPlayerSim(uint32_t sim, bool player);
 void TuningForgetSim(uint32_t sim);
 void TuningCarCfgApplied(uint32_t sim);
 void TuningBindCar(uint32_t car, uint32_t sim, uint32_t cfg, bool player);
+// Concrete human-controller ownership and stack factory recovery are exercised in garage_test.
+void GarageRefreshPlayerCar(uint32_t) {}
 
 namespace {
 using Hook = void (*)(X86Context&, uint8_t*);

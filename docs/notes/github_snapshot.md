@@ -1,16 +1,81 @@
 # Full private GitHub project checkpoint
 
-Updated 2026-10-23. The full checkpoint is copied and SHA-256 verified: 38,043 files,
-28,281,848,318 bytes. Archive/upload is running from the frozen verified copy.
-State: `G:/MC3_Backups/github_checkpoint_2026-10-23.control/state.json`.
+Updated 2026-10-23. The verified checkpoint contains **38,043 files and
+28,281,848,318 bytes**. Its immutable copy is
+`G:/MC3_Backups/MidnightClub3-Port_2026-10-23_004252_github_76e97c`; its durable
+state is `G:/MC3_Backups/github_checkpoint_2026-10-23.control/state.json`.
+The private publication destination saved in that state is
+`christiand0797/MidnightClub3-Port-Backups`. Source and player releases use the
+separate `MidnightClub3-Port` repository.
+
+## Existing archive recovery
+
+Attempt 01 compressed successfully and passed `7z t`, but the original coverage
+parser treated directory attributes as a prefix. Actual 7-Zip 26.04 SLT records
+use `RDA` for the read-only root and `HDA` for hidden `.git` directories. Testing
+`startswith("D")` consequently misclassified six directories as empty files.
+The fix reads the directory flag anywhere in the attributes flag token (or an
+explicit `Folder = +`), without excluding any path from coverage.
+
+The fixed parser independently confirms the existing archive has exactly
+**38,043 files, 1,589 directories and 28,281,848,318 uncompressed bytes** matching
+the manifest, including hidden/system and empty directories. The archive has
+12 existing parts totaling 22,173,839,069 compressed bytes. Eleven regressions
+cover captured SLT attribute shapes, empty files, missing/extra/duplicate paths,
+wrong sizes and local-only resume behavior.
+
+Local adoption has completed successfully: the frozen copy's hashes matched,
+the fresh `7z t` reported **Everything is Ok**, and all 12 part SHA256 hashes
+were saved. The durable state is now **`phase: archived`, `archived: true`**, with
+exact `archive_coverage`, `archive_adopted_from` and no previous `last_error`.
+`SHA256SUMS.txt` contains the 12 volume hashes plus the manifest hash. No archive
+was recompressed, no frozen snapshot file was written, and no cloud request was
+made by this recovery. Publication is the parent's next operation.
+
+The first resumed publisher created owned draft release ID `421599265`, then
+hit a second boundary: an unpublished new tag is not available through
+`releases/tags/<tag>`. GitHub returns an `untagged-*` draft URL until publication.
+The publisher now recovers by durable release ID first, then by the tag endpoint
+or the unique exact-tag result of an authenticated paginated release listing.
+Ambiguous drafts stop rather than selecting or deleting one. A successful create
+has a bounded visibility retry and an explicit resumable error instead of a
+`NoneType` dereference. The snapshot marker is still required before upload.
+Six additional regressions cover that recovery and the canonical published URL
+(17 publisher tests total). Publication refreshes `release_url` after the draft's
+temporary URL changes to the final tag URL.
+
+To validate and adopt this completed attempt locally without recompression or
+GitHub access:
+
+```powershell
+$SnapshotPython = 'C:\Users\purpl\AppData\Local\Programs\Python\Python312\python.exe'
+$SnapshotState = 'G:\MC3_Backups\github_checkpoint_2026-10-23.control\state.json'
+& $SnapshotPython tools/maintenance/snapshot_publish.py --state $SnapshotState --resume --execute --adopt-archive 'G:\MC3_Backups\github_checkpoint_2026-10-23.control\archive-attempt-01\MidnightClub3-Port_2026-10-23_004252_github_76e97c.7z.001'
+```
+
+This checks the manifest hash, rehashes the frozen copy read-only, runs a fresh
+`7z t`, verifies exact archive coverage, hashes every existing part and checks
+that the volume set and file metadata stayed unchanged. Only external control
+logs, checksums and state are written. Success saves `phase: archived`,
+`archive_coverage`, `archive_adopted_from` and all part hashes, clears the prior
+error, and exits **2** for the intentional local stop. The parent then resumes
+publication with `--state $SnapshotState --resume --execute`.
+
+Normal resume automatically tries to validate a recorded existing first volume
+before creating a new archive. Failed validation stops and preserves all parts;
+it does not silently spend hours recompressing. An explicitly requested
+`--new-archive-attempt` retains the old attempt and creates a new directory when
+the existing archive really is incomplete or invalid. No frozen snapshot file
+is edited by either recovery path.
+
+The following planning details describe how the checkpoint was created; their
+earlier inventory numbers are historical estimates.
 
 ## Destination and scope
 
-The source repository `christiand0797/MidnightClub3-Port` is now public at the user's request.
-Full checkpoints containing personal saves/configuration use the separate private companion
-`christiand0797/MidnightClub3-Port-Backups`, seeded with main `8bc7f42`.
-The publisher defaults to that private companion and verifies its visibility before every upload/publication.
-The original upstream remote remains available; the public source repository is the `github` remote.
+The full-checkpoint destination is the private repository
+`christiand0797/MidnightClub3-Port-Backups`; its visibility is checked before
+upload and publication. The original upstream remote remains available.
 
 The user's request includes the entire project, not just Git-tracked source.
 The checkpoint includes `.git`, the original ISO in the project folder,
@@ -86,7 +151,7 @@ Run from `C:/Users/purpl/Desktop/MidnightClub3-Port` with Python 3.12:
 
 ```powershell
 $SnapshotPython = 'C:\Users\purpl\AppData\Local\Programs\Python\Python312\python.exe'
-$SnapshotState = 'G:\MC3_Backups\github_checkpoint_2026-10-22.control\state.json'
+$SnapshotState = 'G:\MC3_Backups\github_checkpoint_2026-10-23.control\state.json'
 ```
 
 Read-only plan (no directories, snapshot or release are created):
@@ -129,9 +194,10 @@ state. A crashed process releases it automatically. An interrupted Robocopy can
 resume into the same incomplete copy; it still needs another stable checkpoint.
 Do not resume source edits/commits during that copy/verify interval.
 
-An incomplete multi-volume archive is retained as evidence; a fresh archive
-attempt gets a new external attempt directory because split archives cannot
-be safely updated in place. Already-verified assets resume per whole volume,
+An incomplete multi-volume archive is retained as evidence; an explicitly
+requested fresh archive attempt gets a new external attempt directory because
+split archives cannot be safely updated in place. A completed attempt is
+validated and adopted on resume. Already-verified assets resume per whole volume,
 not per byte inside a failed upload. GitHub can leave a zero-byte `starter`
 asset after a failed upload; only such an owned empty draft asset is removed on
 resume. A previously uploaded valid asset is never deleted.

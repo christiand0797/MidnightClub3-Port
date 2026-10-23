@@ -340,11 +340,9 @@ def archive_parts(first):
     return parts
 
 
-def archive_listing(first):
-    result = subprocess.run([checked_tool("7z"), "l", "-slt", "-ba", "-sccUTF-8", str(first)], capture_output=True,
-                            text=True, encoding="utf-8", errors="strict", check=True)
+def parse_archive_listing(text):
     rows, row = [], {}
-    for line in result.stdout.splitlines() + [""]:
+    for line in text.splitlines() + [""]:
         if not line.strip():
             if row:
                 rows.append(row)
@@ -355,31 +353,108 @@ def archive_listing(first):
     return rows
 
 
+def archive_listing(first):
+    result = subprocess.run([checked_tool("7z"), "l", "-slt", "-ba", "-sccUTF-8", str(first)], capture_output=True,
+                            text=True, encoding="utf-8", errors="strict", check=True)
+    return parse_archive_listing(result.stdout)
+
+
+def archive_directory(row):
+    # Windows flags are a combination, not a prefix: actual 7-Zip 26 listings use RDA for the read-only root,
+    # HDA for hidden .git directories, and DA for ordinary directories. Unix listings can add a mode after the
+    # DOS flags. Consult only the attributes field, never path names or a zero file size.
+    attributes = row.get("Attributes", "").split()
+    return row.get("Folder") == "+" or bool(attributes and "D" in attributes[0])
+
+
 def verify_archive_listing(first, snapshot, manifest):
     expected = {snapshot.name + "/" + row["path"]: row["size"] for row in manifest["files"]}
     actual = {}
     dirs = set()
     for row in archive_listing(first):
         name = row.get("Path", "").replace("\\", "/").rstrip("/")
-        if row.get("Folder") == "+" or row.get("Attributes", "").startswith("D"):
+        if archive_directory(row):
+            if name in dirs or name in actual:
+                raise ValueError(f"duplicate archive path: {name}")
             dirs.add(name)
         elif "Size" in row and "Type" not in row:
+            if name in actual or name in dirs:
+                raise ValueError(f"duplicate archive path: {name}")
             actual[name] = int(row["Size"])
     if actual != expected:
         missing = sorted(set(expected) - set(actual))[:10]
         extra = sorted(set(actual) - set(expected))[:10]
-        raise ValueError(f"archive coverage does not match full snapshot manifest; missing={missing}, extra={extra}")
+        wrong_size = sorted(name for name in set(actual) & set(expected) if actual[name] != expected[name])[:10]
+        raise ValueError(f"archive coverage does not match full snapshot manifest; missing={missing}, extra={extra}, wrong_size={wrong_size}")
     expected_dirs = {snapshot.name, *(snapshot.name + "/" + path for path in manifest["directories"])}
     if dirs != expected_dirs:
-        raise ValueError("archive directory coverage does not match snapshot (including empty directories)")
+        missing = sorted(expected_dirs - dirs)[:10]
+        extra = sorted(dirs - expected_dirs)[:10]
+        raise ValueError(f"archive directory coverage does not match snapshot (including empty directories); missing={missing}, extra={extra}")
+    return {"file_count": len(actual), "directory_count": len(dirs), "total_bytes": sum(actual.values())}
 
 
-def create_archive(state):
-    control, snapshot = Path(state["control"]), Path(state["snapshot"])
+def verified_archive_manifest(state):
+    if not state.get("verified") or not state.get("copied"):
+        raise ValueError("archive validation requires a copied, verified snapshot")
     manifest = json.loads(Path(state["manifest"]).read_text(encoding="utf-8"))
     if sha256(state["manifest"]) != state["manifest_sha256"]:
         raise ValueError("manifest changed after verification")
-    verify_snapshot(snapshot, manifest)
+    verify_snapshot(Path(state["snapshot"]), manifest)
+    return manifest
+
+
+def finish_archive(state, first, manifest, adopted=False):
+    control, snapshot, first = Path(state["control"]), Path(state["snapshot"]), Path(first)
+    parts = archive_parts(first)
+    before = [(part.stat().st_size, part.stat().st_mtime_ns, part.stat().st_ctime_ns) for part in parts]
+    run_logged([checked_tool("7z"), "t", "-bd", "-bsp0", str(first)], control / "archive-test.log")
+    coverage = verify_archive_listing(first, snapshot, manifest)
+    rows = []
+    for index, path in enumerate(parts, 1):
+        rows.append({"name": path.name, "path": str(path), "size": path.stat().st_size, "sha256": hash_stable(path)})
+        print(f"archive hash: {index}/{len(parts)}", flush=True)
+    after = [(part.stat().st_size, part.stat().st_mtime_ns, part.stat().st_ctime_ns) for part in parts]
+    if after != before or archive_parts(first) != parts:
+        raise RuntimeError("archive volumes changed during integrity/coverage/hash verification")
+    checksum_path = control / "SHA256SUMS.txt"
+    checksum_path.write_text("".join(f"{row['sha256']}  {row['name']}\n" for row in rows) +
+                             f"{state['manifest_sha256']}  snapshot-manifest.json\n", encoding="utf-8", newline="\n")
+    state["parts"] = rows
+    state["checksums"] = str(checksum_path)
+    state["archived"] = True
+    state["archive_tested_at"] = now()
+    state["archive_coverage"] = coverage
+    if adopted:
+        state["archive_adopted_from"] = str(first)
+    state.pop("last_error", None)
+    state.pop("last_error_at", None)
+    save_state(Path(state["state_path"]), state, "archived")
+
+
+def adopt_archive(state, first):
+    first = Path(first).resolve()
+    attempts = {Path(path).resolve() for path in state.get("archive_attempts", [])}
+    if first.parent not in attempts or first.name != Path(state["snapshot"]).name + ".7z.001":
+        raise ValueError("adopted archive must be this snapshot's first volume in a recorded archive attempt")
+    control = Path(state["control"]).resolve()
+    if first.parent.parent != control:
+        raise ValueError("recorded archive attempt is outside the snapshot control directory")
+    manifest = verified_archive_manifest(state)
+    print(f"validating existing archive without recompression: {first}", flush=True)
+    finish_archive(state, first, manifest, adopted=True)
+
+
+def create_archive(state, new_attempt=False):
+    control, snapshot = Path(state["control"]), Path(state["snapshot"])
+    if not new_attempt and state.get("archive_attempts"):
+        previous = Path(state["archive_attempts"][-1]) / (snapshot.name + ".7z.001")
+        if previous.exists():
+            # A crash or a listing-parser defect can happen after compression completed. Validate and retain that
+            # expensive archive. A failed adoption stops; only an explicit --new-archive-attempt recompresses.
+            adopt_archive(state, previous)
+            return
+    manifest = verified_archive_manifest(state)
     # Failed/incomplete split archives are retained. 7z cannot safely update a
     # multi-volume archive, so each fresh attempt gets a new external directory.
     attempt = control / f"archive-attempt-{len(state.get('archive_attempts', [])) + 1:02d}"
@@ -390,18 +465,7 @@ def create_archive(state):
     run_logged([checked_tool("7z"), "a", "-t7z", "-mx=1", "-mmt=8", "-ms=off", "-sse", "-bd", "-bsp0",
                 f"-v{PART_BYTES}b", str(archive_base), snapshot.name], control / "archive-create.log", cwd=snapshot.parent)
     first = Path(str(archive_base) + ".001")
-    parts = archive_parts(first)
-    run_logged([checked_tool("7z"), "t", "-bd", "-bsp0", str(first)], control / "archive-test.log")
-    verify_archive_listing(first, snapshot, manifest)
-    rows = [{"name": path.name, "path": str(path), "size": path.stat().st_size, "sha256": sha256(path)} for path in parts]
-    checksum_path = control / "SHA256SUMS.txt"
-    checksum_path.write_text("".join(f"{row['sha256']}  {row['name']}\n" for row in rows) +
-                             f"{state['manifest_sha256']}  snapshot-manifest.json\n", encoding="utf-8", newline="\n")
-    state["parts"] = rows
-    state["checksums"] = str(checksum_path)
-    state["archived"] = True
-    state["archive_tested_at"] = now()
-    save_state(Path(state["state_path"]), state, "archived")
+    finish_archive(state, first, manifest)
 
 
 def release_assets(state):
@@ -420,7 +484,22 @@ def release_assets(state):
 
 
 def release_record(state):
-    return gh_json(["api", f"repos/{state['repo']}/releases/tags/{quote(state['tag'], safe='')}"], missing_ok=True)
+    prefix = f"repos/{state['repo']}/releases"
+    if state.get("release_id"):
+        record = gh_json(["api", f"{prefix}/{state['release_id']}"], missing_ok=True)
+        if record is not None:
+            return record
+    record = gh_json(["api", f"{prefix}/tags/{quote(state['tag'], safe='')}"], missing_ok=True)
+    if record is not None:
+        return record
+    # A new draft does not create its Git tag until publication. GitHub gives it an untagged-* URL and
+    # releases/tags/<tag> returns 404 even to its owner. Recover through the authenticated, paginated list;
+    # otherwise a successful create would be mistaken for a missing release and a resume could duplicate it.
+    pages = gh_json(["api", prefix + "?per_page=100", "--paginate", "--slurp"])
+    matching = [item for page in pages for item in page if item.get("tag_name") == state["tag"]]
+    if len(matching) > 1:
+        raise RuntimeError("multiple releases use the snapshot tag; preserving all drafts for inspection")
+    return matching[0] if matching else None
 
 
 def remote_assets(state, release):
@@ -458,8 +537,15 @@ def upload_and_publish(state, draft_only=False):
         run_logged([checked_tool("gh"), "release", "create", state["tag"], "--repo", state["repo"], "--draft", "--target",
                     state["source_git_head"], "--title", "Full project checkpoint " + state["snapshot_id"],
                     "--notes-file", notes_path, "--latest=false"], control / "github-release.log")
-        release = release_record(state)
-    if marker not in release.get("body", "") or release["tag_name"] != state["tag"]:
+        for attempt in range(3):
+            release = release_record(state)
+            if release is not None:
+                break
+            if attempt < 2:
+                time.sleep(attempt + 1)
+        if release is None:
+            raise RuntimeError("release creation succeeded but its draft is not yet visible; resume to recover it without creating another")
+    if marker not in (release.get("body") or "") or release["tag_name"] != state["tag"]:
         raise RuntimeError("existing release is not owned by this snapshot state")
     state["release_id"] = release["id"]
     state["release_url"] = release["html_url"]
@@ -521,6 +607,7 @@ def upload_and_publish(state, draft_only=False):
     release = release_record(state)
     if release["draft"]:
         raise RuntimeError("release remained a draft after publication")
+    state["release_url"] = release["html_url"]  # publishing replaces the temporary untagged-* draft URL
     state["published"] = True
     state["published_at"] = release.get("published_at")
     save_state(Path(state["state_path"]), state, "published")
@@ -538,6 +625,11 @@ def main():
     parser.add_argument("--checkpoint-confirmed", action="store_true", help="parent has stopped game/media writers and quiesced source agents for copying")
     parser.add_argument("--stop-after", choices=("copy", "verify", "archive", "upload"))
     parser.add_argument("--draft-only", action="store_true", help="upload and verify all assets but leave the release as a draft")
+    archive_mode = parser.add_mutually_exclusive_group()
+    archive_mode.add_argument("--adopt-archive", type=Path,
+                              help="locally validate an existing recorded .7z.001 attempt, save archive state, then stop without GitHub access")
+    archive_mode.add_argument("--new-archive-attempt", action="store_true",
+                              help="explicitly recompress into a new attempt instead of validating a previous first volume")
     args = parser.parse_args()
     if args.resume:
         if not args.state or not args.state.is_file():
@@ -559,11 +651,30 @@ def main():
         raise RuntimeError("insufficient backup space for full copy plus archive")
     if not args.resume and Path(state["snapshot"]).exists():
         raise RuntimeError("new snapshot target already exists; use a unique destination")
+    if args.adopt_archive:
+        if not args.resume or args.stop_after not in (None, "archive"):
+            parser.error("--adopt-archive requires --resume and stops after local archive verification")
+        checked_tool("7z")
+        state_path = Path(state["state_path"])
+        with state_lock(state_path):
+            save_state(state_path, state, "validating-existing-archive")
+            try:
+                adopt_archive(state, args.adopt_archive)
+            except BaseException as error:
+                state["last_error"] = str(error)
+                state["last_error_at"] = now()
+                save_state(state_path, state)
+                raise
+        print(json.dumps({"phase": state["phase"], "archive_coverage": state.get("archive_coverage"),
+                          "archive_adopted_from": state.get("archive_adopted_from"), "state_path": str(state_path)}, indent=2))
+        return 2
     assert_private_repo(state["repo"])
     for tool in ("7z", "robocopy", "gh"):
         checked_tool(tool)
     state_path = Path(state["state_path"])
     with state_lock(state_path):
+        state.pop("last_error", None)
+        state.pop("last_error_at", None)
         save_state(state_path, state)
         try:
             if not state.get("copied"):
@@ -576,7 +687,7 @@ def main():
             if args.stop_after == "verify":
                 return 2
             if not state.get("archived"):
-                create_archive(state)
+                create_archive(state, new_attempt=args.new_archive_attempt)
             if args.stop_after == "archive":
                 return 2
             upload_and_publish(state, draft_only=args.draft_only or args.stop_after == "upload")

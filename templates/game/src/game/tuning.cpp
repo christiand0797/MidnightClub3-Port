@@ -468,9 +468,11 @@ void ApplyVehicleTuning() {
 // The original component's per-frame update already has the complete "CarCfg dirty" refresh path. Request that
 // path once when a live PC tuning control changes, so cached wheel offsets, engine and suspension coefficients
 // update together. Do not rebuild the car every frame or write its purchased parts.
+void GarageRefreshPlayerCar(uint32_t car);  // garage.cpp: recover concrete human ownership after a car rebind
 X86_EXTERN_FUNC(__imp__sub_000FFD90);
 X86_FUNC(sub_000FFD90) {
     const uint32_t car = ctx.ecx;
+    GarageRefreshPlayerCar(car);
     const auto settings = SettingsSnapshot();
     {
         std::lock_guard<std::mutex> lock(g_lock);

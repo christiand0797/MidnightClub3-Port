@@ -16,9 +16,11 @@ A full-content portable ZIP includes `content-source.txt` and `content-manifest.
 
 Allow approximately **twice the content's installed size** in free disk space during initial setup. The current original ISO, active textures and movies need roughly 14 GB installed; 30 GB free allows room for temporary chunks. Setup removes its downloaded chunk cache after successful installation. Download size and exact checksums are listed in the release assets.
 
-Canceling or losing the connection preserves partial downloads. Run `mc3.exe` again to resume. A damaged chunk is rejected and retried; an incomplete replacement never takes the place of a working file.
+Canceling or losing the connection preserves partial downloads. Run `mc3.exe` again to resume. If setup reports a checksum failure, run it again to retry that download. An incomplete replacement never takes the place of a working file.
 
 For offline installation, download **all `.mc3c` parts from the same content release** and place them beside `mc3.exe` before starting it. Setup recognizes them locally. The `.mc3c` files are native streaming content parts, not 7-Zip split archives. After a successful installation, manually downloaded parts can be removed.
+
+Later launches verify installed content before starting. This can take time on slower drives. Missing or damaged media is repaired from local parts or downloaded again; keep an internet connection available if the original parts are no longer present.
 
 ## Bring your own ISO
 
@@ -41,3 +43,11 @@ Close the game before updating. Extract the newer portable ZIP into the existing
 To move an existing installation, copy the extracted folder with its `game`, `textures`, `video_hd`, `hdd` and `config` folders. Launch `mc3.exe` once at the new location to update the desktop shortcut. If the ISO lives elsewhere, select its new path. A fresh download creates a fresh save folder; it does not retrieve saves from another computer automatically.
 
 This project is in development. Each release's notes describe its actual checks and known limitations; successful setup does not establish that every car, race or graphics mode has been playtested.
+
+## Player settings and troubleshooting
+
+Read the [complete player guide](PLAYER_GUIDE.md) for F1 / F2 / controller menu
+access, every Display, Vehicle, Input, Quality, Picture and Info option, units,
+defaults, Apply / Keep / Revert, save locations and troubleshooting. Vehicle
+controls and all-car ground contact are still being validated; the guide marks
+current limitations instead of claiming every available slider is playtested.

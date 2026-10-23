@@ -38,8 +38,8 @@ struct GraphicsField {
 std::vector<GraphicsField> TuningFields(Settings::Tuning& v) {
     return {
         {"garage_extended", nullptr, &v.garage_extended, nullptr, 0, 1},
-        {"ride_height_front", &v.ride_front, nullptr, nullptr, -0.5f, 0.5f},
-        {"ride_height_rear", &v.ride_rear, nullptr, nullptr, -0.5f, 0.5f},
+        {"ride_height_front", &v.ride_front, nullptr, nullptr, -2.0f, 2.0f},
+        {"ride_height_rear", &v.ride_rear, nullptr, nullptr, -2.0f, 2.0f},
         {"wheel_size_limit", &v.wheel_limit, nullptr, nullptr, 1, 3},
         {"camber_front", &v.camber_front, nullptr, nullptr, -30, 20},
         {"camber_rear", &v.camber_rear, nullptr, nullptr, -30, 20},

@@ -40,6 +40,7 @@ Copy-Item -LiteralPath $exe.FullName -Destination (Join-Path $stage 'mc3.exe')
 foreach ($dll in $crtDlls) { Copy-Item -LiteralPath $dll.FullName -Destination (Join-Path $stage $dll.Name) }
 foreach ($name in @('LICENSE', 'THIRD_PARTY.txt')) { Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination (Join-Path $stage $name) }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/INSTALL.md') -Destination (Join-Path $stage 'INSTALL.md')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/PLAYER_GUIDE.md') -Destination (Join-Path $stage 'PLAYER_GUIDE.md')
 $utf8 = [Text.UTF8Encoding]::new($false)
 if ([bool]$ContentManifest -ne [bool]$ContentManifestUrl) { throw 'Pass both -ContentManifest and its release-pinned -ContentManifestUrl for a complete-content download.' }
 if ($ContentManifest) {
@@ -67,6 +68,7 @@ The game checks the disc, remembers its location, creates a desktop shortcut, an
 No emulator, Python, compiler, administrator rights, or separate setup app is needed.
 Use F1 (or controller Back + Y) for PC graphics and tuning settings.
 Keep every DLL next to mc3.exe. Full instructions: INSTALL.md.
+Controls, F1/F2 menus, customization and troubleshooting: PLAYER_GUIDE.md.
 
 Version: $Version
 Source revision: $SourceRevision

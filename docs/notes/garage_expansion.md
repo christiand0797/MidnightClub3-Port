@@ -7,7 +7,8 @@ deepest front and rear settings. A collision bound contacting the road must reta
 ## Entry points and controls
 
 The original wheel menus retain 38 tire widths, 105–755 mm, 29 ride selections, all 17 verified rim sizes (12–28
-inches) and eight profiles. Existing save indices keep their meanings. New PC controls are available from the
+inches) and **34 profiles** (see [garage_profiles.md](garage_profiles.md) for ratios, save compatibility and tests).
+Existing save indices keep their meanings. New PC controls are available from the
 visible **Vehicle tuning (F2)** button while the garage updates, or from the **Vehicle** tab in F1 / Back + Y.
 Keyboard navigation, controller navigation and clicking the native menu use the same settings. A short-lived
 garage hint is refreshed by the original garage update, `0x1519D0`; it consumes no Flash symbols or new part IDs.
@@ -15,6 +16,9 @@ garage hint is refreshed by the original garage update, `0x1519D0`; it consumes 
 The native tuning controls are additional settings in `settings.toml`, applied only to player-owned cars and
 explicit garage previews. They do not replace purchased parts in the profile. The reset button restores the
 additional tuning while preserving purchased parts and the extended-garage toggle.
+
+The later [driving ownership repair](vehicle_ownership.md) fixes valid stack factories being rejected and adds
+concrete human-controller recovery before the original update, addressing the garage-to-street registration gap.
 
 | Control | Range / units | Actual destination |
 |---|---|---|

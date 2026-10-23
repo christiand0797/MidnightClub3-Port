@@ -24,7 +24,7 @@
 //    the byte a save stores never moves, and the getters for them. These getters stay active with the setting off,
 //    so a save made with it on still loads the same car.
 //  - The garage lists rewritten to every step: 29 ride heights (16" lower .. 12" higher), all 17 rim sizes 12-28",
-//    all 8 tire profiles, 38 tire widths (105..755 mm); every rim, profile, width and ride height item available.
+//    34 tire profiles, 38 tire widths (105..755 mm); every rim, profile, width and ride height item available.
 //  - Labels for the new names (and the game's unlabelled raised ride heights) in the game's string table.
 //  - Human players' cars (mcPlayerFactory 0x2CBDE0, vs the other factory 0x1FAE10) told to tuning.cpp, so the F1 ride
 //    height offsets apply to them alone, and the garage value is re-based whenever ApplyCarCfg runs.
@@ -63,6 +63,8 @@ constexpr uint32_t kRideNameTable = 0x471A54;     // char*[15]: rh_0, rh_100 .. 
 constexpr uint32_t kWidthNameTable = 0x471ADC;    // char*[9]: tw_195 .. tw_355
 constexpr uint32_t kRimNameTable = 0x4719C8;      // char*[17]: rim_12 .. rim_28
 constexpr uint32_t kProfileNameTable = 0x471938;  // char*[8]: Profile_0 .. Profile_7
+constexpr uint32_t kProfileRatioTable = 0x471958; // float[8]: calibrated rim-size value / overall tire diameter
+constexpr uint32_t kRimDiameterTable = 0x4B3910;  // float[29], indexed by rim inches (12..28)
 constexpr uint32_t kStringTable = 0x507E08;       // the UI string table object (tables at +0, current index +0x28)
 constexpr uint32_t kTextLookup = 0x0EA750;        // thiscall table (const char* key) -> entry, wide text at entry+8
 constexpr uint32_t kFlashLength = 0x1395F0;       // thiscall flash (array name) -> length or -1
@@ -80,9 +82,9 @@ constexpr uint32_t kGarageCars = 0x714, kGarageCurrent = 0x72C; // two preview c
 constexpr uint32_t kTypeRim = 0x18, kTypeProfile = 0x19, kTypeWidth = 0x1A, kTypeRide = 0x1F;
 // car component (vtable 0x454F40, constructor 0x0FF160, destructor body 0x0FFBA0, 0x6C bytes)
 constexpr uint32_t kCarSim = 0x50, kCarCfg = 0x64, kFactoryCar = 0x44;
-constexpr uint32_t kCfgRideHeight = 0x16, kCfgTireWidth = 0x18;
+constexpr uint32_t kCfgRideHeight = 0x16, kCfgTireWidth = 0x18, kCfgRimSize = 0x1A, kCfgTireProfile = 0x1C;
 
-constexpr unsigned kStockRideSteps = 15, kStockWidths = 9;
+constexpr unsigned kStockRideSteps = 15, kStockWidths = 9, kStockProfiles = 8;
 constexpr unsigned kLowerSteps = 8, kRaiseSteps = 6;  // rh_900..rh_1600, rh+700..rh+1200
 // Tire widths this file adds, in database (= save) order from index 9. Append only: a save stores the index.
 constexpr unsigned kExtraWidthsMm[] = {375, 395, 415, 435, 455, 175, 155,   // first build
@@ -90,6 +92,13 @@ constexpr unsigned kExtraWidthsMm[] = {375, 395, 415, 435, 455, 175, 155,   // f
                                        105, 115, 145, 165, 185,             // narrower/intermediate sizes
                                        575, 595, 615, 635, 655, 675, 695, 715, 735, 755};
 constexpr unsigned kExtraWidths = sizeof(kExtraWidthsMm) / sizeof(kExtraWidthsMm[0]);
+// Append-only save codes 8..33. Retail 0..7 retain their exact ratios, including the irregular intermediate
+// values. These are diameter ratios, not the sidewall/aspect percentage of tire width used on real tire labels.
+constexpr unsigned kExtraProfileRatios1000[] = {300, 325, 350, 375, 400, 425, 450, 475, 500, 525, 550, 575,
+                                              625, 650, 675, 700, 750, 775, 800, 825, 850, 875, 900, 925,
+                                              950, 975};
+constexpr unsigned kExtraProfiles = sizeof(kExtraProfileRatios1000) / sizeof(kExtraProfileRatios1000[0]);
+static_assert(kStockProfiles + kExtraProfiles < 127); // CarCfg reads int8_t; -1 remains the automatic sentinel.
 
 bool Extended() { return app::Get().tuning.garage_extended; }
 
@@ -123,6 +132,18 @@ float ExtendedRideHeight(unsigned index) {  // 15..28
 float ExtendedTireWidth(unsigned index) {  // 9..37, 105 .. 755 mm around the game's 195 .. 355
     const unsigned k = index - kStockWidths;
     return k < kExtraWidths ? float(kExtraWidthsMm[k]) / 1000.0f : 0.255f;
+}
+
+float ProfileRatio(unsigned index) {
+    if (index < kStockProfiles) return G<float>(kProfileRatioTable + index * 4);
+    const unsigned k = index - kStockProfiles;
+    // Invalid positive/negative save codes must never become an out-of-bounds retail table read.
+    return k < kExtraProfiles ? float(kExtraProfileRatios1000[k]) / 1000.0f : G<float>(kProfileRatioTable + 7 * 4);
+}
+
+float TireDiameter(unsigned rim, unsigned profile) {
+    if (rim < 12 || rim > 28) rim = 20; // only the original verified rim table is supported
+    return G<float>(kRimDiameterTable + rim * 4) / ProfileRatio(profile);
 }
 
 // Guest memory for retained database/Flash names and source labels. String table entries receive separately owned
@@ -166,6 +187,7 @@ struct Extra {
 };
 Extra g_ride{"ride heights", 0x100, 0x274A80, kStockRideSteps, {}};
 Extra g_width{"tire widths", 0xF8, 0x2749C0, kStockWidths, {}};
+Extra g_profile{"tire profiles", 0xF0, 0x274980, kStockProfiles, {}};
 
 uint32_t g_value = 0;           // guest scratch: one Flash value {payload, type}
 uint32_t g_price_var = 0;       // guest scratch: a 64 byte variable name
@@ -185,7 +207,7 @@ uint32_t AddLabel(const std::string& key, const std::string& text, const std::st
 bool BuildStrings(X86Context& ctx) {
     if (g_arena.base) return true;
     // Keys, descriptions and retained UTF-16 labels share this arena. The larger width list exceeds 4 KiB.
-    constexpr uint32_t kSize = 0x2000;
+    constexpr uint32_t kSize = 0x8000;
     uint32_t va = CallGuest(ctx, kOperatorNew, {kSize});
     if (!va || !Committed(va, kSize)) {
         LOGR("garage: no guest memory for the extended steps");
@@ -208,7 +230,13 @@ bool BuildStrings(X86Context& ctx) {
         const std::string mm = std::to_string(kExtraWidthsMm[k]);
         g_width.names.push_back(AddLabel("tw_" + mm, mm + " mm", mm + " mm Tire Width"));
     }
-    for (Extra* e : {&g_ride, &g_width})
+    for (unsigned k = 0; k < kExtraProfiles; k++) {
+        const unsigned ratio = kExtraProfileRatios1000[k];
+        const std::string percent = std::to_string(ratio / 10) + (ratio % 10 ? ".5" : "");
+        g_profile.names.push_back(AddLabel("Profile_PC_" + std::to_string(ratio), "Profile ratio " + percent + "%",
+            "Game profile ratio: " + percent + "%. Larger values make a thinner sidewall."));
+    }
+    for (Extra* e : {&g_ride, &g_width, &g_profile})
         if (std::find(e->names.begin(), e->names.end(), 0u) != e->names.end()) e->names.clear();
     return g_value && g_price_var;
 }
@@ -244,6 +272,7 @@ void Register(X86Context& ctx, uint32_t db, Extra& e) {
 struct Car {
     uint32_t sim, cfg;
     bool player;
+    uint32_t driving_controller = 0; // nonzero only after concrete human-controller/backpointer verification
 };
 std::mutex g_cars_lock;
 std::unordered_map<uint32_t, Car> g_cars;                               // car component -> what it owns
@@ -281,8 +310,8 @@ void RegisterGarageCar(uint32_t garage) {
     if (!Plausible(car) || !Committed(car, 0x6C)) return;
     {
         std::lock_guard<std::mutex> lock(g_cars_lock);
-        // Garage previews are created directly by 0x13C8F0..0x13C972, without mcPlayerFactory. This is an
-        // explicit owner for those cars. A known computer-owned car must never be promoted by a shared cfg.
+        // The selected garage preview is an explicit owner even before it has a driving controller. A known
+        // computer-owned car must never be promoted merely because it shares a human's cfg.
         if (g_cars.count(car)) return;
     }
     RegisterCar(car, true);
@@ -436,7 +465,13 @@ std::vector<uint32_t> WantedList(uint32_t type) {
     if (type == kTypeRim) {
         for (int i = 16; i >= 0; i--) v.push_back(R32(kRimNameTable + 4 * i));  // rim_28 .. rim_12
     } else if (type == kTypeProfile) {
-        for (int i = 0; i < 8; i++) v.push_back(R32(kProfileNameTable + 4 * i));  // Profile_0 (8) .. Profile_7 (1)
+        std::vector<std::pair<float, uint32_t>> profiles;
+        for (unsigned i = 0; i < kStockProfiles; i++) profiles.push_back({ProfileRatio(i), R32(kProfileNameTable + 4 * i)});
+        if (g_profile.registered)
+            for (unsigned k = 0; k < kExtraProfiles; k++)
+                profiles.push_back({ProfileRatio(kStockProfiles + k), g_profile.names[k]});
+        std::sort(profiles.begin(), profiles.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        for (const auto& p : profiles) v.push_back(p.second); // thickest sidewall first, independently of save order
     } else if (type == kTypeWidth) {
         // widest first, as the movies list them: the game's 195 .. 355 (20 mm apart) and this file's
         std::vector<std::pair<unsigned, uint32_t>> widths;
@@ -537,7 +572,7 @@ void ExtendList(X86Context& ctx, uint32_t garage) {
     if (!ListFor(type, var)) return;
     const uint32_t flash = R32(garage + kGarageFlash);
     if (!Plausible(flash) || !Committed(flash, 12)) return;
-    if (type == kTypeRide || type == kTypeWidth) PutLabels(ctx);
+    if (type == kTypeRide || type == kTypeWidth || type == kTypeProfile) PutLabels(ctx);
 
     const std::vector<uint32_t> want = WantedList(type);
     const int n = int(want.size());
@@ -589,6 +624,61 @@ void ExtendList(X86Context& ctx, uint32_t garage) {
 }
 }  // namespace
 
+// The old factory guard incorrectly rejected valid stack factories. In addition to fixing that guard below,
+// recover concrete driving ownership defensively across later rebind/reset paths, never from a shared CarCfg.
+// 0x2CB320 installs car+4; ctor0x2C9970 writes vtable0x47684C; init0x2C89F0 writes controller+0x50=car.
+// The human/AI factories write car+0x5E=0/1 respectively. Garage previews remain explicitly registered above.
+void GarageRefreshPlayerCar(uint32_t car) {
+    if (!Plausible(car) || !Committed(car, 0x6C)) return;
+    const uint32_t sim = R32(car + kCarSim), cfg = R32(car + kCarCfg), controller = R32(car + 4);
+    const bool ai = G<uint8_t>(car + 0x5E) != 0;
+    const bool human = !ai && Plausible(sim) && Committed(sim, 0x5C) && Plausible(cfg) && Committed(cfg, 0x20) &&
+        Plausible(controller) && Committed(controller, 0x54) && R32(controller) == 0x47684C &&
+        R32(controller + 0x50) == car;
+    std::vector<uint32_t> retire;
+    {
+        std::lock_guard<std::mutex> lock(g_cars_lock);
+        auto it = g_cars.find(car);
+        if (!human) {
+            // Do not demote a preview or an incompletely built factory car merely because it has no controller.
+            // A previously verified driver becoming AI or losing its concrete identity must release stale tuning.
+            if (it != g_cars.end() && it->second.player && (ai || it->second.driving_controller)) retire.push_back(car);
+        } else {
+            // vehSim is per-car, not shared. A stale concrete owner at another car address must not later destroy
+            // the new binding when its delayed destructor runs after that simulation address was recycled.
+            for (const auto& [other, owner] : g_cars)
+                if (other != car && owner.sim == sim) retire.push_back(other);
+            if (retire.empty() && it != g_cars.end() && it->second.player && it->second.sim == sim && it->second.cfg == cfg) {
+                it->second.driving_controller = controller;
+                return; // never rebase offsets or rebuild tuning every frame
+            }
+            if (it != g_cars.end()) retire.push_back(car);
+        }
+    }
+    for (uint32_t old : retire) UnregisterCar(old);
+    if (!human) {
+        if (ai && !retire.empty() && Plausible(sim) && Committed(sim, 0x5C) && Plausible(cfg) && Committed(cfg, 0x20)) {
+            RegisterCar(car, false); // keep concrete AI ownership stronger than a shared human cfg
+            W32(cfg + 8, R32(cfg + 8) | 0x81u); // refresh the newly AI-owned instance from original purchased values
+        }
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_cars_lock);
+        RemoveSimAssociations(sim); // an old preview cfg must not later demote this concrete driving owner
+    }
+    RegisterCar(car, true);
+    {
+        std::lock_guard<std::mutex> lock(g_cars_lock);
+        g_cars[car].driving_controller = controller;
+        g_cfg_sims[cfg].insert(sim);
+    }
+    // Called at 0xFFD90 entry: request its authoritative same-frame CarCfg refresh. 0x121970 then writes the
+    // purchased axle offsets before TuningCarCfgApplied rebases them. Rebasing already tuned values here would
+    // double-apply the live offsets, particularly when leaving the garage.
+    W32(cfg + 8, R32(cfg + 8) | 0x81u);
+}
+
 // String-table contents are destroyed when the menu changes. The heap may reuse the table address on the next
 // visit; invalidate the cache at its lifetime boundary so the rebuilt table receives its own label allocations.
 X86_EXTERN_FUNC(__imp__sub_000EA950);
@@ -607,6 +697,7 @@ X86_FUNC(sub_00270C10) {
     if (!Plausible(db) || !Committed(db, 0x188)) return;
     Register(ctx, db, g_ride);
     Register(ctx, db, g_width);
+    Register(ctx, db, g_profile);
 }
 
 // CarCfg::GetRideHeight(axle), thiscall, ret 4, metres on the x87 stack: the added steps
@@ -649,6 +740,53 @@ X86_FUNC(sub_00270C00) {
     }
     ctx.eax = index;
     x87_push(ctx, double(ExtendedTireWidth(index)));
+    ctx.esp += 4;
+}
+
+// All direct readers of the retail eight-entry ratio table need an extended path. Both the visual tire builder
+// and vehSim::ApplyCarCfg consume diameter, then halve it for radius; changing a menu label alone does nothing.
+// Keep these getters active when the menu option is disabled so saved append-only profile codes remain valid.
+X86_EXTERN_FUNC(__imp__sub_00270BC0);
+X86_FUNC(sub_00270BC0) {
+    const unsigned profile = R32(ctx.esp + 4);
+    if (profile < kStockProfiles) { __imp__sub_00270BC0(ctx, base); return; }
+    ctx.eax = profile;
+    x87_push(ctx, double(ProfileRatio(profile)));
+    ctx.esp += 4;
+}
+
+X86_EXTERN_FUNC(__imp__sub_00270B40);
+X86_FUNC(sub_00270B40) {
+    const unsigned rim = R32(ctx.esp + 4), profile = R32(ctx.esp + 8);
+    if (profile < kStockProfiles) { __imp__sub_00270B40(ctx, base); return; }
+    ctx.eax = rim; ctx.ecx = profile;
+    x87_push(ctx, double(TireDiameter(rim, profile)));
+    ctx.esp += 4;
+}
+
+X86_EXTERN_FUNC(__imp__sub_00272FE0);
+X86_FUNC(sub_00272FE0) {
+    const uint32_t cfg = ctx.ecx, axle = R32(ctx.esp + 4);
+    const unsigned profile = axle < 2 && Committed(cfg + kCfgRimSize, 4) ? G<uint8_t>(cfg + kCfgTireProfile + axle) : 0;
+    if (profile < kStockProfiles || profile == 255) { __imp__sub_00272FE0(ctx, base); return; }
+    const unsigned rim = G<uint8_t>(cfg + kCfgRimSize + axle);
+    ctx.eax = profile; ctx.edx = axle; ctx.ecx = rim;
+    x87_push(ctx, double(TireDiameter(rim, profile)));
+    ctx.esp += 12;
+}
+
+// Garage fit query (profile, rim, ride index, min radius+ride, max radius-ride, max tire radius), cdecl.
+// This path is also used outside IsOptionAvailable. Passing new codes into its original table loads is unsafe.
+X86_EXTERN_FUNC(__imp__sub_00270B60);
+X86_FUNC(sub_00270B60) {
+    const uint32_t stack = ctx.esp;
+    const unsigned profile = R32(stack + 4), rim = R32(stack + 8), ride = R32(stack + 12);
+    if (profile < kStockProfiles && ride < kStockRideSteps) { __imp__sub_00270B60(ctx, base); return; }
+    const float radius = TireDiameter(rim, profile) * 0.5f;
+    const float height = ride < kStockRideSteps ? G<float>(0x471A90 + ride * 4) : ExtendedRideHeight(ride);
+    const bool fits = radius + height >= G<float>(stack + 16) && radius - height <= G<float>(stack + 20) &&
+                      radius <= G<float>(stack + 24);
+    ctx.eax = (ctx.eax & ~0xFFu) | unsigned(fits);
     ctx.esp += 4;
 }
 
@@ -724,7 +862,9 @@ X86_EXTERN_FUNC(__imp__sub_002CBDE0);
 X86_FUNC(sub_002CBDE0) {
     const uint32_t factory = ctx.ecx;
     __imp__sub_002CBDE0(ctx, base);
-    if (Plausible(factory) && Committed(factory + kFactoryCar, 4)) RegisterCar(R32(factory + kFactoryCar), true);
+    // Factories are also stack locals (0x2C004C..0x2C0059), and guest stacks live at 0xD0000000+. Committed
+    // checks the full prefix with a 64-bit end calculation, so this accepts a valid stack without VA wraparound.
+    if (Committed(factory, kFactoryCar + 4)) RegisterCar(R32(factory + kFactoryCar), true);
 }
 
 // the other car factory (vtable 0x46C730): computer driven cars
@@ -732,7 +872,7 @@ X86_EXTERN_FUNC(__imp__sub_001FAE10);
 X86_FUNC(sub_001FAE10) {
     const uint32_t factory = ctx.ecx;
     __imp__sub_001FAE10(ctx, base);
-    if (Plausible(factory) && Committed(factory + kFactoryCar, 4)) RegisterCar(R32(factory + kFactoryCar), false);
+    if (Committed(factory, kFactoryCar + 4)) RegisterCar(R32(factory + kFactoryCar), false);
 }
 
 // the car component's destructor body

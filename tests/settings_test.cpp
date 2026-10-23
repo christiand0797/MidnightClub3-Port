@@ -23,8 +23,8 @@ int main() {
     assert(fs::equivalent(fixture::folder.parent_path(), temp) && fs::create_directory(fixture::folder));
     auto& s = app::Get();
     s.tuning.garage_extended = false;
-    s.tuning.ride_front = .15f;
-    s.tuning.ride_rear = -.05f;
+    s.tuning.ride_front = 2.0f;
+    s.tuning.ride_rear = -2.0f;
     s.tuning.wheel_limit = 2.5f;
     s.tuning.camber_front = -12; s.tuning.camber_rear = -8;
     s.tuning.offset_front = .08f; s.tuning.offset_rear = -.03f;
@@ -49,7 +49,7 @@ int main() {
     app::Load();
     auto assert_close = [](float a, float b) { assert(std::abs(a - b) < 1e-5f); };
     assert(!s.tuning.garage_extended && s.force_widescreen);
-    assert_close(s.tuning.ride_front, .15f); assert_close(s.tuning.ride_rear, -.05f); assert_close(s.tuning.wheel_limit, 2.5f);
+    assert_close(s.tuning.ride_front, 2.0f); assert_close(s.tuning.ride_rear, -2.0f); assert_close(s.tuning.wheel_limit, 2.5f);
     assert_close(s.tuning.camber_front, -12); assert_close(s.tuning.camber_rear, -8);
     assert_close(s.tuning.offset_front, .08f); assert_close(s.tuning.offset_rear, -.03f);
     assert_close(s.tuning.spring_front, 1.5f); assert_close(s.tuning.spring_rear, .75f);
