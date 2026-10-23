@@ -5,6 +5,7 @@
   "covers_all_sources": false,
   "verified": 1,
   "all_requested_model_validated": true,
+  "all_source_movies_validated": false,
   "failed": 0,
   "remaining_frames": 0,
   "details": [
@@ -25,5 +26,5 @@
       "historical_source_and_weights_verified": false
     }
   ],
-  "updated_at": "2026-10-23T05:46:43.305702+00:00"
+  "updated_at": "2026-10-23T05:49:32.751830+00:00"
 }

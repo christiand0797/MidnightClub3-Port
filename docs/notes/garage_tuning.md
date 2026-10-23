@@ -273,3 +273,40 @@ not report the rendered tire's world-space bottom. Sampling records retire with 
 
 Validation: production `garage_test` and `tuning_test` targets built with Clang and passed (2/2). Native integration
 and in-game floor/spark checks are owned by the lead and remain pending at this checkpoint.
+
+Stronger solver regression: when generated guest sources are available, `tuning_solver_fixture.cpp` executes the
+**actual generated original 0xA7250 body** under bounded memory. With player limits widened to 0.44 m compression /
+0.38 m extension, ground requests +0.35 and -0.30 m survive unchanged. Once ownership is removed, restored stock
+0.24/0.18 limits clamp those same requests to +0.24/-0.18. Airborne behavior still chooses full extension. The
+fixture explicitly disables bottom-out impulse flags and fails if an unexpected rigid-body impulse path runs;
+it does not fake successful chassis contact or sparks. Both targeted checks passed after adding this execution.
+
+### Rendered wheels forced through the floor: separate arch-fit correction
+
+Live evidence from the lead's 16-inch rear drop, captured at `.local/autonomous-captures/235154`, showed the rear
+tire visibly cut by the garage floor while 0xA7250 reported contact=1, requested≈actual≈0.001 m. The player wheel's
+limits were already expanded (rear offset -0.350, stop 0.430, extension 0.380). Further travel expansion cannot fix
+an unclamped wheel.
+
+The original wheel renderer has a **second, cosmetic fit correction** at 0xF7495..0xF7596. For normal tires it
+queries 0xA65D0 at return address **0xF7525** and computes:
+
+`correction = min(0, vehModel.SuspensionLimit[axle] - query - runtimeWheel.radius)`
+
+`query = clamp(wheel.compression, -TravelExtent, TravelLimit) - cachedSuspensionOffset`
+
+When negative, 0xF7543..0xF7572 adds that correction along the wheel's up vector to its render translation. At
+extreme tuck this pushes the visible wheel **downward**, even though the ground contact solver placed it correctly.
+A special tire branch at return address **0xF74D5** applies a symmetric ±SuspensionLimit envelope.
+
+`tuning.cpp` now scopes a visual override to exactly those two call sites, owned player wheels and offsets below
+-0.15 m. It executes original 0xA65D0 first, then supplies a query that makes only this cosmetic fit correction zero
+(normal: limit-radius-0.00001; special: 0). Physical compression, tire radius, original shared vehModel data and all
+other callers remain unchanged. This permits intentional fender intersection while preserving the grounded wheel
+translation. First applications log `garage: tucked wheel ... keeps contact position` with actual radius/limit.
+
+The regression executes original generated 0xA65D0: a player wheel with compression 0.001 and cached offset -0.350
+returns the unmodified 0.351 to physical callers, 0.04999 to the normal visual fit caller with limit0.4/radius0.35,
+and 0 to the special fit caller. Removing ownership restores the original 0.351 for the renderer too. Physical
+compression is unchanged. Targeted tuning/garage tests passed. The lead is validating the rebuilt native executable
+against the same garage view and an isolated QA save (`--instance 2`) before any claim of a complete ground fix.

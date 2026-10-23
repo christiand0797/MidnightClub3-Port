@@ -246,6 +246,16 @@ std::unordered_map<uint32_t, Car> g_cars;                               // car c
 std::unordered_set<uint32_t> g_player_cfgs;                             // CarCfgs of human players' cars
 std::unordered_map<uint32_t, std::unordered_set<uint32_t>> g_cfg_sims;  // CarCfg -> every vehSim it was applied to
 
+// Caller holds g_cars_lock. A vehSim address can be reused after destruction, or rebound to another cfg while
+// previewing. Old cfg ownership must never later demote/forget the new occupant of the same address.
+void RemoveSimAssociations(uint32_t sim) {
+    for (auto it = g_cfg_sims.begin(); it != g_cfg_sims.end();) {
+        it->second.erase(sim);
+        if (it->second.empty()) it = g_cfg_sims.erase(it);
+        else ++it;
+    }
+}
+
 void RegisterCar(uint32_t car, bool player) {
     if (!Plausible(car) || !Committed(car, 0x6C)) return;
     const uint32_t sim = R32(car + kCarSim), cfg = R32(car + kCarCfg);
@@ -316,6 +326,7 @@ void UnregisterCar(uint32_t car) {
         if (it == g_cars.end()) return;
         const Car c = it->second;
         g_cars.erase(it);
+        RemoveSimAssociations(c.sim);
         sims.push_back(c.sim);
         bool cfg_in_use = false, cfg_has_player = false;
         for (const auto& [other, oc] : g_cars) {
@@ -647,6 +658,7 @@ X86_FUNC(sub_00121970) {
     bool player = false;
     {
         std::lock_guard<std::mutex> lock(g_cars_lock);
+        RemoveSimAssociations(sim);
         if (cfg) {
             g_cfg_sims[cfg].insert(sim);
             player = g_player_cfgs.count(cfg) != 0;

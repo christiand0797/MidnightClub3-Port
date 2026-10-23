@@ -234,6 +234,42 @@ X86_FUNC(sub_000A7250) {
              F32(tune + kWheelSuspensionOffset), F32(tune + kWheelSuspensionLimit), F32(tune + kWheelTravelExtent));
 }
 
+// The car renderer enforces a second, visual wheel/arch envelope at 0xF74D5/0xF7525. At extreme lowering it
+// pushes a correctly grounded tire DOWN to fit the original wheel arch (0xF7543..0xF7572), through the road.
+// These two callers use the displacement query only to calculate that cosmetic correction. Suppress the
+// correction for deliberately tucked player wheels; all physical and other visual displacement queries remain
+// original. The user's extended tuck permits fender intersection, never a tire translated through the ground.
+X86_EXTERN_FUNC(__imp__sub_000A65D0);
+X86_FUNC(sub_000A65D0) {
+    const uint32_t wheel = ctx.ecx;
+    const uint32_t caller = Committed(ctx.esp, 4) ? R32(ctx.esp) : 0;
+    __imp__sub_000A65D0(ctx, base);
+    if ((caller != 0xF74D5 && caller != 0xF7525) || !Plausible(wheel) || !Committed(wheel, 0x148) ||
+        !Committed(ctx.esp + 0x58, 4)) return;
+    const uint32_t tune = R32(wheel + 4);
+    const float limit = F32(ctx.esp + 0x58), radius = F32(wheel + 0x100);
+    // The ordinary-tire envelope is a signed model-space height, not a positive radius. Negative values are
+    // valid on low arches and still participate in limit-query-radius. Only the symmetric special-tire branch
+    // needs a nonnegative half-extent.
+    if (!std::isfinite(limit) || !std::isfinite(radius) || radius <= 0 ||
+        (caller == 0xF74D5 && limit < 0)) return;
+    bool report = false;
+    {
+        std::lock_guard<std::mutex> lock(g_lock);
+        auto offset = g_tuned.find(tune + kWheelSuspensionOffset);
+        if (offset == g_tuned.end() || !g_player_sims.count(offset->second.owner) ||
+            F32(offset->first) >= -kFreeLowering) return;
+        static unsigned reported = 0;
+        report = reported++ < 8;
+    }
+    const double original = ctx.st[ctx.top];
+    // Normal tire: correction = min(0, limit - query - radius). A tiny margin avoids a negative rounding ulp.
+    // Special tire: correction is zero for a query inside [-limit,+limit]. Neither caller otherwise uses it.
+    ctx.st[ctx.top] = caller == 0xF7525 ? double(limit) - radius - 0.00001 : 0.0;
+    if (report) LOGR("garage: tucked wheel %08X keeps contact position (render fit %.3f -> %.3f, radius %.3f, limit %.3f)",
+                     wheel, original, ctx.st[ctx.top], radius, limit);
+}
+
 // garage.cpp: a human player's car (mcPlayerFactory) owns this vehSim, or no longer does
 void TuningSetPlayerSim(uint32_t sim, bool player) {
     std::lock_guard<std::mutex> lock(g_lock);

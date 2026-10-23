@@ -237,4 +237,21 @@ int main() {
     Call(sub_001465E0, garage, {0});
     assert(!players[ai_sim] && cfg_applied_calls == 4);
     Call(sub_000FFBA0, ai);
+
+    // A destroyed simulation's address may be reused by another car while its old shared cfg still lives.
+    // Retiring the final old cfg owner must not accidentally retire the new car at that recycled address.
+    constexpr uint32_t car_a = 0x143000, car_b = 0x144000, car_c = 0x145000;
+    constexpr uint32_t sim_a = 0x164000, sim_b = 0x165000, cfg_x = 0x152000, cfg_y = 0x153000;
+    for (auto row : {std::pair{car_a, sim_a}, std::pair{car_b, sim_b}}) {
+        W32(row.first + 0x50, row.second); W32(row.first + 0x64, cfg_x);
+    }
+    W32(0x172044, car_a); W32(0x173044, car_b);
+    Call(sub_002CBDE0, 0x172000); Call(sub_002CBDE0, 0x173000);
+    Call(sub_00121970, sim_a, {cfg_x, 0}); Call(sub_00121970, sim_b, {cfg_x, 0});
+    Call(sub_000FFBA0, car_a); assert(!players.contains(sim_a));
+    W32(car_c + 0x50, sim_a); W32(car_c + 0x64, cfg_y); W32(0x174044, car_c);
+    Call(sub_002CBDE0, 0x174000); Call(sub_00121970, sim_a, {cfg_y, 0});
+    assert(players[sim_a]);
+    Call(sub_000FFBA0, car_b); assert(players[sim_a]);
+    Call(sub_000FFBA0, car_c); assert(!players.contains(sim_a));
 }

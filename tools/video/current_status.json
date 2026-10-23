@@ -1,6 +1,10 @@
 {
+  "mode": "marker-inventory",
   "requested_model": "realesrgan-x4plus",
   "movies": 106,
+  "covers_all_sources": true,
+  "all_requested_model_validated": false,
+  "all_source_movies_validated": false,
   "recorded_complete": 48,
   "remaining_frames": 66188,
   "estimated_hours_at_2_6_seconds_per_frame": 47.80244444444445,
@@ -854,5 +858,6 @@
       "needs_model": true,
       "has_provenance": false
     }
-  ]
+  ],
+  "updated_at": "2026-10-23T05:49:31.903793+00:00"
 }

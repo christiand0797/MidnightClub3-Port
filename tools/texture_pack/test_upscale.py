@@ -144,11 +144,16 @@ class PublicationTests(unittest.TestCase):
                 padded.resize((padded.width * 4, padded.height * 4)).save(output_dir / name)
             return subprocess.CompletedProcess(command, 0, "", "")
 
-        args = ["upscale.py", "--textures", str(textures), "--pass-id", "fresh-pass"]
+        stop = self.folder / "stop-textures"
+        args = ["upscale.py", "--textures", str(textures), "--pass-id", "fresh-pass", "--stop-file", str(stop)]
         with (patch.object(upscale, "ESRGAN", runner), patch.dict(upscale.MODELS, {model: self.folder}),
               patch.object(upscale.sys, "argv", args),
               patch.object(upscale.subprocess, "run", side_effect=fake_network) as network,
               redirect_stdout(io.StringIO())):
+            stop.touch()
+            self.assertEqual(upscale.main(), 2)
+            network.assert_not_called()
+            stop.unlink()
             self.assertEqual(upscale.main(), 0)
             self.assertEqual(network.call_count, 1)
             self.assertFalse((textures / "replace" / mask).exists())

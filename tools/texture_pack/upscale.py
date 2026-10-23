@@ -239,6 +239,7 @@ def main():
     ap.add_argument("--model", default=DEFAULT_MODEL, choices=sorted(MODELS),
                     help="redo every replacement not yet made with this model (tracked in upscale_state.json)")
     ap.add_argument("--pass-id", help="a fresh named pass from originals; reusing its name resumes verified completed textures")
+    ap.add_argument("--stop-file", type=Path, help="stop after the current completed batch when this file exists")
     args = ap.parse_args()
     if args.batch < 1:
         ap.error("--batch must be at least 1")
@@ -272,6 +273,9 @@ def main():
 
     done = skipped = failed = 0
     for i in range(0, len(todo), args.batch):
+        if args.stop_file and args.stop_file.exists():
+            print(f"Stopped at batch boundary: remove {args.stop_file} to resume", flush=True)
+            return 2
         batch = todo[i:i + args.batch]
         with tempfile.TemporaryDirectory() as tmp:
             src_dir, out_dir = Path(tmp) / "in", Path(tmp) / "out"

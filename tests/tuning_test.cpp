@@ -12,8 +12,8 @@
 #include <vector>
 
 namespace {
-std::vector<uint8_t> guest(0x80000);
-std::array<bool, 0x80> committed;
+std::vector<uint8_t> guest(0x600000);
+std::array<bool, 0x600> committed;
 std::function<void(uint32_t)> parse;
 constexpr uint32_t kStack = 0x70000;
 constexpr uint32_t kSim = 0x10000, kFront = 0x12000, kRear = 0x14000, kModel = 0x16000;
@@ -56,12 +56,17 @@ X86_FUNC(__imp__sub_0032F490) {
     GuestReturn(ctx);
 }
 X86_FUNC(__imp__sub_0032F840) { ctx.esp += 4; }
+#ifndef MC3_TEST_REAL_WHEEL_SOLVER
 X86_FUNC(__imp__sub_000A7250) { ctx.esp += 16; }
+X86_FUNC(__imp__sub_000A65D0) { x87_push(ctx, 0); ctx.esp += 4; }
+#endif
 
 X86_EXTERN_FUNC(sub_000A3CA0);
 X86_EXTERN_FUNC(sub_000FB760);
 X86_EXTERN_FUNC(sub_0032F490);
 X86_EXTERN_FUNC(sub_0032F840);
+X86_EXTERN_FUNC(sub_000A7250);
+X86_EXTERN_FUNC(sub_000A65D0);
 void ApplyVehicleTuning();
 void TuningSetPlayerSim(uint32_t sim, bool player);
 void TuningForgetSim(uint32_t sim);
@@ -224,6 +229,42 @@ int main() {
     TuningCarCfgApplied(lowSim);
     assert(Near(Float(lowFront + 0x4C), 0.44f) && Near(Float(lowFront + 0x44), 0.38f));
     assert(Near(Float(lowRear + 0x4C), 0.29f) && Near(Float(lowRear + 0x44), 0.23f));
+#ifdef MC3_TEST_REAL_WHEEL_SOLVER
+    // The title's actual contact solver clamps ground compression to the tuning bounds. Its original clamp
+    // rejects these contact distances with stock travel, while extended travel retains them. This checks the
+    // real guest instruction path; it does not establish a match between the chassis collision mesh and visuals.
+    constexpr uint32_t runtimeWheel = 0x46000;
+    kernel::W32(runtimeWheel + 4, lowFront);
+    PutFloat(0x447C1C, 1.0f); PutFloat(0x4B2D50, 60.0f); PutFloat(0x4B2D48, 1.0f / 60.0f);
+    PutFloat(runtimeWheel + 0x108, 1.0f);
+    PutFloat(runtimeWheel + 0x19C, 1.0f); // a positive support force over this fixture's tested range
+    auto solve = [&](float requested, bool contact) {
+        X86Context ctx{}; ctx.ecx = runtimeWheel; ctx.esp = kStack;
+        PutFloat(kStack + 4, requested); kernel::W32(kStack + 8, contact);
+        PutFloat(kStack + 12, 1.0f / 60.0f);
+        sub_000A7250(ctx, guest.data());
+        assert(ctx.esp == kStack + 16);
+        return Float(runtimeWheel + 0x144);
+    };
+    assert(Near(solve(0.35f, true), 0.35f));
+    assert(Near(solve(-0.30f, true), -0.30f));
+    assert(Near(solve(0.35f, false), -0.38f)); // airborne wheels retain the title's extension behavior
+    PutFloat(runtimeWheel + 0x10C, -0.35f); // original cached suspension offset
+    PutFloat(runtimeWheel + 0x100, 0.35f);  // original runtime tire radius
+    PutFloat(runtimeWheel + 0x144, 0.001f);
+    auto displacement = [&](uint32_t caller, float arch_limit = 0.4f) {
+        X86Context ctx{}; ctx.ecx = runtimeWheel; ctx.esp = kStack;
+        kernel::W32(kStack, caller); PutFloat(kStack + 4 + 0x58, arch_limit);
+        sub_000A65D0(ctx, guest.data());
+        assert(ctx.esp == kStack + 4);
+        return float(ctx.st[ctx.top]);
+    };
+    assert(Near(displacement(0xF7525), 0.04999f));
+    assert(Near(displacement(0xF7525, -0.1f), -0.45001f)); // signed low-arch envelope is valid
+    assert(Near(displacement(0xF74D5), 0.0f));
+    assert(Near(displacement(0xAEAE1), 0.351f)); // physics/other callers get the real original displacement
+    assert(Near(Float(runtimeWheel + 0x144), 0.001f)); // cosmetic correction never changes physical compression
+#endif
     ApplyVehicleTuning(); ApplyVehicleTuning();
     assert(Near(Float(lowFront + 0x4C), 0.44f) && Near(Float(lowFront + 0x44), 0.38f));
     settings.ride_rear = 0.2f; ApplyVehicleTuning();
@@ -232,6 +273,12 @@ int main() {
     TuningSetPlayerSim(lowSim, false); ApplyVehicleTuning();
     assert(Near(Float(lowFront + 0x48), -0.35f));
     assert(Near(Float(lowFront + 0x4C), 0.24f) && Near(Float(lowFront + 0x44), 0.18f));
+#ifdef MC3_TEST_REAL_WHEEL_SOLVER
+    assert(Near(solve(0.35f, true), 0.24f));
+    assert(Near(solve(-0.30f, true), -0.18f));
+    PutFloat(runtimeWheel + 0x144, 0.001f);
+    assert(Near(displacement(0xF7525), 0.351f)); // a computer car retains the original visual fit query too
+#endif
     TuningForgetSim(lowSim);
 
     // Destruction retires ownership and pending fields before a recycled address belongs to a different car.

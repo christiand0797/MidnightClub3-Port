@@ -1,6 +1,7 @@
 # MC3 port — handoff (read this first)
 
-Last updated 2026-10-21 by the Codex continuation. Read section 0 and docs/REANALYSIS.md first. This is the state of the work, how
+Last updated 2026-10-22 by the Codex continuation. Read [AUTONOMOUS_RUN.md](AUTONOMOUS_RUN.md) for the latest active work,
+then section 0 and docs/REANALYSIS.md. This is the state of the work, how
 to continue it, and everything learned, written so another agent can pick up without the conversation.
 `PORT_DOCUMENTATION.md` (repo root) has the long-form history; this file is the current picture. Agent research
 notes land in `docs/notes/*.md` (see "Work in flight").
@@ -8,6 +9,25 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 ---
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
+
+**2026-10-22 continuation:** the user now explicitly authorizes unattended game control, driving/menu checks,
+parallel agents and downloads. This supersedes the older "don't launch/drive" preference recorded in section 1.
+Source has been pushed to the new private repository `christiand0797/MidnightClub3-Port` (`github` remote); `origin`
+still points at the upstream framework. The local checkout was shallow; fetching upstream history fixed its initial
+empty-repository push failure. Full-project archive publication is separate from the Git source tree.
+
+Current native build and all **13 C++ checks pass**. Tire widths now have **38 selections, 105–755 mm**, preserving
+all prior indices. Direct-to-garage preview cars bypass mcPlayerFactory; explicit selected-preview ownership now lets
+them receive player-only suspension travel changes. Live maximum-low ride-height validation is ongoing. Actual
+generated wheel-solver regression confirms the widened travel avoids the original clamp for contact requests.
+
+All **7,081 eligible active texture replacements** passed the CPU audit; **5,603 categorical vinyl masks stay
+excluded**. A fresh named UltraSharp pass is prepared. Detailed x4plus movies remain in progress (48/106 at initial
+audit, about 48 GPU-hours remaining); no duplicate GPU job was started. The durable coordinator will finish both
+passes, verify a complete backup, and only then allow new offline PBR generation. **No new PBR work is authorized
+before that gate succeeds.** Existing PBR experiments and plan below are inherited, not newly enabled rendering.
+
+Historical findings follow; prefer the active ledger and latest subsystem notes when these older counts conflict.
 
 The requested reanalysis found a source/build integration break left by partial settings cleanup. It is repaired.
 Detailed scope, validation and remaining limitations are in [REANALYSIS.md](REANALYSIS.md); subsystem evidence is in

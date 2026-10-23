@@ -121,6 +121,31 @@ void Display(Settings& s) {
 }
 
 void Quality(Settings& s) {
+    ImGui::TextDisabled("Apply quality preset");
+    if (ImGui::Button("Performance")) {
+        s.render_percent = 100; s.aniso = 4;
+        s.graphics.aa = 1; s.graphics.aa_strength = 0.75f; s.graphics.sharpen = 0.2f;
+        s.graphics.texture_detail = 1; s.graphics.lod = 0.85f;
+        g_dirty = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Balanced")) {
+        s.render_percent = 100; s.aniso = 16;
+        s.graphics.aa = 1; s.graphics.aa_strength = 1; s.graphics.sharpen = 0.35f;
+        s.graphics.texture_detail = 1; s.graphics.lod = 1;
+        g_dirty = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("High detail")) {
+        s.render_percent = 150; s.aniso = 16;
+        s.graphics.aa = 1; s.graphics.aa_strength = 1; s.graphics.sharpen = 0.25f;
+        s.graphics.texture_detail = 1; s.graphics.lod = 1.5f;
+        g_dirty = true;
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("150%% render scale and x1.5 draw detail. Costs more GPU time and memory.\n"
+                          "Presets keep your picture, effects, HD pack and camera settings.");
+    ImGui::Separator();
     const char* aniso[] = {"As the game asks", "2x", "4x", "8x", "16x"};
     int a = s.aniso >= 16 ? 4 : s.aniso >= 8 ? 3 : s.aniso >= 4 ? 2 : s.aniso >= 2 ? 1 : 0;
     if (ImGui::Combo("Anisotropic filtering", &a, aniso, 5)) {
@@ -185,6 +210,22 @@ void Picture(Settings& s) {
     ImGui::EndDisabled();
 }
 
+void Input(Settings& s) {
+    if (Slider("Inner stick deadzone", &s.deadzone_inner, 0, 0.9f, "%.2f",
+               "Ignores small stick movements near the centre, including controller drift."))
+        s.deadzone_outer = std::max(s.deadzone_outer, s.deadzone_inner + 0.05f);
+    Slider("Full stick threshold", &s.deadzone_outer, s.deadzone_inner + 0.05f, 1, "%.2f",
+           "Stick travel that gives full steering or camera input. The range in between is rescaled smoothly.");
+    if (ImGui::Button("Reset controller response")) {
+        const Settings defaults;
+        s.deadzone_inner = defaults.deadzone_inner; s.deadzone_outer = defaults.deadzone_outer;
+        g_dirty = true;
+    }
+    ImGui::Separator();
+    ImGui::TextWrapped("Keyboard: Enter Start, Space A, Escape B, Backspace Back. Arrows navigate; "
+                       "W/S accelerate/brake, A/D steer. Q/E are black/white; X/Y are the face buttons.");
+}
+
 // the controller drives ImGui's navigation while the menu is open
 void FeedController() {
     ImGuiIO& io = ImGui::GetIO();
@@ -241,7 +282,7 @@ void DrawSettingsMenu(float fps) {
     ImGui::SetNextWindowPos({io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f}, ImGuiCond_Always, {0.5f, 0.5f});
     ImGui::SetNextWindowBgAlpha(0.92f);
     bool open = true;
-    ImGui::Begin("Graphics settings", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
+    ImGui::Begin("Game settings", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
     if (ImGui::BeginTabBar("tabs")) {
         if (ImGui::BeginTabItem("Display")) {
             Display(s);
@@ -257,6 +298,18 @@ void DrawSettingsMenu(float fps) {
             Slider("Wheel and tire size limit", &s.tuning.wheel_limit, 1, 3, "x%.2f",
                    "How large a wheel and tire each car takes in the garage, times its stock limit. Applies when a "
                    "car loads.");
+            if (ImGui::Button("Reset extra vehicle tuning")) {
+                const Settings defaults;
+                s.tuning.ride_front = s.tuning.ride_rear = 0;
+                s.tuning.wheel_limit = defaults.tuning.wheel_limit;
+                g_dirty = true;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Resets the extra F1 offsets and fit limit; keeps your purchased garage parts.");
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Input")) {
+            Input(s);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Quality")) {
