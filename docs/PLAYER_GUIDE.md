@@ -11,8 +11,7 @@ still need individual validation.
 
 Use the Windows x64 portable asset from the
 [v0.3.0 development release](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.0-dev.20261023).
-At this documentation update it is a draft awaiting final validation; the link
-becomes public after publication. Check its notes before downloading.
+Read its notes for available assets, the included build and known limitations.
 Extract the entire `MidnightClub3-Native-…-win64.zip`, then double-click
 `mc3.exe`. The supplied DLLs must stay beside it. The automatic GitHub source ZIP
 does not contain a playable installation.
@@ -24,6 +23,13 @@ Xbox USA **DUB Edition Remix** ISO. Setup creates the desktop shortcut and save
 folders. See [installation, offline setup and updates](INSTALL.md) for the full
 procedure. An emulator, Python and a compiler are not needed to play a packaged
 release.
+
+A clean offline first-launch check installed all 7,188 content files, created
+the shortcut and automatically played the HD intro. This setup check is separate
+from the Golf R32 garage/street check; see [release validation](notes/release_validation.md).
+Windows can display a first-launch network-permission dialog. Handle that OS
+dialog yourself; local setup and offline gameplay do not require allowing
+public inbound network connections.
 
 ## Open and use the PC menu
 
@@ -42,6 +48,9 @@ Scroll inside the menu to reach controls below the visible area. **Close** and
 game window; click it if keyboard input is going elsewhere. A controller can be
 connected after launch. Physical controller and keyboard input remain available
 when developer input scripts are present.
+
+For an exact slider value, **Ctrl+click** the slider, type the number and press
+**Enter**. Values stay within the control's range.
 
 Display changes are staged. Change the fields, select **Apply display changes**,
 then select **Keep settings** within **20 seconds**. Keep becomes available when
@@ -254,6 +263,7 @@ handles purchased parts, career progress and per-car garage setups.
 | Tire goes through ground / incorrect airbag height | Record the vehicle, front/rear, garage ride step, PC ride values, tire size/profile and road/garage location. All-car contact behavior is still being validated. |
 | Movie is soft, fails or black | Compare Quality → HD movies Off. Keep installed movie names unchanged. On Windows N, install the Media Feature Pack linked in INSTALL. |
 | Setup interrupted / checksum error | Start the same extracted `mc3.exe` again. Keep parts from the same content release. Setup can resume/repair; do not mix manifests or manually edit its marker. |
+| Windows asks for network permission | Handle the Windows dialog yourself. Local setup and offline gameplay do not require allowing public inbound network connections. OS prompts depend on your Windows configuration. |
 | ISO drive moved | Use `mc3.exe --choose-disc`, or see INSTALL for `--disc`. |
 | Crash | Preserve `logs` and any `CrashDumps`, note the last menu/action/car, and include the release version when reporting it. |
 

@@ -7,9 +7,8 @@ game is translated to C++ ahead of time; no emulator is needed.
 
 Use the **complete-content Windows portable ZIP** on the
 [v0.3.0 development release page](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.0-dev.20261023).
-This release is currently a **draft awaiting final validation**; its public link
-becomes available after publication. Release notes state the actual tested
-features and known limitations. Choose `MidnightClub3-Native-…-win64.zip`.
+Read its release notes for the available assets, tested features and known
+limitations. Choose `MidnightClub3-Native-…-win64.zip`.
 
 1. Extract the entire ZIP into a writable folder.
 2. Double-click **mc3.exe**. First launch downloads and verifies the matching
@@ -29,6 +28,11 @@ values survived leaving the garage. **19 regression tests pass**, including the
 original game's refresh instructions. See the [validation record](docs/notes/live_vehicle_tuning.md)
 for the tested values and remaining limits. The ±2 m ride range is implemented;
 physical fit at every extreme on every car remains unverified.
+
+A clean offline first launch also installed all **7,188 content files**, created
+the desktop shortcut and automatically started the HD intro. See the
+[release validation record](docs/notes/release_validation.md). Windows may show
+its own network-permission prompt, which the user handles.
 
 GitHub's automatic **Source code** ZIP is for development. Use the named portable
 release asset to play. The current additional media pass and the all-car tuning

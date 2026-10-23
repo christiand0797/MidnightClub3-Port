@@ -1,7 +1,22 @@
 # Full private GitHub project checkpoint
 
-Updated 2026-10-23. The verified checkpoint contains **38,043 files and
-28,281,848,318 bytes**. Its immutable copy is
+Completed 2026-10-23 at **08:52:56 UTC**. The full checkpoint is published in the
+**private** backup repository:
+[checkpoint-2026-10-23_004252_github_76e97c](https://github.com/christiand0797/MidnightClub3-Port-Backups/releases/tag/checkpoint-2026-10-23_004252_github_76e97c).
+Release ID `421599265` is no longer a draft. Its target is the frozen source
+commit `8bc7f42b889dc194cb1cf90c1b26ad58208450f4`.
+
+All **14 remote assets** were checked immediately before and after publication:
+the 12 archive volumes, `snapshot-manifest.json` and `SHA256SUMS.txt` have the
+exact expected names, uploaded state, byte sizes and GitHub SHA256 digests. The
+small local manifest and checksum file were also freshly hashed. The manifest
+SHA256 remains
+`792275c1aa39fc2e616ba7cfad9b10b61ad908a3a0d6bb5ade18a1753a6d0faa`.
+The durable state now records **`phase: published`, `published: true`**, the
+canonical checkpoint-tag URL, publication time and all 14 verified asset IDs.
+`publication-verification.json` beside that state records the final checks.
+
+The verified checkpoint contains **38,043 files and 28,281,848,318 bytes**. Its immutable copy is
 `G:/MC3_Backups/MidnightClub3-Port_2026-10-23_004252_github_76e97c`; its durable
 state is `G:/MC3_Backups/github_checkpoint_2026-10-23.control/state.json`.
 The private publication destination saved in that state is
@@ -26,11 +41,12 @@ wrong sizes and local-only resume behavior.
 
 Local adoption has completed successfully: the frozen copy's hashes matched,
 the fresh `7z t` reported **Everything is Ok**, and all 12 part SHA256 hashes
-were saved. The durable state is now **`phase: archived`, `archived: true`**, with
+were saved. At that recovery boundary the durable state recorded
+**`phase: archived`, `archived: true`**, with
 exact `archive_coverage`, `archive_adopted_from` and no previous `last_error`.
 `SHA256SUMS.txt` contains the 12 volume hashes plus the manifest hash. No archive
 was recompressed, no frozen snapshot file was written, and no cloud request was
-made by this recovery. Publication is the parent's next operation.
+made by that local recovery. The later private publication is complete as recorded above.
 
 The first resumed publisher created owned draft release ID `421599265`, then
 hit a second boundary: an unpublished new tag is not available through
@@ -43,6 +59,17 @@ has a bounded visibility retry and an explicit resumable error instead of a
 Six additional regressions cover that recovery and the canonical published URL
 (17 publisher tests total). Publication refreshes `release_url` after the draft's
 temporary URL changes to the final tag URL.
+
+The uploader was still running repeated final archive hash passes after all
+14 assets had uploaded and their server digests matched. Its exact process,
+command line, external state path and absence of an active upload child were
+checked before stopping only that publisher at the completed-upload boundary.
+The existing release was then finalized under the state's OS lock, using fresh
+remote metadata and the already verified local volume hashes. This avoided
+another 22 GB hash pass, recompression, re-upload or a second draft. Private
+visibility, the ownership marker, frozen commit and manifest, exact asset set,
+all sizes and all server SHA256 digests were checked again after publication.
+The canonical tag endpoint resolves to the same release ID.
 
 To validate and adopt this completed attempt locally without recompression or
 GitHub access:

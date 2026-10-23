@@ -32,6 +32,53 @@ With `-Executable`, the test also builds and extracts a complete-content runtime
 
 On 2026-10-23, the checks passed against the native executable built at 01:47:10 local time: 23,578,112 bytes, SHA-256 `ebc7508a81e43be90c4d248b24bb2e31f5ee8a582491670fb1e5ba176ce0de1f`. The initial interoperability fixture contained 2,097,777 archive bytes across three parts. This identifies the tested build; each subsequent release needs a fresh run.
 
+## Actual clean first-launch proof (2026-10-23)
+
+The later canonical native EXE, SHA-256
+`72ade3b85ea2292c57867f5ae6d635a20304d83d9830742c1c96b85eca12c5ab`, passed an actual full offline first launch
+from `G:/MC3_Backups/release-work/first-launch-qa-20261023`. The parent launched `mc3.exe` normally, without
+`--disc`, an existing installation, copied settings, or seeded saves. Before launch the folder contained only
+the native EXE, ten app-local CRT DLLs, documentation/licenses, pinned metadata and all eight matching `.mc3c`
+parts. The parts were same-volume hardlinks to immutable release content; installation still had to verify and
+extract the full archive. The frozen `prepare-manifest.json` records that pre-launch state and hashes.
+
+All eight part hashes and the concatenated archive matched before launch. Archive size was **14,124,869,766 bytes**,
+SHA-256 `3b3f311f7800430fd0b445952f2a8fffe86f58276f639bbb850e006d0848c1ab`. The native archive checker and
+installer authenticated **7,188 payload files**: one supported ISO, **7,081** active texture PNGs and **106** MP4
+movies. Both the installed inventory and a recursive on-disk movie count confirm 106; a top-level-only count
+would miss the nested movies.
+
+The actual `logs/mc3.log` records these elapsed times on the QA machine:
+
+| Time after launch | Observed result |
+|---|---|
+| `593.115 s` | `setup: verified content installed (8 chunks, 14124869766 bytes)` |
+| `593.315 s` | Loaded `default.xbe` from the newly installed `game/game.iso`, SHA-1 `5bca1cf092edaadf876e8f80129900407a4a07b8` |
+| `593.370 s` | Desktop shortcut ready; its target and working directory were independently checked against this QA folder |
+| `594.894 s` | Native Direct3D 12 initialized on the NVIDIA GeForce RTX 3050 |
+| `596.915 s` | Loaded 7,081 texture replacement entries from the new installation |
+| `596.963 s` | Automatically played `rockstar.mp4`, 1920×1440 at 29.97 fps |
+| `604.239 s` | Automatically played `sdlogo.mp4`, 1920×1440 at 29.97 fps |
+| `612.301 s` | Automatically played `mc3intro.mp4`, 1920×1440 at 29.97 fps |
+
+Installation wrote `config/content-installed.txt` version **2** and an inventory containing 7,188 file records.
+The pinned manifest SHA-256 is `26595f26e83354cc18b5351b12811d1e9f0564855ae8114500213f37094e3bed`;
+the installed inventory SHA-256 is `2648d2e8a8ab8a04845aefbb28ff60977d929f5f155793cec99a53db4198ffcf`.
+`config/disc-path.txt` contains relative `game\game.iso`. Personal settings and saves were not supplied by the
+runtime package. This run used built-in defaults, including zero added ride/camber/offset, ×1 performance
+controls, texture replacements and HD movies enabled, 60 fps cap, vsync and desktop-sized borderless output.
+
+This first-launch UI proof ends at automatic intro playback. Windows displayed its own network-permission
+dialog after launch; the agent left that security dialog untouched. Local setup and offline gameplay do not
+require allowing public inbound connections. The user handles Windows permission prompts, and this check does
+not promise that every PC will show zero OS/admin prompts. The same canonical EXE's separate Golf R32
+garage-to-street check passed; see [live vehicle tuning](live_vehicle_tuning.md).
+
+The complete [release validation record](release_validation.md) includes the 19 CTest checks, snapshot/publisher
+fixture coverage and remaining scope. This was the actual EXE's full offline extraction path, not a live HTTPS
+download from the final public tag. The public manifest/download URL check follows publication. These local
+results do not themselves assert GitHub publication.
+
 ## Prepare complete content
 
 Freeze the ISO, active texture replacements and HD movie tree before packaging. The writer hashes each source, streams it, and rejects a size or modification-time change during the write. Do not point it at an active upscale output that is still changing.

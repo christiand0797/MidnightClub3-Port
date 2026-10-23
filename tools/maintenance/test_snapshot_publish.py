@@ -17,7 +17,7 @@ class ArchiveCoverageTests(unittest.TestCase):
 Size = 0
 Packed Size = 0
 Attributes = RDA
-CRC =
+CRC =\x20
 
 Path = checkpoint\\.git
 Size = 0

@@ -73,6 +73,7 @@ This does not establish physical clearance at either extreme on every car. Sprin
 has code-regression coverage; driving feel, extreme width/camber, every chassis' floor contact and motion-dependent
 scrape/sparks still need bounded playtests. The [road contact investigation](road_scrape.md) tracks those limits.
 
-The GitHub release remains **DRAFT** pending the parent's actual first-launch installation QA and publication.
-The additional media pass remains ongoing, and PBR conversion remains planned work; neither is declared complete
-by this vehicle validation.
+The actual clean first-launch installation subsequently passed; see [release validation](release_validation.md)
+for its independent setup/intro proof. Consult the release notes for publication and available assets under
+`v0.3.0-dev.20261023`. The additional media pass remains ongoing, and PBR conversion remains planned work;
+neither is declared complete by this vehicle validation.
