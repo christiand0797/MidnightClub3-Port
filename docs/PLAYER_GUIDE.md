@@ -2,15 +2,16 @@
 
 This guide describes the PC settings in the current source. The native Golf R32
 check confirmed immediate ride-height changes and garage-to-street retention of
-ride, camber, wheel offset and engine-power values. All **19 regression tests**
-pass, including execution of the original game's refresh instructions. Release
+ride, camber, wheel offset and engine-power values. The latest hotfix also checks an added tire profile on both
+axles and the private street chassis floor in a '57 Bel Air. All **21 regression tests**
+pass, including original refresh, mesh-reader and floor-writer instructions. Release
 notes identify the included build; other cars and extreme physical combinations
 still need individual validation.
 
 ## Download and start
 
 Use the Windows x64 portable asset from the
-[v0.3.0 development release](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.0-dev.20261023).
+[v0.3.1 development release](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.1-dev.20261023).
 Read its notes for available assets, the included build and known limitations.
 Extract the entire `MidnightClub3-Native-…-win64.zip`, then double-click
 `mc3.exe`. The supplied DLLs must stay beside it. The automatic GitHub source ZIP

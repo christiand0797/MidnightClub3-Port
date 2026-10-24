@@ -23,6 +23,13 @@ source-backed private bundle/cache guard is implemented; shared previews retain 
 The visible underside still needs comparison against the physical floor, and a same-model live AI pair remains
 a useful final observation. See [collision_bound_ownership.md](collision_bound_ownership.md) for source proof.
 
+A later [bounded native hotfix run](native_hotfix_20261023.md) verified the actual street Bel Air private cache
+entry, the logged `0.330 → 0.000` correction, all four cached offsets at −0.361 m, and the same measured floor
+minimum/vertex hash as its baseline across garage/street reconstruction. That observation establishes the
+guarded correction taking effect on this car; it does not certify visible floorpan contact, same-model AI
+isolation, cambered tire support or sparks. The following source and fixture investigation remains separate
+from that later live run.
+
 ## Exact native dataflow
 
 All addresses below are guest addresses from the original `default.xbe`. Its SHA-256 is

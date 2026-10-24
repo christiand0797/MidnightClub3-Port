@@ -10,6 +10,43 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-10-23 night:** the frozen public playable content release is
+[v0.3.0-dev.20261023](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.0-dev.20261023).
+The garage-to-street ownership repair passed native Golf R32 checks and 19 CTest checks; ride-only F1 changes
+refresh immediately and retain independent front/rear values after leaving the garage. See
+[live_vehicle_tuning.md](notes/live_vehicle_tuning.md). The full source/game checkpoint is also published in the
+private backup repository; this does not replace the later post-media/pre-PBR backup gate.
+
+The installed hotfix EXE is `b3b6bd221d22055860de276447911be25fcda81f3ef60039102145f3bd0a14b2`,
+native source `3a0ed6832c9a17938cbb3551c606e309334b0a4f`. It passes all **21 CTest checks**. Native '57 Bel Air
+QA confirmed profile code 33 on both axles through garage → street → garage and four -0.361 m cached offsets.
+The private floor correction fired and preserved the original floor plus 5 cm skin. Two HD-enabled startups
+reached rendered menus/driving without delayed-fence logs. See [native proof](notes/native_hotfix_20261023.md).
+All-car/camber ground clearance, real sparks, same-model AI isolation and a fresh-process profile reload remain
+open. The shader/texture capture and save copies are private local evidence, not release assets.
+
+The fresh original-derived UltraSharp pass is **complete: 7,081/7,081**, with the named-pass SHA-256,
+dimensions and PNG integrity audit passing and no missing/corrupt/orphan replacements. Report:
+`.local/texture-pass-20261023-final-audit.json`. All 5,603 vinyl masks remain excluded. The x4plus movie pass now
+uses explicit exact encoder/MP4 clocks and complete source-grid checks; **18 video + 21 coordinator tests pass**.
+The coordinator resumed at 23:03 MDT, waited for the owned QA game, and started one movie worker at 23:10.
+The removed shared stop marker was root-owned. Preserve any new stop request and never start a duplicate worker.
+Final media audits, a verified full post-media backup, then the offline starter conversion remain outstanding;
+runtime PBR is unchanged.
+
+A follow-up asset audit found that the new saved tire-profile codes also index the original eight-entry mesh
+resource table. The corrected table lifetime/fallback passes actual generated-reader tests and the bounded Bel Air
+native check above. Numeric diameter/save-code coverage alone did not cover these mesh readers. The
+[ground-contact audit](notes/ground_contact_audit.md) also identifies an original lowering-induced chassis-floor
+retraction; the guarded private-player correction and original-writer fixtures are now built and tested. The
+read-only [mesh audit](notes/tire_mesh_support.md) adds 28 passing tests and shows why width/camber need actual
+vertex support for a broader road-contact guarantee. The public
+[v0.3.1 runtime hotfix](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.1-dev.20261023)
+uses unchanged v0.3.0 content; remote metadata and an unauthenticated ZIP download passed. Existing release
+assets were preserved. See [publication proof](notes/public_release.md).
+
+The paragraphs below retain the earlier continuation history; their build/media counts are historical.
+
 **2026-10-22 continuation:** the user now explicitly authorizes unattended game control, driving/menu checks,
 parallel agents and downloads. This supersedes the older "don't launch/drive" preference recorded in section 1.
 Source has been pushed to the now-public repository `christiand0797/MidnightClub3-Port` (`github` remote); `origin`

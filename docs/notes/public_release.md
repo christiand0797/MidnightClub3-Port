@@ -1,6 +1,33 @@
 # Public portable release and upload maintenance
 
-## Published release
+## Latest runtime hotfix
+
+[v0.3.1-dev.20261023](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.1-dev.20261023)
+was published at **2026-10-24 05:12:27 UTC**, public prerelease ID `422531680`. Its tag resolves to exact native
+source `3a0ed6832c9a17938cbb3551c606e309334b0a4f`. The
+[portable Windows ZIP](https://github.com/christiand0797/MidnightClub3-Port/releases/download/v0.3.1-dev.20261023/MidnightClub3-Native-0.3.1-dev.20261023-win64.zip)
+is **9,696,068 bytes**, SHA-256 `aecf34e4c56dacf3ff370b7c3ed4f18eeb0519f4f532825401877029fefc46e2`.
+Its EXE SHA-256 is `b3b6bd221d22055860de276447911be25fcda81f3ef60039102145f3bd0a14b2`.
+
+Only the runtime ZIP and its checksum sidecar were added. Both remote sizes/digests matched the frozen plan
+before and after publication, and an unauthenticated public ZIP download returned HTTP 200 with that exact
+size/hash. All 19 ZIP entries/dependencies/content pins passed packaging checks. The actual native archive
+reader passed the four-file/three-chunk fixture and damaged-chunk rejection; both content-enabled and own-disc
+package variants passed. See [native vehicle/startup QA](native_hotfix_20261023.md) for the separate runtime scope.
+
+First launch automatically fetches the unchanged v0.3.0 full-content manifest, pinned SHA-256
+`26595f26e83354cc18b5351b12811d1e9f0564855ae8114500213f37094e3bed`, and its authenticated eight chunks.
+This reuses the previously verified complete playable data. The freshly completed local texture pass and still
+running detailed movie pass are not retroactively included in those frozen content bytes. v0.3.0's 13 asset
+IDs/sizes/digests, original tag and release-body remainder were compared unchanged; its known-issue prefix now
+links this hotfix.
+
+External evidence is in `G:\MC3_Backups\release-work\runtime-hotfix-0.3.1-dev.20261023-r1\control`, including
+`publication-verification.json`, `public-download-verification.json`, `previous-release-preservation.json`,
+`native-qa-handoff.json` and frozen `release-notes.md`. The state records `publication_status: published`.
+Prepare a new version for subsequent changes; do not replace these assets or resume an uploader against them.
+
+## Frozen v0.3.0 content release
 
 [v0.3.0-dev.20261023](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.0-dev.20261023)
 was published as a public prerelease at **2026-10-23 09:09:17 UTC**, release ID `421585200`, with tag target

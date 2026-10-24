@@ -102,4 +102,10 @@ getter** with the production hooks: all 34 profiles on both axles across 11 tire
 plus 68 exact ratio checks). It covers original pointer/count preservation, unload-before-free ownership,
 repeated loads and reused resource addresses, allocation failure across two independent renders, recovery without
 another purchase, malformed codes, stale cfg and mismatched-diameter rejection. These prove safe lookup and
-numeric preservation; native visual purchase/drive QA of the corrected executable remains a separate check.
+numeric preservation.
+
+The corrected executable subsequently passed a bounded original-menu check on the 1957 Chevrolet Bel Air:
+profile code 33 (ratio 97.5%) was previewed/confirmed on both axles, and cfg/render codes plus exact diameters
+survived garage → street → garage reconstruction. See [native hotfix QA](native_hotfix_20261023.md) for its
+snapshots, preservation checks and limits. This covers one added profile on one model; fresh-process save/reload
+and the remaining profile/model combinations are not certified by that run.

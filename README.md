@@ -6,7 +6,7 @@ game is translated to C++ ahead of time; no emulator is needed.
 ## Download and play
 
 Use the **complete-content Windows portable ZIP** on the
-[v0.3.0 development release page](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.0-dev.20261023).
+[v0.3.1 development release page](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.1-dev.20261023).
 Read its release notes for the available assets, tested features and known
 limitations. Choose `MidnightClub3-Native-…-win64.zip`.
 
@@ -24,10 +24,11 @@ content, own-disc builds, updates and moving the game to another PC.
 
 The current native build passed a **Golf R32 garage-to-street check**: ride-height
 changes applied immediately, and ride, camber, wheel offset and engine-power
-values survived leaving the garage. **19 regression tests pass**, including the
-original game's refresh instructions. See the [validation record](docs/notes/live_vehicle_tuning.md)
-for the tested values and remaining limits. The ±2 m ride range is implemented;
-physical fit at every extreme on every car remains unverified.
+values survived leaving the garage. The latest hotfix also passed native **'57 Bel Air** checks of an added
+tire profile on both axles and the private street chassis floor. **21 regression tests pass**, including original
+refresh, mesh-reader and floor-writer instructions. See the [hotfix validation](docs/notes/native_hotfix_20261023.md)
+and [earlier tuning record](docs/notes/live_vehicle_tuning.md) for the tested values and remaining limits.
+The ±2 m ride range is implemented; physical fit at every extreme on every car remains unverified.
 
 A clean offline first launch also installed all **7,188 content files**, created
 the desktop shortcut and automatically started the HD intro. See the

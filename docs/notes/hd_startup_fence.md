@@ -21,8 +21,14 @@ The corrected vehicle/diagnostic candidate, SHA-256
 `b3b6bd221d22055860de276447911be25fcda81f3ef60039102145f3bd0a14b2`, subsequently played all three HD startup
 movies at 30 fps. Its first eight submissions showed completed fences advancing normally, and no delayed wait
 was reported. This successful run does not establish the original stall's underlying driver/submission cause
-or certify every future startup. Further bounded startup checks remain part of native release validation.
+or certify every future startup.
+
+A second bounded HD-enabled start on a copied `hdd8` profile also played those three movies, then reached the
+menus, garage and driving without delayed-fence/submission/device-removal diagnostics. The log ended normally
+at 378.750 seconds. Exact evidence, vehicle checks and remaining limits are recorded in
+[native hotfix QA](native_hotfix_20261023.md). These two passes still do not establish the earlier stall's cause.
 
 The complete 21-check CTest suite passed against the corresponding sources, including the real Media Foundation
 HD decoder test. The candidate was compiled and linked separately before replacing the idle QA executable;
-the user's newly saved ride settings were preserved. A separate `hdd7` copy is used for subsequent vehicle QA.
+the user's newly saved ride settings were preserved. Subsequent vehicle QA used `hdd8`, copied from `hdd7`;
+all five original hdd7 save-file hashes and the restored settings were verified against the pre-QA backup.
