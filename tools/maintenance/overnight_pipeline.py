@@ -25,6 +25,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[2]
 PASS_ID = "2026-10-22-originals-pass"
 EXPECTED_MOVIES = 106
+MEDIA_PROVENANCE_POLICY = "original-bink-and-model-weights-v1"
 LIVE = ".local/overnight_pipeline/live"
 LIVE_NOTE = "docs/notes/overnight_pipeline.md"
 
@@ -166,13 +167,17 @@ def validate_media_reports(texture, video, pass_id=PASS_ID):
         raise RuntimeError("fresh texture pass has not passed its checksum/integrity audit")
     rows = video.get("details", [])
     if not (video.get("mode") == "audit" and video.get("requested_model") == "realesrgan-x4plus"
+            and video.get("require_original_provenance") is True
+            and video.get("all_original_source_and_weights_verified") is True
             and video.get("covers_all_sources") is True and video.get("movies") == EXPECTED_MOVIES
             and video.get("all_source_movies_validated") is True
             and video.get("all_requested_model_validated") is True and video.get("failed") == 0
             and len(rows) == EXPECTED_MOVIES and len({row.get("movie") for row in rows}) == EXPECTED_MOVIES
             and all(row.get("status") == "verified" and row.get("output_validated") is True
-                    and row.get("recorded_model") == "realesrgan-x4plus" for row in rows)):
-        raise RuntimeError("all 106 original movies have not passed the requested-model decode audit")
+                    and row.get("recorded_model") == "realesrgan-x4plus"
+                    and row.get("historical_source_and_weights_verified") is True
+                    and row.get("origin") == "original-bink" for row in rows)):
+        raise RuntimeError("all 106 original movies have not passed the strict source/weights provenance and decode audit")
 
 
 def safe_backup_destination(root, destination):
@@ -456,14 +461,24 @@ class Coordinator:
             if request:
                 request.clear()
 
+    def cached_media_verified(self, signature):
+        """Older model-only gates are cache misses, never permanent workflow failures."""
+        saved = self.state.get("media_gate", {})
+        try:
+            if (saved.get("provenance_policy") == MEDIA_PROVENANCE_POLICY and saved.get("signature") == signature
+                    and self.texture_report.exists() and self.video_report.exists()
+                    and saved.get("texture_report_sha256") == sha256(self.texture_report)
+                    and saved.get("video_report_sha256") == sha256(self.video_report)):
+                validate_media_reports(json.loads(self.texture_report.read_text()),
+                                       json.loads(self.video_report.read_text()), self.pass_id)
+                return True
+        except (OSError, ValueError, RuntimeError, TypeError, AttributeError):
+            pass
+        return False
+
     def media_gate(self):
         signature = media_signature(self.root)
-        saved = self.state.get("media_gate", {})
-        if (saved.get("signature") == signature and self.texture_report.exists() and self.video_report.exists()
-                and saved.get("texture_report_sha256") == sha256(self.texture_report)
-                and saved.get("video_report_sha256") == sha256(self.video_report)):
-            validate_media_reports(json.loads(self.texture_report.read_text()),
-                                   json.loads(self.video_report.read_text()), self.pass_id)
+        if self.cached_media_verified(signature):
             self.checkpoint("using-unchanged-verified-media-gate")
             return signature
         self.wait_idle()
@@ -472,6 +487,7 @@ class Coordinator:
                      child_stop=self.texture_stop)
         self.wait_idle()
         self.command("videos", [self.python, "tools/video/upscale_movies.py", "--model", "realesrgan-x4plus",
+                                "--require-original-provenance",
                                 "--stop-file", str(self.video_stop), "--report", str(self.work / "video-progress.json")],
                      child_stop=self.video_stop)
         self.wait_idle()
@@ -479,12 +495,13 @@ class Coordinator:
         self.command("texture-audit", [self.python, "tools/texture_pack/audit.py", "--model", "ultrasharp-4x",
                                        "--pass-id", self.pass_id, "--output", str(self.texture_report)])
         self.command("video-audit", [self.python, "tools/video/upscale_movies.py", "--audit-only", "--model",
-                                     "realesrgan-x4plus", "--report", str(self.video_report)])
+                                     "realesrgan-x4plus", "--require-original-provenance", "--report", str(self.video_report)])
         validate_media_reports(json.loads(self.texture_report.read_text()), json.loads(self.video_report.read_text()), self.pass_id)
         signature = media_signature(self.root)
         if signature != before:
             raise RuntimeError("media changed during the final audits; backup gate remains closed")
         self.checkpoint("media-verified", media_gate={"signature": signature, "verified_at": utc(),
+                        "provenance_policy": MEDIA_PROVENANCE_POLICY,
                         "texture_report_sha256": sha256(self.texture_report),
                         "video_report_sha256": sha256(self.video_report)})
         return signature
@@ -494,7 +511,9 @@ class Coordinator:
         existing = self.state.get("backup_marker")
         if existing and Path(existing).exists():
             try:
-                verify_gate(existing, self.root, signature)
+                marker = verify_gate(existing, self.root, signature)
+                if marker.get("media_gate", {}).get("provenance_policy") != MEDIA_PROVENANCE_POLICY:
+                    raise RuntimeError("backup gate predates strict original-movie provenance")
                 return Path(existing)
             except (OSError, ValueError, RuntimeError):
                 # Preserve the earlier backup; a changed project gets a new complete snapshot before PBR.
@@ -542,13 +561,20 @@ class Coordinator:
                 old_pbr = self.root / "templates/game/out/native/textures/pbr/manifest.json"
                 if (old_marker and Path(old_marker).exists() and old_pbr.exists()
                         and previous.get("backup_marker_sha256") == sha256(old_marker)
-                        and previous.get("manifest_sha256") == sha256(old_pbr)):
-                    verify_gate(old_marker, self.root, media_signature(self.root), require_source_snapshot=False)
-                    self.checkpoint("complete", runtime_pbr_changed=False)
-                    return 0
+                        and previous.get("manifest_sha256") == sha256(old_pbr)
+                        and self.cached_media_verified(media_signature(self.root))):
+                    try:
+                        prior = verify_gate(old_marker, self.root, media_signature(self.root), require_source_snapshot=False)
+                    except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+                        prior = {}  # A stale completed checkpoint needs fresh gates; preserve its old artifacts.
+                    if prior.get("media_gate", {}).get("provenance_policy") == MEDIA_PROVENANCE_POLICY:
+                        self.checkpoint("complete", runtime_pbr_changed=False)
+                        return 0
                 signature = self.media_gate()
                 marker = self.backup(signature)
-                verify_gate(marker, self.root, media_signature(self.root))
+                verified = verify_gate(marker, self.root, media_signature(self.root))
+                if verified.get("media_gate", {}).get("provenance_policy") != MEDIA_PROVENANCE_POLICY:
+                    raise RuntimeError("verified backup gate lacks strict original-movie provenance")
                 self.check_stop()
                 pbr_manifest = self.root / "templates/game/out/native/textures/pbr/manifest.json"
                 previous_pbr = self.state.get("pbr_complete", {})

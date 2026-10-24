@@ -1,6 +1,7 @@
 """Publication, resume and timing regressions; the integration test uses no GPU."""
 import importlib.util
 import copy
+import contextlib
 import json
 import subprocess
 import struct
@@ -97,6 +98,51 @@ class ValidationTests(unittest.TestCase):
             target.write_bytes(b"broken picture")
             self.assertFalse(video.current_output(None, None, target, None, recipe))
 
+    def test_strict_resume_regenerates_legacy_without_adopting_or_changing_old_proof(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / "movie.mp4"
+            target.write_bytes(b"working historical picture")
+            recipe = {"model": {"name": "realesrgan-x4plus", "weights": {"x.bin": "current"}}, "source_sha256": "original"}
+            meta = target.with_suffix(".upscale.json")
+            for origin, verified in (("validated-legacy-model-marker", False), ("original-bink", False),
+                                     ("validated-legacy-model-marker", True)):
+                saved = {"recipe": recipe, "output_sha256": video.sha256(target),
+                         "origin": origin, "historical_source_and_weights_verified": verified}
+                meta.write_text(json.dumps(saved))
+                before = meta.read_bytes()
+                with mock.patch.object(video, "validate_movie") as validate:
+                    self.assertTrue(video.current_output(None, None, target, self.source, recipe))
+                    self.assertFalse(video.current_output(None, None, target, self.source, recipe,
+                                                         require_original_provenance=True))
+                    validate.assert_not_called()
+                self.assertEqual(meta.read_bytes(), before)
+                self.assertEqual(target.read_bytes(), b"working historical picture")
+            meta.unlink()
+            target.with_suffix(".model.txt").write_text("realesrgan-x4plus")
+            with mock.patch.object(video, "validate_movie") as validate:
+                self.assertFalse(video.current_output(None, None, target, self.source, recipe,
+                                                     require_original_provenance=True))
+                validate.assert_not_called()
+            self.assertFalse(meta.exists())
+
+    def test_strict_resume_keeps_proven_original_when_source_weights_and_picture_match(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / "movie.mp4"
+            target.write_bytes(b"verified new original-derived picture")
+            recipe = {"model": {"name": "realesrgan-x4plus", "weights": {"x.bin": "current"}}, "source_sha256": "original"}
+            meta = target.with_suffix(".upscale.json")
+            meta.write_text(json.dumps({"recipe": recipe, "output_sha256": video.sha256(target),
+                                       "origin": "original-bink", "historical_source_and_weights_verified": True}))
+            before = meta.read_bytes()
+            with mock.patch.object(video, "validate_movie") as validate:
+                self.assertTrue(video.current_output(None, None, target, self.source, recipe,
+                                                    require_original_provenance=True))
+                different = dict(recipe, model={"name": "realesrgan-x4plus", "weights": {"x.bin": "changed"}})
+                self.assertFalse(video.current_output(None, None, target, self.source, different,
+                                                     require_original_provenance=True))
+                validate.assert_not_called()
+            self.assertEqual(meta.read_bytes(), before)
+
     def test_timing_recipe_upgrade_requires_complete_validation_and_preserves_attribution(self):
         with tempfile.TemporaryDirectory() as folder:
             target = Path(folder) / "movie.mp4"
@@ -179,6 +225,130 @@ class ValidationTests(unittest.TestCase):
             partial = video.run_report(args, rows[:1], "audit")
             self.assertTrue(partial["all_requested_model_validated"])
             self.assertFalse(partial["all_source_movies_validated"])
+
+    def test_strict_report_cannot_count_legacy_pictures_as_completed_original_pass(self):
+        args = SimpleNamespace(model="realesrgan-x4plus", report=None, require_original_provenance=True)
+        rows = [{"movie": "one.bik", "frames": 10, "status": "verified", "origin": "original-bink",
+                 "historical_source_and_weights_verified": True},
+                {"movie": "two.bik", "frames": 20, "status": "verified", "origin": "validated-legacy-model-marker",
+                 "historical_source_and_weights_verified": False}]
+        with mock.patch.object(video, "movie_paths", return_value=["one", "two"]):
+            report = video.run_report(args, rows, "audit")
+            self.assertEqual(report["verified"], 1)
+            self.assertEqual(report["remaining_frames"], 20)
+            self.assertTrue(report["require_original_provenance"])
+            self.assertFalse(report["all_original_source_and_weights_verified"])
+            self.assertFalse(report["all_source_movies_validated"])
+            args.require_original_provenance = False
+            self.assertTrue(video.run_report(args, rows, "audit")["all_source_movies_validated"])
+            rows[1].update(origin="original-bink", historical_source_and_weights_verified=True)
+            args.require_original_provenance = True
+            self.assertTrue(video.run_report(args, rows, "audit")["all_original_source_and_weights_verified"])
+
+    def test_strict_cli_audit_is_read_only_and_rejects_legacy_and_changed_weights(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder); output = folder / "out"; output.mkdir()
+            identity = {"name": "realesrgan-x4plus", "weights": {"x.bin": "current"}}
+            sources = [folder / "legacy.bik", folder / "proven.bik"]
+            targets = []
+            for index, src in enumerate(sources):
+                src.write_bytes(struct.pack("<4s8I", b"BIKi", 100, 30, 50, 30, 640, 480, 2997, 100))
+                dst = output / src.with_suffix(".mp4").name; dst.write_bytes(b"working picture " + bytes([index]))
+                dst.with_suffix(".model.txt").write_text(identity["name"])
+                record = {"recipe": video.recipe_for(src, self.source, identity), "output_sha256": video.sha256(dst),
+                          "origin": "original-bink" if index else "validated-legacy-model-marker",
+                          "historical_source_and_weights_verified": bool(index)}
+                dst.with_suffix(".upscale.json").write_text(json.dumps(record)); targets.append(dst)
+            before = {p: p.read_bytes() for p in output.iterdir()}
+            report_path = folder / "audit.json"
+            base_argv = ["upscale_movies.py", "--audit-only", "--report", str(report_path)]
+            with (mock.patch.object(video, "ffmpeg_bin", return_value=folder),
+                  mock.patch.object(video, "movie_paths", return_value=sources),
+                  mock.patch.object(video, "ASSETS", folder), mock.patch.object(video, "OUT", output),
+                  mock.patch.object(video, "model_identity", return_value=identity),
+                  mock.patch.object(video, "probe", return_value=self.source),
+                  mock.patch.object(video, "validate_movie", return_value=self.hd),
+                  mock.patch.object(video, "upscale_movie") as upscale):
+                with mock.patch.object(video.sys, "argv", base_argv):
+                    self.assertEqual(video.main(), 0)  # historical compatibility remains explicit/default
+                with mock.patch.object(video.sys, "argv", base_argv + ["--require-original-provenance"]):
+                    self.assertEqual(video.main(), 2)
+                report = json.loads(report_path.read_text())
+                self.assertTrue(report["require_original_provenance"])
+                self.assertEqual([r["status"] for r in report["details"]], ["provenance-pending", "verified"])
+                self.assertFalse(report["all_original_source_and_weights_verified"])
+                self.assertEqual({p: p.read_bytes() for p in output.iterdir()}, before)
+                changed = dict(identity, weights={"x.bin": "different"})
+                with (mock.patch.object(video, "model_identity", return_value=changed),
+                      mock.patch.object(video.sys, "argv", base_argv + ["--require-original-provenance"])):
+                    self.assertEqual(video.main(), 2)
+                self.assertEqual(json.loads(report_path.read_text())["verified"], 0)
+                upscale.assert_not_called()
+
+    def test_strict_cli_upscale_regenerates_legacy_but_skips_matching_proven_picture(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder); output = folder / "out"; output.mkdir()
+            identity = {"name": "realesrgan-x4plus", "weights": {"x.bin": "current"}}
+            sources = [folder / "legacy.bik", folder / "proven.bik"]
+            for index, src in enumerate(sources):
+                src.write_bytes(struct.pack("<4s8I", b"BIKi", 100, 30, 50, 30, 640, 480, 2997, 100))
+                dst = output / src.with_suffix(".mp4").name; dst.write_bytes(b"working picture " + bytes([index]))
+                dst.with_suffix(".model.txt").write_text(identity["name"])
+                record = {"recipe": video.recipe_for(src, self.source, identity), "output_sha256": video.sha256(dst),
+                          "origin": "original-bink" if index else "validated-legacy-model-marker",
+                          "historical_source_and_weights_verified": bool(index)}
+                dst.with_suffix(".upscale.json").write_text(json.dumps(record))
+            calls = []
+            def fresh(ff, src, dst, model, source, recipe):
+                calls.append(src.name)
+                # A simulated completed/validated new inference publication, no actual GPU or FFmpeg.
+                self.assertEqual(dst.read_bytes(), b"working picture \x00")
+                dst.write_bytes(b"validated fresh original-derived picture")
+                dst.with_suffix(".upscale.json").write_text(json.dumps({"recipe": recipe,
+                    "output_sha256": video.sha256(dst), "origin": "original-bink",
+                    "historical_source_and_weights_verified": True}))
+                return source["frames"]
+            report_path = folder / "progress.json"
+            with (mock.patch.object(video.sys, "argv", ["upscale_movies.py", "--require-original-provenance",
+                                                       "--report", str(report_path), "--stop-file", str(folder / "stop")]),
+                  mock.patch.object(video, "ffmpeg_bin", return_value=folder),
+                  mock.patch.object(video, "movie_paths", return_value=sources),
+                  mock.patch.object(video, "ASSETS", folder), mock.patch.object(video, "OUT", output),
+                  mock.patch.object(video, "model_identity", return_value=identity),
+                  mock.patch.object(video, "probe", return_value=self.source),
+                  mock.patch.object(video, "worker_lock", return_value=contextlib.nullcontext()),
+                  mock.patch.object(video, "upscale_movie", side_effect=fresh)):
+                self.assertEqual(video.main(), 0)
+            self.assertEqual(calls, ["legacy.bik"])
+            report = json.loads(report_path.read_text())
+            self.assertTrue(report["all_original_source_and_weights_verified"])
+            self.assertEqual(report["verified"], 2)
+
+    def test_strict_status_inventory_marks_historical_picture_pending_without_validation_or_writes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder); output = folder / "out"; output.mkdir()
+            src = folder / "one.bik"; src.write_bytes(b"original")
+            dst = output / "one.mp4"; dst.write_bytes(b"working historical picture")
+            dst.with_suffix(".model.txt").write_text("realesrgan-x4plus")
+            meta = dst.with_suffix(".upscale.json")
+            meta.write_text(json.dumps({"origin": "validated-legacy-model-marker",
+                                        "historical_source_and_weights_verified": False}))
+            before = {p: p.read_bytes() for p in output.iterdir()}
+            report_path = folder / "status.json"
+            with (mock.patch.object(video, "ASSETS", folder), mock.patch.object(video, "OUT", output),
+                  mock.patch.object(video, "movie_paths", return_value=[src]),
+                  mock.patch.object(video, "probe", return_value=self.source),
+                  mock.patch.object(video, "validate_movie") as validate):
+                video.status(folder, [src], "realesrgan-x4plus", report_path)
+                self.assertEqual(json.loads(report_path.read_text())["recorded_complete"], 1)
+                video.status(folder, [src], "realesrgan-x4plus", report_path, True)
+                report = json.loads(report_path.read_text())
+                self.assertEqual(report["recorded_complete"], 0)
+                self.assertEqual(report["remaining_frames"], 30)
+                self.assertTrue(report["details"][0]["needs_original_provenance"])
+                self.assertFalse(report["all_original_source_and_weights_verified"])
+                validate.assert_not_called()
+            self.assertEqual({p: p.read_bytes() for p in output.iterdir()}, before)
 
     def test_stop_file_stops_new_worker_before_touching_movie(self):
         with tempfile.TemporaryDirectory() as folder:

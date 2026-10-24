@@ -12,6 +12,8 @@ atomic replacement of its published MP4. A provenance sidecar records source,
 model and output hashes. Older model markers are accepted only after validating
 the complete picture stream, and their historical model attribution remains
 explicitly unverified. Create .local/stop-video-upscale to stop after a movie.
+Use --require-original-provenance for an all-original pass: historical markers
+remain usable by default but cannot satisfy that stricter resume/audit gate.
 """
 import argparse
 import contextlib
@@ -297,7 +299,13 @@ def retime_proven_output(ff, src, dst, source, recipe, saved):
         part.unlink(missing_ok=True)
 
 
-def current_output(ff, src, dst, source, recipe, adopt_legacy=True):
+def original_provenance(saved):
+    """Only actual original-source inference records establish historical source/weights verification."""
+    return (saved.get("origin") == "original-bink"
+            and saved.get("historical_source_and_weights_verified") is True)
+
+
+def current_output(ff, src, dst, source, recipe, adopt_legacy=True, require_original_provenance=False):
     if not dst.is_file():
         return False
     meta = dst.with_suffix(".upscale.json")
@@ -305,6 +313,8 @@ def current_output(ff, src, dst, source, recipe, adopt_legacy=True):
         try:
             saved = json.loads(meta.read_text(encoding="utf-8"))
             if saved["output_sha256"] != sha256(dst):
+                return False
+            if require_original_provenance and not original_provenance(saved):
                 return False
             if saved["recipe"] == recipe:
                 return True
@@ -328,6 +338,8 @@ def current_output(ff, src, dst, source, recipe, adopt_legacy=True):
             return True
         except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.SubprocessError):
             return False
+    if require_original_provenance:
+        return False
     marker = dst.with_suffix(".model.txt")
     if not marker.exists() or marker.read_text(encoding="utf-8").strip() != recipe["model"]["name"]:
         return False
@@ -539,35 +551,50 @@ def marker_model(dst):
     return marker.read_text(encoding="utf-8").strip() if marker.exists() else "unrecorded"
 
 
-def status(ff, movies, model, report_path=None):
+def status(ff, movies, model, report_path=None, require_original_provenance=False):
     rows = []
     for src in movies:
         rel = src.relative_to(ASSETS).as_posix().lower()
         dst = (OUT / rel).with_suffix(".mp4")
         made = marker_model(dst)
         info = probe(ff, src)
+        try:
+            saved = json.loads(dst.with_suffix(".upscale.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            saved = {}
+        needs_original = require_original_provenance and not original_provenance(saved)
         rows.append({"movie": rel, "frames": info["frames"], "published": dst.is_file(), "recorded_model": made,
-                     "needs_model": made != model or not dst.is_file(), "has_provenance": dst.with_suffix(".upscale.json").exists()})
-    remaining = sum(row["frames"] or 0 for row in rows if row["needs_model"])
+                     "needs_model": made != model or not dst.is_file(), "needs_original_provenance": needs_original,
+                     "has_provenance": dst.with_suffix(".upscale.json").exists()})
+    def needed(row):
+        return row["needs_model"] or row["needs_original_provenance"]
+    remaining = sum(row["frames"] or 0 for row in rows if needed(row))
     report = {"mode": "marker-inventory", "requested_model": model, "movies": len(rows),
+              "require_original_provenance": bool(require_original_provenance),
               "covers_all_sources": len(movies) == len(movie_paths()), "all_requested_model_validated": False,
               "all_source_movies_validated": False,
-              "recorded_complete": sum(not r["needs_model"] for r in rows), "remaining_frames": remaining,
+              "all_original_source_and_weights_verified": False,
+              "recorded_complete": sum(not needed(r) for r in rows), "remaining_frames": remaining,
               "estimated_hours_at_2_6_seconds_per_frame": remaining * 2.6 / 3600,
               "note": "Marker inventory only; not a validation result or guaranteed ETA.", "details": rows}
     print(json.dumps(write_report(report_path, report), indent=2))
 
 
 def run_report(args, rows, mode):
-    verified = sum(row["status"] == "verified" for row in rows)
+    strict = bool(getattr(args, "require_original_provenance", False))
+    def accepted(row):
+        return row["status"] == "verified" and (not strict or original_provenance(row))
+    verified = sum(accepted(row) for row in rows)
     covers_all = len(rows) == len(movie_paths())
     all_verified = bool(rows) and verified == len(rows)
     report = {"mode": mode, "requested_model": args.model, "movies": len(rows),
+              "require_original_provenance": strict,
               "covers_all_sources": covers_all, "verified": verified,
               "all_requested_model_validated": all_verified,
               "all_source_movies_validated": covers_all and all_verified,
+              "all_original_source_and_weights_verified": covers_all and all_verified and all(original_provenance(row) for row in rows),
               "failed": sum(row["status"] == "failed" for row in rows),
-              "remaining_frames": sum(row["frames"] for row in rows if row["status"] != "verified"),
+              "remaining_frames": sum(row["frames"] for row in rows if not accepted(row)),
               "details": rows}
     return write_report(args.report, report)
 
@@ -579,6 +606,8 @@ def main():
     ap.add_argument("--force", action="store_true", help="redo even verified outputs made with this recipe")
     ap.add_argument("--status", action="store_true", help="read-only marker/frame inventory; no GPU")
     ap.add_argument("--audit-only", action="store_true", help="decode/validate published files; no GPU or file changes")
+    ap.add_argument("--require-original-provenance", action="store_true",
+                    help="regenerate/withhold legacy pictures lacking verified original-Bink and current model-weight provenance")
     ap.add_argument("--max-movies", type=int, default=0, help="exit after this many newly completed movies (0 = all)")
     ap.add_argument("--stop-file", type=Path, default=ROOT / ".local" / "stop-video-upscale")
     ap.add_argument("--report", type=Path, help="atomic machine-readable coverage/progress JSON (also with --status/--audit-only)")
@@ -591,13 +620,14 @@ def main():
         print("No original Bink movies matched; verify assets/video and --only", file=sys.stderr)
         return 1
     if args.status:
-        status(ff, movies, args.model, args.report)
+        status(ff, movies, args.model, args.report, args.require_original_provenance)
         return 0
     failures, completed = 0, 0
     rows = [{"movie": p.relative_to(ASSETS).as_posix().lower(), "frames": bink_header(p)["frames"],
              "status": "pending", "output_validated": False, "recorded_model": "unrecorded"} for p in movies]
     run_report(args, rows, "audit" if args.audit_only else "upscale")
     if args.audit_only:
+        identity = model_identity(args.model) if args.require_original_provenance else None
         for src, row in zip(movies, rows):
             dst = (OUT / src.relative_to(ASSETS).as_posix().lower()).with_suffix(".mp4")
             try:
@@ -606,15 +636,23 @@ def main():
                 row["output_validated"] = True
                 row["recorded_model"] = marker_model(dst)
                 meta_path = dst.with_suffix(".upscale.json")
+                saved = {}
                 if meta_path.exists():
                     saved = json.loads(meta_path.read_text(encoding="utf-8"))
                     if saved["output_sha256"] != sha256(dst) or saved["recipe"]["source_sha256"] != sha256(src):
                         raise ValueError("published movie disagrees with its source/output provenance hashes")
                     row["recorded_model"] = saved["recipe"]["model"]["name"]
                     row["historical_source_and_weights_verified"] = saved["historical_source_and_weights_verified"]
+                    row["origin"] = saved.get("origin", "unrecorded")
                 else:
                     row["historical_source_and_weights_verified"] = False
+                    row["origin"] = "unrecorded"
                 row["status"] = "verified" if row["recorded_model"] == args.model else "model-pending"
+                if args.require_original_provenance and row["status"] == "verified":
+                    current_recipe = recipe_for(src, source, identity)
+                    if not (original_provenance(row) and saved.get("recipe") in
+                            (current_recipe, previous_timing_recipe(current_recipe))):
+                        row["status"] = "provenance-pending"
                 print(f"valid: {src.relative_to(ASSETS)} ({row['recorded_model']})", flush=True)
             except Exception as e:
                 failures += 1
@@ -634,15 +672,20 @@ def main():
             try:
                 source = probe(ff, src)
                 recipe = recipe_for(src, source, identity)
-                if not args.force and current_output(ff, src, dst, source, recipe):
-                    row.update(status="verified", output_validated=True, recorded_model=args.model)
+                if not args.force and current_output(ff, src, dst, source, recipe,
+                                                      require_original_provenance=args.require_original_provenance):
+                    saved = json.loads(dst.with_suffix(".upscale.json").read_text(encoding="utf-8"))
+                    row.update(status="verified", output_validated=True, recorded_model=args.model,
+                               historical_source_and_weights_verified=saved.get("historical_source_and_weights_verified", False),
+                               origin=saved.get("origin", "unrecorded"))
                     run_report(args, rows, "upscale")
                     continue
                 print(f"{rel} -> {dst.relative_to(OUT)}", flush=True)
                 start = time.monotonic()
                 n = upscale_movie(ff, src, dst, args.model, source, recipe)
                 completed += 1
-                row.update(status="verified", output_validated=True, recorded_model=args.model)
+                row.update(status="verified", output_validated=True, recorded_model=args.model,
+                           historical_source_and_weights_verified=True, origin="original-bink")
                 run_report(args, rows, "upscale")
                 print(f"  done, {n} frames, {time.monotonic() - start:.1f} s", flush=True)
                 if args.max_movies and completed >= args.max_movies:

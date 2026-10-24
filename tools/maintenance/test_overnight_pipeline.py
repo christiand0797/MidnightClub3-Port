@@ -17,8 +17,10 @@ def valid_reports():
                "counts": {"eligible": 2, "complete_named_pass": 2}, "issues": {"missing": []}}
     video = {"mode": "audit", "requested_model": "realesrgan-x4plus", "covers_all_sources": True,
              "movies": 106, "all_source_movies_validated": True, "all_requested_model_validated": True,
+             "require_original_provenance": True, "all_original_source_and_weights_verified": True,
              "failed": 0, "details": [{"movie": f"movie{number}.bik", "status": "verified",
-                                        "output_validated": True, "recorded_model": "realesrgan-x4plus"}
+                                        "output_validated": True, "recorded_model": "realesrgan-x4plus",
+                                        "origin": "original-bink", "historical_source_and_weights_verified": True}
                                        for number in range(106)]}
     return texture, video
 
@@ -162,6 +164,117 @@ class CoordinatorTests(unittest.TestCase):
         for unsafe in (self.source, self.source / "inside", self.base):
             with self.assertRaises(ValueError):
                 pipeline.safe_backup_destination(self.source, unsafe)
+
+    def media_cache_fixture(self, coordinator, signature="media"):
+        texture, video = valid_reports()
+        pipeline.atomic_json(coordinator.texture_report, texture)
+        pipeline.atomic_json(coordinator.video_report, video)
+        coordinator.state["media_gate"] = {
+            "signature": signature, "provenance_policy": pipeline.MEDIA_PROVENANCE_POLICY,
+            "texture_report_sha256": pipeline.sha256(coordinator.texture_report),
+            "video_report_sha256": pipeline.sha256(coordinator.video_report)}
+        return texture, video
+
+    def test_strict_movie_gate_rejects_legacy_claims_even_when_model_and_decode_pass(self):
+        texture, video = valid_reports()
+        for field, value in (("require_original_provenance", False),
+                             ("all_original_source_and_weights_verified", False)):
+            changed = copy.deepcopy(video); changed[field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(RuntimeError, "strict source/weights"):
+                pipeline.validate_media_reports(texture, changed)
+        for field, value in (("historical_source_and_weights_verified", False),
+                             ("historical_source_and_weights_verified", 1),
+                             ("origin", "validated-legacy-model-marker")):
+            changed = copy.deepcopy(video); changed["details"][0][field] = value
+            with self.subTest(field=field, value=value), self.assertRaisesRegex(RuntimeError, "strict source/weights"):
+                pipeline.validate_media_reports(texture, changed)
+
+    def test_strict_unchanged_media_cache_reuses_authenticated_reports(self):
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        self.media_cache_fixture(coordinator)
+        with (patch.object(pipeline, "media_signature", return_value="media"),
+              patch.object(coordinator, "wait_idle") as idle,
+              patch.object(coordinator, "command") as launch):
+            self.assertEqual(coordinator.media_gate(), "media")
+            idle.assert_not_called(); launch.assert_not_called()
+        self.assertEqual(coordinator.state["phase"], "using-unchanged-verified-media-gate")
+
+    def test_old_model_only_or_malformed_strict_gate_is_revalidated_with_strict_cli(self):
+        for legacy_policy in (True, False):
+            with self.subTest(legacy_policy=legacy_policy):
+                coordinator = pipeline.Coordinator(self.source, self.backup)
+                texture, strict_video = self.media_cache_fixture(coordinator)
+                if legacy_policy:
+                    coordinator.state["media_gate"].pop("provenance_policy")
+                legacy_video = copy.deepcopy(strict_video)
+                legacy_video["details"][0]["origin"] = "validated-legacy-model-marker"
+                legacy_video["details"][0]["historical_source_and_weights_verified"] = False
+                pipeline.atomic_json(coordinator.video_report, legacy_video)
+                coordinator.state["media_gate"]["video_report_sha256"] = pipeline.sha256(coordinator.video_report)
+                commands = []
+                def complete(phase, args, **kwargs):
+                    commands.append((phase, args))
+                    if phase == "video-audit":
+                        pipeline.atomic_json(coordinator.video_report, strict_video)
+                with (patch.object(pipeline, "media_signature", return_value="media"),
+                      patch.object(coordinator, "wait_idle"),
+                      patch.object(coordinator, "command", side_effect=complete)):
+                    self.assertEqual(coordinator.media_gate(), "media")
+                self.assertEqual([phase for phase, _ in commands], ["textures", "videos", "texture-audit", "video-audit"])
+                for phase, args in commands:
+                    if phase in ("videos", "video-audit"):
+                        self.assertEqual(args.count("--require-original-provenance"), 1)
+                self.assertEqual(coordinator.state["media_gate"]["provenance_policy"], pipeline.MEDIA_PROVENANCE_POLICY)
+
+    def test_completed_pbr_with_old_provenance_cannot_bypass_fresh_media_gate(self):
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        marker = self.base / "old-backup.json"; marker.write_text("{}")
+        pbr = self.source / "templates/game/out/native/textures/pbr/manifest.json"
+        pbr.parent.mkdir(parents=True); pbr.write_text("old offline conversion")
+        coordinator.state.update(backup_marker=str(marker), pbr_complete={
+            "backup_marker_sha256": pipeline.sha256(marker), "manifest_sha256": pipeline.sha256(pbr)})
+        for cache_valid in (False, True):
+            with self.subTest(cache_valid=cache_valid):
+                with (patch.object(coordinator, "cached_media_verified", return_value=cache_valid),
+                      patch.object(pipeline, "verify_gate", return_value={"media_gate": {}}),
+                      patch.object(coordinator, "media_gate", side_effect=RuntimeError("fresh media path reached")) as media,
+                      patch.object(pipeline, "keep_awake", return_value=nullcontext())):
+                    with self.assertRaisesRegex(RuntimeError, "fresh media path reached"):
+                        coordinator.run()
+                    media.assert_called_once()
+
+    def test_old_backup_policy_is_preserved_but_not_reused_for_new_pbr_gate(self):
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        marker = self.base / "old-backup.json"; marker.write_text("old preserved marker")
+        coordinator.state.update(backup_marker=str(marker), backup_destination=str(self.backup / "old"),
+                                 media_gate={"provenance_policy": pipeline.MEDIA_PROVENANCE_POLICY})
+        snapshot = {"files": {"file.bin": {"bytes": 1, "mtime_ns": 1}}, "exclusions": []}
+        with (patch.object(coordinator, "wait_idle"), patch.object(coordinator, "command") as launch,
+              patch.object(pipeline, "verify_gate", return_value={"media_gate": {}}),
+              patch.object(pipeline, "inventory", return_value=snapshot),
+              patch.object(pipeline, "verify_backup", return_value={"file_count": 1, "byte_count": 1}),
+              patch.object(pipeline, "sha256", return_value="manifest-hash"),
+              patch.object(pipeline, "media_signature", return_value="media")):
+            fresh = coordinator.backup("media")
+        self.assertNotEqual(fresh, marker)
+        self.assertEqual(marker.read_text(), "old preserved marker")
+        self.assertEqual(launch.call_args.args[0], "backup-copy")
+        self.assertEqual(json.loads(fresh.read_text())["media_gate"]["provenance_policy"], pipeline.MEDIA_PROVENANCE_POLICY)
+
+    def test_completed_pbr_with_changed_media_checkpoint_reenters_gates(self):
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        marker = self.base / "old-backup.json"; marker.write_text("{}")
+        pbr = self.source / "templates/game/out/native/textures/pbr/manifest.json"
+        pbr.parent.mkdir(parents=True); pbr.write_text("earlier conversion")
+        coordinator.state.update(backup_marker=str(marker), pbr_complete={
+            "backup_marker_sha256": pipeline.sha256(marker), "manifest_sha256": pipeline.sha256(pbr)})
+        with (patch.object(coordinator, "cached_media_verified", return_value=True),
+              patch.object(pipeline, "verify_gate", side_effect=RuntimeError("different media")),
+              patch.object(coordinator, "media_gate", side_effect=RuntimeError("fresh media path reached")) as media,
+              patch.object(pipeline, "keep_awake", return_value=nullcontext())):
+            with self.assertRaisesRegex(RuntimeError, "fresh media path reached"):
+                coordinator.run()
+            media.assert_called_once()
 
     def test_backup_hashes_every_file_then_reuses_unchanged_hashes(self):
         self.copy_fixture()
