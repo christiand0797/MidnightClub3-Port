@@ -36,6 +36,7 @@
 #include "gpu/backend.h"
 #include "gpu/ext.h"
 #include "gpu/shaders.h"
+#include "gpu/skinning_capture.h"
 #include "gpu/texture.h"
 #include "gpu/texture_pack.h"
 #include "gpu/video_hd.h"
@@ -2649,7 +2650,21 @@ void D3D12Backend::CaptureDraw(const State& s, uint32_t prim, uint32_t count, co
 // small draws: their inputs and constants; then ends the draw's line
 void D3D12Backend::EndDrawCapture(const State& s, const Assembled& a, uint32_t count, const DrawConstants& c,
                                   bool fixed) {
-    if (count <= kQuadVertices) {
+    const bool skin = !fixed && s.vs && IsIndexedSkinProgram(s.vs->program);
+    if (skin) {
+        fprintf(cap_, "\n     skin scale %g bone_rows", s.vsc[105][3]);
+        const auto rows = SkinBoneRows(a, s.vsc[105][3]);
+        for (size_t r = 0; r < rows.size(); ++r) if (rows[r]) fprintf(cap_, " %zu", r);
+        fprintf(cap_, "\n     skin vdata");
+        for (size_t n = 0; n < s.streams.size(); ++n)
+            if (s.streams[n].vb) fprintf(cap_, " %zu:%08X", n, kernel::R32(s.streams[n].vb + 4));
+        fprintf(cap_, "\n     skin layout");
+        for (size_t r = 0; r < s.vs->inputs.size(); ++r) {
+            const auto& e = s.vs->inputs[r];
+            if (e.type) fprintf(cap_, " %zu:%02X:%d:%u", r, e.type, e.stream, e.offset);
+        }
+    }
+    if (skin || count <= kQuadVertices) {
         CaptureInputs(s, a, c, fixed);
     } else {
         // larger draws: what changed since the last captured draw, enough to tell repeated draws apart

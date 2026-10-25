@@ -151,7 +151,8 @@ float TireDiameter(unsigned rim, unsigned profile) {
 
 // The separate, serialized rendering database has only eight profile-to-mesh arrays. Its +0x44 count is
 // used by resource relocation, not the garage catalogue. Keep that original count and every owned descriptor
-// intact; only a separately owned pointer table gains aliases to the nearest existing sidewall mesh.
+// intact; a separately owned pointer table gains aliases to the nearest existing sidewall mesh. The scoped
+// tire draw then fits that mesh's bead to the selected ratio in its own host vertex copy (tire_fit.cpp).
 constexpr uint32_t kRenderCustomDb = 0x509E1C, kMeshProfiles = 0x2C, kMeshProfileCount = 0x44;
 constexpr unsigned kAllProfiles = kStockProfiles + kExtraProfiles;
 struct ProfileAlias { uint32_t root = 0, original = 0, table = 0; };
@@ -698,6 +699,50 @@ void ExtendList(X86Context& ctx, uint32_t garage) {
 }
 }  // namespace
 
+bool GarageTireFitForDraw(uint32_t render, uint32_t resources, uint32_t handle, unsigned axle,
+                         float& source_ratio, float& target_ratio) {
+    if (axle > 1 || !Committed(render, 0x1804) || !Committed(resources, 0xE5) || !handle ||
+        G<uint8_t>(resources + 0xE4) != 0 || R32(resources + 0xC4 + 4 * axle) != handle) return false;
+    const uint32_t model = R32(render + 0x1800);
+    if (!Committed(model, 0x1C) || R32(model + 0x18) != resources) return false;
+    const uint32_t car = R32(model + 4);
+    uint32_t cfg = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_cars_lock);
+        const auto found = g_cars.find(car);
+        if (found == g_cars.end() || !found->second.player || !Committed(car, 0x6C) ||
+            R32(car + kCarSim) != found->second.sim || R32(car + kCarCfg) != found->second.cfg ||
+            R32(car + 0x68) != render) return false;
+        cfg = found->second.cfg;
+    }
+    if (!Committed(cfg, 0x20)) return false;
+    const unsigned profile = G<uint8_t>(cfg + kCfgTireProfile + axle);
+    if (profile < kStockProfiles || profile >= kAllProfiles) return false;
+    const unsigned nearest = NearestMeshProfile(profile), brand = R32(render + 0x11B0);
+    const unsigned rim = G<uint8_t>(cfg + kCfgRimSize + axle);
+    const uint32_t mesh_code = R32(render + 0x11B4 + 4 * axle);
+    if (brand >= 11 || (mesh_code != profile && mesh_code != nearest) || rim < 12 || rim > 28 ||
+        R32(render + 0x11BC + 4 * axle) != rim) return false;
+    const float expected = TireDiameter(rim, profile);
+    const float diameter = G<float>(render + (axle ? 0x12CC : 0x12D4));
+    if (!std::isfinite(expected) || !std::isfinite(diameter) ||
+        std::fabs(expected - diameter) > 0.00001f * std::max(1.0f, expected)) return false;
+    // Verify the exact nearest-stock resource, independently of the extended alias table/fallback code.
+    std::lock_guard<std::mutex> lock(g_profile_mesh_lock);
+    const uint32_t root = Committed(kRenderCustomDb, 4) ? R32(kRenderCustomDb) : 0;
+    if (!Committed(root, kMeshProfileCount + 4) || R32(root + kMeshProfileCount) != kStockProfiles) return false;
+    const uint32_t table = R32(root + kMeshProfiles);
+    if (!Committed(table, kStockProfiles * 4)) return false;
+    const uint32_t descriptor = R32(table + 4 * nearest);
+    if (!Committed(descriptor, 8) || R32(descriptor + 4) != 11) return false;
+    const uint32_t items = R32(descriptor);
+    if (!Committed(items, 11 * 4) || R32(items + 4 * brand) != handle) return false;
+    source_ratio = ProfileRatio(nearest);
+    target_ratio = ProfileRatio(profile);
+    return std::isfinite(source_ratio) && std::isfinite(target_ratio) && source_ratio > 0 &&
+           source_ratio < 1 && target_ratio > 0 && target_ratio < 1;
+}
+
 // The old factory guard incorrectly rejected valid stack factories. In addition to fixing that guard below,
 // recover concrete driving ownership defensively across later rebind/reset paths, never from a shared CarCfg.
 // 0x2CB320 installs car+4; ctor0x2C9970 writes vtable0x47684C; init0x2C89F0 writes controller+0x50=car.
@@ -709,6 +754,7 @@ void GarageRefreshPlayerCar(uint32_t car) {
     const bool human = !ai && Plausible(sim) && Committed(sim, 0x5C) && Plausible(cfg) && Committed(cfg, 0x20) &&
         Plausible(controller) && Committed(controller, 0x54) && R32(controller) == 0x47684C &&
         R32(controller + 0x50) == car;
+    if (human) app::EndGarageNavigation(); // actual street driver; never carry garage repeat gating into steering
     std::vector<uint32_t> retire;
     {
         std::lock_guard<std::mutex> lock(g_cars_lock);

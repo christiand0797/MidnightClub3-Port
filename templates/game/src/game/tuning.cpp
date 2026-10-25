@@ -85,7 +85,7 @@ std::unordered_map<uint32_t, Tuned> g_tuned;
 std::unordered_set<uint32_t> g_player_sims;  // vehSims of human players' cars (garage.cpp)
 struct CarTuning {
     uint32_t sim = 0, cfg = 0, render = 0, model = 0;
-    std::array<float, 2> offset_original{}, offset_written{};
+    std::array<float, 2> offset_original{}, offset_centered{}, offset_written{};
     std::array<float, 15> settings{};
     bool initialized = false;
 };
@@ -253,9 +253,26 @@ std::array<float, 15> SettingsKey(const app::Settings::Tuning& s) {
             s.grip_front, s.grip_rear, s.engine_power};
 }
 
-// Caller holds g_lock. A positive offset extends the wheel: the retail renderer subtracts its hub offset along
-// the wheel's outward basis at 0xF76E5..0xF76F9, so our additional outward distance has the opposite sign here.
-void ApplyRender(uint32_t car, CarTuning& c, const app::Settings::Tuning& s, bool freshly_applied = false) {
+// F32A0 writes FB4E0's fit translation into the hub offset. Above the model's TireExtent it equals
+// extent - width/2: F7170 then keeps the outer edge fixed and puts the whole width increase inside the car.
+// Remove only that recognized retail contribution. Unknown/authored offsets retain their existing baseline;
+// the raw value remains separately available when this car loses player ownership.
+float CenteredWidthOffset(uint32_t render, uint32_t model, unsigned axle, float current) {
+    if (!Committed(model + 0x300, 4)) return current;
+    const uint32_t tune = R32(model + 0x300);
+    if (!Plausible(tune) || !Committed(tune + 0x1C + axle * 4, 4)) return current;
+    const float width = F32(render + (axle ? 0x12C8 : 0x12D0));
+    const float extent = F32(tune + 0x1C + axle * 4);
+    if (!std::isfinite(width) || width <= 0 || !std::isfinite(extent)) return current;
+    const float half = width * .5f;
+    const float retail = extent != 0 && half > extent ? extent - half : 0;
+    return current == retail ? 0 : current;
+}
+
+// Caller holds g_lock. Explicit PC offsets retain their existing signed render-field mapping. F7170 subtracts
+// that field on the first side and adds it on the opposite side; width centering must not absorb the PC value.
+void ApplyRender(uint32_t car, CarTuning& c, const app::Settings::Tuning& s, bool freshly_applied = false,
+                 bool center_width = true) {
     if (!Committed(car + 0x50, 0x1C) || R32(car + 0x50) != c.sim || R32(car + 0x64) != c.cfg ||
         !Committed(c.cfg + 0x0C, 8)) return;
     const uint32_t render = R32(car + 0x68);
@@ -268,10 +285,13 @@ void ApplyRender(uint32_t car, CarTuning& c, const app::Settings::Tuning& s, boo
         const uint32_t off = render + 0x12D8 + 4 * axle;
         const float current = F32(off), camber = F32(c.cfg + 0x0C + 4 * axle);
         if (!std::isfinite(current) || !std::isfinite(camber)) continue;
-        if (reset || current != c.offset_written[axle]) c.offset_original[axle] = current;
+        if (reset || current != c.offset_written[axle]) {
+            c.offset_original[axle] = current;
+            c.offset_centered[axle] = CenteredWidthOffset(render, model, axle, current);
+        }
         const float extra = axle ? s.offset_rear : s.offset_front;
         const float angle = camber + (axle ? s.camber_rear : s.camber_front);
-        const float want = c.offset_original[axle] - extra;
+        const float want = (center_width ? c.offset_centered[axle] : c.offset_original[axle]) - extra;
         if (std::isfinite(want)) WF32(off, want), c.offset_written[axle] = want;
         if (std::isfinite(angle)) WF32(render + 0x12E8 + 4 * axle, angle);
     }
@@ -462,7 +482,7 @@ X86_FUNC(sub_000A7250) {
              F32(tune + kWheelSuspensionOffset), F32(tune + kWheelSuspensionLimit), F32(tune + kWheelTravelExtent));
 }
 
-// The car renderer enforces a second, visual wheel/arch envelope at 0xF74D5/0xF7525. At extreme lowering it
+// The car renderer enforces a second, visual wheel/arch envelope at 0xF74D5/0xF7525. At lowering it
 // pushes a correctly grounded tire DOWN to fit the original wheel arch (0xF7543..0xF7572), through the road.
 // These three callers use the displacement query only to calculate that cosmetic correction. Suppress the
 // correction for deliberately tucked player wheels; all physical and other visual displacement queries remain
@@ -489,7 +509,7 @@ X86_FUNC(sub_000A65D0) {
         std::lock_guard<std::mutex> lock(g_lock);
         auto offset = g_tuned.find(tune + kWheelSuspensionOffset);
         if (!allow_tuck || offset == g_tuned.end() || !g_player_sims.count(offset->second.owner) ||
-            F32(offset->first) >= -kFreeLowering) return;
+            F32(offset->first) >= 0) return;
         static unsigned reported = 0;
         report = reported++ < 8;
     }
@@ -509,7 +529,7 @@ void TuningSetPlayerSim(uint32_t sim, bool player) {
     else {
         const app::Settings defaults;
         for (auto& [car, c] : g_player_cars)
-            if (c.sim == sim) ApplyRender(car, c, defaults.tuning);
+            if (c.sim == sim) ApplyRender(car, c, defaults.tuning, false, false);
         g_player_sims.erase(sim);
     }
 }

@@ -270,6 +270,7 @@ XOnlineCleanup                                       = 0
 XOnlineStartup                                       = 0x3DF23B
 
 [data]
+D3D_VertexShaderConstants = 0x421CC0
 D3D_DeferredTextureState    = 0x4228E0
 D3D_Device                  = 0x422D80
 D3D_DirtyFlags              = 0x4228D8

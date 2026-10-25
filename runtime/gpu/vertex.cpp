@@ -6,6 +6,7 @@
 #include <dxgiformat.h>
 
 #include "core/log.h"
+#include "gpu/radial_fit.h"
 #include "kernel/kernel.h"
 
 namespace gpu {
@@ -187,6 +188,8 @@ void ResetAssembled(Assembled& out) {
     out.draw_count = 0;
     out.index_count = 0;
     out.base_vertex = 0;
+    out.fitted_vertices.clear();
+    out.tire_fit_applied = false;
 }
 
 // the draw as Assemble got it, plus the vertex range it reads
@@ -407,6 +410,67 @@ bool AssembleConverted(const State& s, const Inputs& inputs, const DrawRange& d,
     return UseIndexList(out);
 }
 
+// Only the exact ordinary-tire stream named by the title can be repaired. Resources themselves remain
+// untouched: the render worker may read them after the title has restored its scoped draw metadata.
+void FitTireVertices(const State& s, const Inputs& inputs, const DrawRange& d, bool raw, Assembled& out) {
+    const auto& fit = s.tire_fit;
+    if (fit.source_ratio == fit.target_ratio || !std::isfinite(fit.source_ratio) ||
+        !std::isfinite(fit.target_ratio) || fit.source_ratio <= 0 || fit.source_ratio >= 1 ||
+        fit.target_ratio <= 0 || fit.target_ratio >= 1 || (out.regs & 5u) != 5u) return;
+    const auto& position = inputs.layout.inputs[0];
+    const auto& normal = inputs.layout.inputs[2];
+    if (position.stream < 0 || position.stream >= 16 || normal.stream != position.stream ||
+        position.type != 0x32 || normal.type != 0x16 || position.offset != 0 || normal.offset != 12 ||
+        StrideOf(s, inputs.layout, position) != 28) return;
+    const uint32_t header = s.streams[size_t(position.stream)].vb;
+    if (!header) return;
+    const uint32_t data = kernel::R32(header + kResData);
+    if (!data || std::find(fit.vertex_data.begin(), fit.vertex_data.end(), data) == fit.vertex_data.end()) return;
+
+    if (raw) {
+        const unsigned slot = out.elements[0].buffer;
+        if (slot >= out.buffer_count || out.elements[2].buffer != slot ||
+            out.elements[0].offset != 0 || out.elements[2].offset != 12) return;
+        auto& buffer = out.buffers[slot];
+        if (!buffer.src || buffer.stride != 28 || uint64_t(out.vertex_count) * 28 != buffer.bytes) return;
+        // Work in a temporary, publishing only if every vertex is valid. Gathered buffers and dense guest
+        // buffers take the same path, so neither an invalid last vertex nor the next draw can leak a partial fit.
+        std::vector<uint8_t> copy(buffer.src, buffer.src + buffer.bytes);
+        for (uint32_t i = 0; i < out.vertex_count; ++i) {
+            uint8_t* vertex = copy.data() + size_t(i) * 28;
+            float xyz[3]; uint32_t packed;
+            std::memcpy(xyz, vertex, 12); std::memcpy(&packed, vertex + 12, 4);
+            if (!radial_fit::Vertex(xyz, packed, fit.source_ratio, fit.target_ratio)) return;
+            std::memcpy(vertex, xyz, 12); std::memcpy(vertex + 12, &packed, 4);
+        }
+        out.fitted_vertices = std::move(copy);
+        buffer.src = out.fitted_vertices.data();
+    } else {
+        // Converted vertices are already draw-owned float4s. Use each original packed normal to keep the
+        // same quantization as the raw path, and publish the complete repaired float4 buffer atomically.
+        if (out.buffer_count != 1 || out.elements[0].buffer || out.elements[2].buffer || out.vertices.empty()) return;
+        const uint32_t stride = out.buffers[0].stride / 4;
+        const uint32_t po = out.elements[0].offset / 4, no = out.elements[2].offset / 4;
+        if (!stride || po + 3 >= stride || no + 3 >= stride ||
+            uint64_t(out.vertex_count) * stride != out.vertices.size()) return;
+        const bool ranged = uint64_t(d.span) <= uint64_t(d.count) * kRangedSpanPerVertex + kRangedSpanSlack;
+        const uint8_t* source = static_cast<const uint8_t*>(kernel::HostPtr(mem::VirtualFromPhysical(data)));
+        auto copy = out.vertices;
+        for (uint32_t i = 0; i < out.vertex_count; ++i) {
+            const uint32_t id = ranged ? d.first_vertex + i : DrawVertex(s, d, i);
+            uint32_t packed; std::memcpy(&packed, source + size_t(id) * 28 + 12, 4);
+            float* xyz = copy.data() + size_t(i) * stride + po;
+            if (!radial_fit::Vertex(xyz, packed, fit.source_ratio, fit.target_ratio)) return;
+            Convert(0x16, reinterpret_cast<const uint8_t*>(&packed), copy.data() + size_t(i) * stride + no);
+        }
+        out.vertices = std::move(copy);
+        out.buffers[0].src = reinterpret_cast<const uint8_t*>(out.vertices.data());
+    }
+    out.tire_fit_applied = true;
+    LOG_FIRST(8, "vertex: fitted tire bead %.6f -> %.6f on %u draw-owned vertices",
+              fit.source_ratio, fit.target_ratio, out.vertex_count);
+}
+
 }  // namespace
 
 void FvfInputs(uint32_t fvf, VertexShader& vs) {
@@ -468,8 +532,9 @@ bool Assemble(const State& s, uint32_t prim, uint32_t start, uint32_t count, con
 
     // the guest's own vertices when the input assembler can read every element of them
     bool raw = kRawVertices && RawReadable(s, inputs);
-    if (raw) return AssembleRaw(s, inputs, d, out);
-    return AssembleConverted(s, inputs, d, out);
+    const bool assembled = raw ? AssembleRaw(s, inputs, d, out) : AssembleConverted(s, inputs, d, out);
+    if (assembled) FitTireVertices(s, inputs, d, raw, out);
+    return assembled;
 }
 
 }  // namespace gpu

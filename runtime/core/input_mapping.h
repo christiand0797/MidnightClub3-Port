@@ -2,6 +2,7 @@
 
 #include "core/input.h"
 
+#include <array>
 #include <cstdint>
 #include <limits>
 #include <sstream>
@@ -51,6 +52,61 @@ inline Pad MergeKeyboard(Pad controller, const Pad& keyboard) {
     if (keyboard.ly) controller.ly = keyboard.ly;
     return controller;
 }
+
+// Only the original garage menus use these direction pulses. The raw merged pad remains available to ImGui;
+// driving, camera/right stick, triggers and action buttons are never shaped by this helper.
+class GarageNavigation {
+public:
+    static constexpr int kStickEnter = 21300, kStickRelease = 14700;
+    static constexpr uint64_t kInitialDelayMs = 300, kRepeatMs = 150, kPulseMs = 35;
+
+    void Reset() { axes_ = {}; active_ = false; last_ms_ = 0; }
+
+    Pad Apply(Pad pad, bool garage, bool foreground, uint64_t now_ms) {
+        if (!garage || !foreground || !pad.connected) { Reset(); return pad; }
+        if (!active_ || now_ms < last_ms_) { Reset(); active_ = true; }
+        last_ms_ = now_ms;
+        const int horizontal = Direction(axes_[0], pad.lx, pad.buttons & 4, pad.buttons & 8);
+        const int vertical = Direction(axes_[1], pad.ly, pad.buttons & 2, pad.buttons & 1);
+        pad.buttons &= ~uint16_t(15);
+        const int x = Pulse(axes_[0], horizontal, now_ms), y = Pulse(axes_[1], vertical, now_ms);
+        if (x < 0) pad.buttons |= 4;
+        if (x > 0) pad.buttons |= 8;
+        if (y < 0) pad.buttons |= 2;
+        if (y > 0) pad.buttons |= 1;
+        // Feed each chosen direction once, not simultaneously through both the stick and the D-pad.
+        pad.lx = pad.ly = 0;
+        return pad;
+    }
+
+private:
+    struct Axis {
+        int analog = 0, held = 0;
+        uint64_t began_ms = 0, pulse_ms = 0;
+    };
+    std::array<Axis, 2> axes_{};
+    bool active_ = false;
+    uint64_t last_ms_ = 0;
+
+    static int Direction(Axis& axis, int value, bool negative, bool positive) {
+        if (value >= kStickEnter) axis.analog = 1;
+        else if (value <= -kStickEnter) axis.analog = -1;
+        else if ((axis.analog > 0 && value < kStickRelease) ||
+                 (axis.analog < 0 && value > -kStickRelease)) axis.analog = 0;
+        if (negative || positive) return negative == positive ? 0 : positive ? 1 : -1;
+        return axis.analog;
+    }
+
+    static int Pulse(Axis& axis, int direction, uint64_t now) {
+        if (!direction) { axis.held = 0; return 0; }
+        if (direction != axis.held) {
+            axis.held = direction; axis.began_ms = axis.pulse_ms = now;
+        } else if (now - axis.began_ms >= kInitialDelayMs && now - axis.pulse_ms >= kRepeatMs) {
+            axis.pulse_ms = now; // One pulse after a slow frame; never replay a backlog of repeats.
+        }
+        return now - axis.pulse_ms < kPulseMs ? direction : 0;
+    }
+};
 
 // The harness token convention: LS/LSD/LSL/LSR are left-stick directions.
 // BLACK and WHITE also expose the original Xbox's extra analog buttons.

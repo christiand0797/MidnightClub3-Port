@@ -3,8 +3,9 @@
 This guide describes the PC settings in the current source. The native Golf R32
 check confirmed immediate ride-height changes and garage-to-street retention of
 ride, camber, wheel offset and engine-power values. The latest hotfix also checks an added tire profile on both
-axles and the private street chassis floor in a '57 Bel Air. All **21 regression tests**
-pass, including original refresh, mesh-reader and floor-writer instructions. Release
+axles and the private street chassis floor in a '57 Bel Air. The latest source passes **28 regression tests**;
+the current v0.3.1 portable release predates the new tire-bead, width-centering, lower-step tuck and garage-navigation
+changes. These source changes still require native confirmation. Release
 notes identify the included build; other cars and extreme physical combinations
 still need individual validation.
 

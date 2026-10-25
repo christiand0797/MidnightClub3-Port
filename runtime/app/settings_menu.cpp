@@ -28,6 +28,7 @@ namespace {
 std::atomic<bool> g_open{false};
 std::atomic<bool> g_vehicle_requested{false};
 std::atomic<uint64_t> g_garage_hint_until{0};
+std::atomic<uint64_t> g_garage_navigation_until{0};
 bool g_dirty = false;
 
 const char* kModeNames[] = {"Fullscreen", "Borderless window", "Window"};
@@ -373,7 +374,15 @@ void OpenVehicleMenu() {
     g_open = true;
 }
 
-void GarageTuningActive() { g_garage_hint_until = GetTickCount64() + 750; }
+void GarageTuningActive() {
+    const uint64_t now = GetTickCount64();
+    g_garage_hint_until.store(now + 750, std::memory_order_relaxed);
+    g_garage_navigation_until.store(now + 100, std::memory_order_relaxed);
+}
+bool GarageNavigationActive() {
+    return GetTickCount64() < g_garage_navigation_until.load(std::memory_order_relaxed);
+}
+void EndGarageNavigation() { g_garage_navigation_until.store(0, std::memory_order_relaxed); }
 
 void ReportGraphicsFailure(const char* reason) {
     std::lock_guard lock(UiLock());

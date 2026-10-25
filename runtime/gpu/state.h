@@ -193,6 +193,12 @@ struct State {
         a[3] = {1, 1, 1, 1};
         return a;
     }();
+    // Title-scoped repair of an ordinary tire's inner bead. Copied with each queued draw's plain state;
+    // exact VB Data identities survive the render thread's resource-header copies. Zero IDs disable it.
+    struct TireFit {
+        std::array<uint32_t, 4> vertex_data{};
+        float source_ratio = 0, target_ratio = 0;
+    } tire_fit;
 };
 
 }  // namespace gpu

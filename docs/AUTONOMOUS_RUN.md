@@ -5,7 +5,53 @@ a complete project backup, public GitHub source/development releases, and comple
 PBR implementation must wait until the media pass
 and a verified full backup. Existing PBR experiments are inherited; the renderer remains on its current path.
 
-## Night continuation — 2026-10-23
+## Current continuation — 2026-10-24
+
+The latest user reports are tire sidewall/rim gaps and intersections, width growing only inward, broken NPC
+limbs/animation, touchy garage navigation, glitched garage loading artwork, and road penetration at stock ride
+steps6–8. Prioritize concrete corrections and original-code regressions; do not claim complete reverse engineering.
+
+- Width centering and per-draw tire bead repair are implemented but **not released**. The source adds owned
+  host-side radial deformation; original shared tire resources stay unchanged. CPU checks cover 89,760 original
+  vertex cases, 2,288 actual original resource draw checks and raw/converted threaded draw assembly. All28 CTests
+  passed after the ride-step/input and constant-shadow/cursor work. See tire_profile_bead_fit.md and tire_width_centering.md.
+- Original ordinary tire shoulders reach normalized X=-0.263825; a too-tight initial runtime guard failed
+  closed. The corrected .27 guard is in isolated candidate `.local/native-tire-fit-20261024-r2/`, EXE SHA-256
+  `14fcdff99fb6e7f94de02e28a2d3add3d0b1ae5150ac6ba79c46e839ae7c8a5c`. Native verification is pending.
+  The installed r5 candidate is now `e528b3a1265fdea0b0d212c39fef23f7ac1e9178c2c313d2af711aa713a01606`
+  (23,615,488 bytes), built normally with all affected dependencies. It includes the .27 guard and the other
+  CPU-tested changes below, but has not yet had a fresh native run. The earlier `585d7edd…` was used by a human
+  in instance8; controls were left with them. `--instance9` clamps to8: use an unused instance2–7 for QA.
+- The stock low ride offsets are indices6=-.125m,7=-.1375m,8=-.15m. Their visual tuck bypass previously required
+  a value below-.15m. The new source applies the cosmetic bypass for every owned lowered axle when tuck is
+  enabled; physical queries/travel remain separate. The regression now also passes188 original vehicle tunes,
+  both axles and20,304 render queries across original and extended low settings. Native confirmation remains open.
+- Garage navigation is integrated with immediate directional pulses,300ms initial repeat and150ms cadence,
+  stick hysteresis, a fresh garage-only lease and explicit concrete-street-driver clearing. Raw GUI input,
+  action buttons, triggers and driving remain unchanged. Time-grid regressions pass; native menu QA is pending.
+- NPC skinning and loading-image failures remain under source/asset investigation. Older constant/state fixes
+  alone do not establish correct pedestrian animation. A verified original-XDK constant-shadow parity gap is
+  being repaired with an original setter/state-block-reader fixture; it is not yet proven to cause the NPC defect.
+  Exact original setter/state-block-reader fixtures now verify the guest shadow, partial uploads, the raw load
+  cursor and method-specific component lanes. New F3-only skin diagnostics and a relative-pose analyzer enable
+  same-NPC two-frame checks; animation itself is still unverified. The loading audit verified475 images against205
+  original bundles; no corrupt PNG/alpha was proved. Flash geometry and pixel registration establish about6px
+  of overlap between garage photo panels: separate AI inference can create a facial seam across that join.
+  Joint-context candidates and the full7,081-image visual review remain staged work, with no active image replaced.
+- Strict original source/model-weight video provenance is now mandatory for the worker and final backup/PBR
+  gate. Legacy unverified startup outputs are regenerated. Video23/23 and coordinator27/27 tests pass; original
+  RNinja remains verified. The earlier coordinator PID10928 has now exited cooperatively (verify live PIDs).
+- At the latest inspection, strict videos were9/106 with zero failures; the GPU worker finished rg55 and stopped.
+  Another human game (Fortnite client PID19236 at22:08 MDT; verify live) is running, so native QA and GPU inference
+  wait without touching it. The coordinator now also waits/drains for that actual installed client;28 pipeline
+  regressions pass. Root created
+  `.local/stop-overnight-pipeline` with exact text `root-tire-bead-native-qa-20261024` to drain cooperatively for
+  native QA. Remove only that unchanged root-owned marker after validation; preserve every user stop request.
+  Complete all106, final audits and a new all-file verified backup before new offline PBR. Runtime PBR is unchanged.
+- Pre-test copies of every HDD/settings and the old EXE/PDB are in
+  `G:\MC3_Backups\saves_2026-10-24_105112_pre-tire-fit`. Current human save/settings changes must be preserved.
+
+## Historical night continuation — 2026-10-23
 
 This checkpoint supersedes the historical build/publication counts below.
 

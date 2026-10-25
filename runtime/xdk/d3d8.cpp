@@ -51,6 +51,9 @@ using namespace kernel;
 #define SYM_D3DDevice_LoadVertexShaderProgram FFFFFE05
 #define HAS_D3DDevice_LoadVertexShaderProgram 0
 #endif
+#ifndef HAS_D3D_VertexShaderConstants
+#define HAS_D3D_VertexShaderConstants 0
+#endif
 
 namespace d3d {
 
@@ -352,11 +355,10 @@ bool ApplyTransformMethod(uint32_t m, uint32_t v) {
     if (m >= kConstant && m < kConstant + 0x80) {  // 32 dwords
         float f;
         std::memcpy(&f, &v, 4);
-        if (g_const_load < 192) g_state.vsc[g_const_load][g_const_part] = f;
-        if (++g_const_part == 4) {
-            g_const_part = 0;
-            g_const_load++;
-        }
+        const uint32_t part = (m - kConstant) / 4 & 3;
+        if (g_const_load < 192) g_state.vsc[g_const_load][part] = f;
+        g_const_part = (part + 1) & 3;
+        if (part == 3) g_const_load++;
         return true;
     }
     if (m >= kProgram && m < kProgram + 0x80) {  // 32 dwords, the dword of the instruction by the method
@@ -1077,32 +1079,53 @@ HLE_STDCALL(D3DDevice_SetVertexShader, 1) {
     return 0;
 }
 
-// the constant setters first run constants the title pushed itself before them (FlushPush), in the order written
-HLE_FASTCALL(D3DDevice_SetVertexShaderConstant1Fast, 0) {
+namespace {
+// Hardware register numbers already include the D3D +96 bias. The non-Fast one/four setters also update the
+// XDK's guest-side constant shadow, which the original state-block capture code reads. Fast setters deliberately
+// leave that shadow alone: the original non-Fast bulk wrapper performs its own conditional shadow copy.
+void SetVertexConstants(uint32_t reg, uint32_t src, uint32_t dwords, bool shadow) {
+    std::lock_guard<std::recursive_mutex> lock(g_lock);
     FlushPush();
-    uint32_t reg = a[0];
-    if (reg < 192) std::memcpy(g_state.vsc[reg].data(), HostPtr(a[1]), 16);
+    if (reg >= 192) return;
+    if (!dwords) {
+        g_const_load = reg;
+        g_const_part = 0;
+        return;  // The original empty bulk setter still emits SET_TRANSFORM_CONSTANT_LOAD.
+    }
+    if (!src) return;
+    dwords = std::min(dwords, (192u - reg) * 4u);
+    const size_t bytes = size_t(dwords) * 4;
+    if (uint64_t(src) + bytes > (uint64_t(1) << 32)) return;
+    std::memcpy(g_state.vsc[reg].data(), HostPtr(src), bytes);
+#if HAS_D3D_VertexShaderConstants
+    if (shadow) std::memmove(HostPtr(SYM(D3D_VertexShaderConstants) + reg * 16), HostPtr(src), bytes);
+#else
+    (void)shadow;  // Older image configs retain their existing behavior until the shadow symbol is supplied.
+#endif
+    // A later raw constant payload can continue without another LOAD; match the cursor left by the XDK's pushes.
+    g_const_load = reg + dwords / 4;
+    g_const_part = dwords % 4;
+}
+}  // namespace
+
+// Older inline constants are consumed before each direct update, in their original order.
+HLE_FASTCALL(D3DDevice_SetVertexShaderConstant1Fast, 0) {
+    SetVertexConstants(a[0], a[1], 4, false);
     return 0;
 }
 
 HLE_FASTCALL(D3DDevice_SetVertexShaderConstant1, 0) {
-    FlushPush();
-    uint32_t reg = a[0];
-    if (reg < 192) std::memcpy(g_state.vsc[reg].data(), HostPtr(a[1]), 16);
+    SetVertexConstants(a[0], a[1], 4, true);
     return 0;
 }
 
 HLE_FASTCALL(D3DDevice_SetVertexShaderConstant4, 0) {
-    FlushPush();
-    uint32_t reg = a[0], src = a[1];
-    for (uint32_t i = 0; i < 4 && reg + i < 192; i++) std::memcpy(g_state.vsc[reg + i].data(), HostPtr(src + i * 16), 16);
+    SetVertexConstants(a[0], a[1], 16, true);
     return 0;
 }
 
 HLE_FASTCALL(D3DDevice_SetVertexShaderConstantNotInlineFast, 1) {
-    FlushPush();
-    uint32_t reg = a[0], src = a[1], dwords = a[2];
-    for (uint32_t i = 0; i < dwords / 4 && reg + i < 192; i++) std::memcpy(g_state.vsc[reg + i].data(), HostPtr(src + i * 16), 16);
+    SetVertexConstants(a[0], a[1], a[2], false);
     return 0;
 }
 

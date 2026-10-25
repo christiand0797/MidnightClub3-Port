@@ -220,7 +220,7 @@ void TuningBindCar(uint32_t car, uint32_t sim, uint32_t cfg, bool player) {
     if (player) fixture::bindings[car] = {sim, cfg, player};
     else fixture::bindings.erase(car);
 }
-namespace app { void GarageTuningActive() {} }
+namespace app { void GarageTuningActive() {} void EndGarageNavigation() {} }
 void TuningCarCfgApplied(uint32_t) { ++fixture::cfg_applied_calls; }
 
 X86_FUNC(__imp__sub_00270C10) { ctx.esp += 4; }

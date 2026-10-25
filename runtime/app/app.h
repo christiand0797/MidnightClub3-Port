@@ -125,6 +125,8 @@ bool MenuOpen();
 void ToggleMenu();
 void OpenVehicleMenu();  // F2: show the live vehicle tuning page, including while in the garage
 void GarageTuningActive();  // the garage's update refreshes the visible PC tuning button
+bool GarageNavigationActive(); // short fresh-update lease; separate from the longer visible-button hint
+void EndGarageNavigation();    // a concrete street driver clears the garage direction cadence immediately
 void DrawSettingsMenu(float fps);  // the renderer, inside its ImGui frame, under UiLock
 
 // what the game repo defines once

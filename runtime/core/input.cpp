@@ -39,14 +39,14 @@ SDL_Gamepad* g_pads[4] = {};
 bool g_script_enabled = false;
 Pad g_raw[4];             // each port as last polled, before the menu blanks it
 bool g_menu_combo = false;  // Back + Y held at the last poll
+GarageNavigation g_garage_navigation;
 std::vector<PadScriptPress> g_script;
 std::optional<std::chrono::steady_clock::time_point> g_script_start;
 
 void LoadPadScript() {
     const wchar_t* value = _wgetenv(L"XBE_PAD_SCRIPT");
     if (!value || !*value) return;
-    // An explicitly requested script controls port 0 even if it is empty or invalid.
-    // This prevents keyboard or hardware state from changing a deterministic run.
+    // Script playback is optional and additive; an empty/invalid script never takes physical input away.
     g_script_enabled = true;
     std::filesystem::path path(value);
     if (!path.is_absolute()) {
@@ -174,6 +174,7 @@ void AddPad(SDL_JoystickID id) {
     SDL_Gamepad** slot = std::find(std::begin(g_pads), std::end(g_pads), nullptr);
     if (slot == std::end(g_pads)) return;
     *slot = SDL_OpenGamepad(id);
+    if (slot == g_pads) g_garage_navigation.Reset();
     const char* name = *slot ? SDL_GetGamepadName(*slot) : SDL_GetError();
     LOGI("input: controller %d %s: %s", int(slot - g_pads) + 1, *slot ? "plugged in" : "failed to open", name ? name : "");
 }
@@ -183,6 +184,7 @@ void RemovePad(SDL_JoystickID id) {
         if (!g_pads[i] || SDL_GetGamepadID(g_pads[i]) != id) continue;
         SDL_CloseGamepad(g_pads[i]);
         g_pads[i] = nullptr;
+        if (i == 0) g_garage_navigation.Reset();
         LOGI("input: controller %d unplugged", i + 1);
     }
 }
@@ -307,6 +309,12 @@ Pad Poll(int port) {
             bool combo = (p.buttons & 32) && p.analog[3] > 128;
             toggle_menu = combo && !g_menu_combo;
             g_menu_combo = combo;
+            const HWND window = static_cast<HWND>(app::Window());
+            const bool foreground = window && window == GetForegroundWindow();
+            // RawPad above keeps the complete physical/keyboard/script merge for the PC GUI. Shape only the
+            // original garage's direction navigation, after the merge, and only while its fresh lease is live.
+            p = g_garage_navigation.Apply(p, !app::MenuOpen() && app::GarageNavigationActive(), foreground,
+                                         GetTickCount64());
         }
     }
     // The UI samples RawPad while holding UiLock; never acquire that lock while g_lock is held.

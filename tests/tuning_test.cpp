@@ -87,6 +87,9 @@ void TuningSetPlayerSim(uint32_t sim, bool player);
 void TuningForgetSim(uint32_t sim);
 void TuningCarCfgApplied(uint32_t sim);
 void TuningBindCar(uint32_t car, uint32_t sim, uint32_t cfg, bool player);
+#ifdef MC3_TEST_REAL_WIDTH_READER
+extern "C" void TestOriginalWidthOffset(X86Context&, uint8_t*);
+#endif
 // Concrete human-controller ownership and stack factory recovery are exercised in garage_test.
 void GarageRefreshPlayerCar(uint32_t) {}
 void GarageNormalizeProfileMeshes(uint32_t, uint32_t) {}
@@ -420,7 +423,94 @@ int main(int argc, char** argv) {
     assert(Near(Float(render + 0x12E8), -2.5f) && Near(Float(render + 0x12EC), -1));
     TuningForgetSim(sim);
 
+#ifdef MC3_TEST_REAL_WIDTH_READER
+    // Feed actual retail FB4E0 results through the production refresh/tuning wrapper. A width change must not
+    // move the hub, even when the original result equals the previous PC-offset value. Demotion restores the
+    // latest raw retail value, so this player-only correction cannot leak into a computer/reused car.
+    constexpr uint32_t width_tune = 0xAA000;
+    kernel::W32(model + 0x300, width_tune);
+    PutFloat(width_tune + 0x1C, .16f); PutFloat(width_tune + 0x20, .14f);
+    auto retail_width = [&](float width, bool is_front) {
+        X86Context ctx{}; ctx.ecx = model; ctx.esp = kStack; ctx.fcw = 0x37F;
+        kernel::W32(kStack, 0xC0DE);
+        PutFloat(kStack + 4, width); PutFloat(kStack + 8, 123.f); kernel::W32(kStack + 12, is_front);
+        TestOriginalWidthOffset(ctx, guest.data()); assert(ctx.esp == kStack + 16);
+        return float(ctx.st[ctx.top]);
+    };
+    auto width_refresh = [&](float fw, float rw) {
+        const float front_raw = retail_width(fw, true), rear_raw = retail_width(rw, false);
+        render_apply = [&](uint32_t r) {
+            PutFloat(r + 0x12D0, fw); PutFloat(r + 0x12C8, rw);
+            PutFloat(r + 0x12D8, front_raw); PutFloat(r + 0x12DC, rear_raw);
+        };
+        kernel::W32(cfg + 8, 1); Call(sub_000F32A0, render, cfg); render_apply = {};
+        return std::array{front_raw, rear_raw};
+    };
+    settings = app::Settings::Tuning{};
+    TuningSetPlayerSim(sim, true); TuningBindCar(car, sim, cfg, true);
+    for (float width : {.105f, .355f, .755f, .195f}) {
+        for (const auto offsets : {std::array{0.f, 0.f}, std::array{.2f, -.1f}, std::array{-.2f, .1f}}) {
+            settings.offset_front = offsets[0]; settings.offset_rear = offsets[1];
+            settings.camber_front = -30.f; settings.camber_rear = 20.f;
+            width_refresh(width, .86f - width);
+            ApplyVehicleTuning(); ApplyVehicleTuning();
+            assert(Near(Float(render + 0x12D8), -offsets[0]));
+            assert(Near(Float(render + 0x12DC), -offsets[1]));
+            assert(Near(Float(render + 0x12E8), -32.5f) && Near(Float(render + 0x12EC), 19.f));
+        }
+    }
+    // An unchanged paint-only pass must retain the centered baseline, without subtracting the fit twice.
+    kernel::W32(kStack + 8, 0); kernel::W32(cfg + 8, 0x100);
+    Call(sub_000F32A0, render, cfg); ApplyVehicleTuning();
+    assert(Near(Float(render + 0x12D8), .2f) && Near(Float(render + 0x12DC), -.1f));
+    const auto last_raw = width_refresh(.755f, .655f);
+    TuningSetPlayerSim(sim, false); ApplyVehicleTuning();
+    assert(Float(render + 0x12D8) == last_raw[0] && Float(render + 0x12DC) == last_raw[1]);
+    // No player ownership: original width anchoring remains untouched.
+    const auto ai_raw = width_refresh(.355f, .455f);
+    ApplyVehicleTuning();
+    assert(Float(render + 0x12D8) == ai_raw[0] && Float(render + 0x12DC) == ai_raw[1]);
+    TuningForgetSim(sim);
+    // A valid model alone is insufficient: a foreign/authored offset must not be mistaken for retail fitting.
+    TuningSetPlayerSim(sim, true); TuningBindCar(car, sim, cfg, true);
+    render_apply = [](uint32_t r) { PutFloat(r + 0x12D8, .027f); PutFloat(r + 0x12DC, -.031f); };
+    settings.offset_front = .1f; settings.offset_rear = -.15f;
+    kernel::W32(cfg + 8, 1); Call(sub_000F32A0, render, cfg); render_apply = {}; ApplyVehicleTuning();
+    assert(Near(Float(render + 0x12D8), -.073f) && Near(Float(render + 0x12DC), .119f));
+    TuningSetPlayerSim(sim, false); TuningForgetSim(sim);
+    // Missing source metadata also leaves authored offsets available for the explicit PC adjustment.
+    kernel::W32(model + 0x300, 0);
+    TuningSetPlayerSim(sim, true); TuningBindCar(car, sim, cfg, true);
+    render_apply = [](uint32_t r) { PutFloat(r + 0x12D8, -.2175f); PutFloat(r + 0x12DC, -.2375f); };
+    kernel::W32(cfg + 8, 1); Call(sub_000F32A0, render, cfg); render_apply = {}; ApplyVehicleTuning();
+    assert(Near(Float(render + 0x12D8), -.3175f) && Near(Float(render + 0x12DC), -.0875f));
+    TuningSetPlayerSim(sim, false); TuningForgetSim(sim);
+#endif
+
 #ifdef MC3_TEST_REAL_WHEEL_SOLVER
+    // Stock garage steps6/7/8 (-125/-137.5/-150mm) must not fall into the old >150mm-only tuck gap.
+    // Run the original displacement query with both axle tunes and both ordinary-side caller identities.
+    constexpr uint32_t stepSim=0x180000, stepFront=0x182000, stepRear=0x184000;
+    kernel::W32(stepSim+0x54,stepFront);kernel::W32(stepSim+0x58,stepRear);
+    for(uint32_t w:{stepFront,stepRear}) {
+        PutFloat(w+0x40,.5f);PutFloat(w+0x44,.18f);PutFloat(w+0x4C,.24f);PutFloat(w+0x50,.23f);
+    }
+    settings=app::Settings::Tuning{};TuningSetPlayerSim(stepSim,true);
+    for(float height:{-.125f,-.1375f,-.15f}) {
+        PutFloat(stepFront+0x48,height);PutFloat(stepRear+0x48,height);TuningCarCfgApplied(stepSim);
+        for(uint32_t tune:{stepFront,stepRear}) {
+            kernel::W32(runtimeWheel+4,tune);PutFloat(runtimeWheel+0x10C,height);PutFloat(runtimeWheel+0x144,.001f);
+            assert(Near(displacement(0xF7525),.04999f));assert(Near(displacement(0xF7B7D),.04999f));
+            assert(Near(displacement(0xF74D5),0));assert(Near(displacement(0xAEAE1),.001f-height));
+            assert(Near(Float(runtimeWheel+0x144),.001f)&&Near(Float(tune+0x48),height));
+            settings.wheel_tuck=false;assert(Near(displacement(0xF7525),.001f-height));settings.wheel_tuck=true;
+        }
+    }
+    PutFloat(stepFront+0x48,0);PutFloat(stepRear+0x48,0);TuningCarCfgApplied(stepSim);
+    kernel::W32(runtimeWheel+4,stepFront);PutFloat(runtimeWheel+0x10C,0);
+    assert(Near(displacement(0xF7525),.001f)); // stock/raised and non-render queries remain original
+    TuningSetPlayerSim(stepSim,false);TuningForgetSim(stepSim);
+
     // Optional catalogue generated from the user's archives by tools/garage/audit_vehicle_tuning.py. No retail
     // assets are checked into the test suite. Execute original solver/query bodies for every shipped front/rear
     // tune, rather than assuming the first test car's travel and arch dimensions represent the whole catalogue.
@@ -442,10 +532,11 @@ int main(int argc, char** argv) {
                 PutFloat(tune + 0x4C, stop[a]); PutFloat(tune + 0x50, suspension_extent[a]);
             }
             TuningSetPlayerSim(check_sim, true);
-            for (float lowering : {-.175f, -.35f, -.85f}) {
+            // The original lower garage range must tuck too: it previously missed the >150mm-only bypass.
+            for (float lowering : {-.025f, -.1f, -.1125f, -.125f, -.1375f, -.15f, -.175f, -.35f, -.85f}) {
                 PutFloat(check_front + 0x48, lowering); PutFloat(check_rear + 0x48, lowering);
                 TuningCarCfgApplied(check_sim); ApplyVehicleTuning();
-                const float extra = -lowering - .15f;
+                const float extra = std::max(0.0f, -lowering - .15f);
                 for (unsigned a = 0; a < 2; ++a) {
                     const uint32_t tune = a ? check_rear : check_front;
                     assert(Near(Float(tune + 0x4C), stop[a] + extra));
