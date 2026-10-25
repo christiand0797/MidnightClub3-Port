@@ -2650,6 +2650,17 @@ void D3D12Backend::CaptureDraw(const State& s, uint32_t prim, uint32_t count, co
 // small draws: their inputs and constants; then ends the draw's line
 void D3D12Backend::EndDrawCapture(const State& s, const Assembled& a, uint32_t count, const DrawConstants& c,
                                   bool fixed) {
+    if (a.tire_fit_applied)
+        fprintf(cap_, "\n     tire bead fit %g -> %g vertices %u", s.tire_fit.source_ratio,
+                s.tire_fit.target_ratio, a.vertex_count);
+    if (s.tire_fit.vertex_data[0]) {
+        fprintf(cap_, "\n     tire scope %g -> %g applied %u ids", s.tire_fit.source_ratio,
+                s.tire_fit.target_ratio, unsigned(a.tire_fit_applied));
+        for (auto id : s.tire_fit.vertex_data) fprintf(cap_, " %08X", id);
+        fprintf(cap_, " streams");
+        for (size_t n = 0; n < s.streams.size(); ++n)
+            if (s.streams[n].vb) fprintf(cap_, " %zu:%08X:%u", n, kernel::R32(s.streams[n].vb + 4), s.streams[n].stride);
+    }
     const bool skin = !fixed && s.vs && IsIndexedSkinProgram(s.vs->program);
     if (skin) {
         fprintf(cap_, "\n     skin scale %g bone_rows", s.vsc[105][3]);

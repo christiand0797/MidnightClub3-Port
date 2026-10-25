@@ -27,6 +27,8 @@ gpu::State state;
 std::recursive_mutex lock;
 std::vector<gpu::State::TireFit> observed;
 bool fail = false;
+bool deferred = false;
+unsigned pending_draws = 0;
 constexpr uint32_t car=0x1D0000, sim=0x1D1000, cfg=0x1D2000, model=0x1E0000, render=0x1E1000;
 constexpr uint32_t resources=0x1E4000, factory=0x1E5000, db=0x210000, table=0x211000;
 constexpr uint32_t descriptor=0x212000, items=0x213000, handle=0x214000, record=0x220000;
@@ -83,16 +85,29 @@ extern "C" void __imp__sub_00106F90(X86Context& ctx,uint8_t*base) {
     X86_PUSH32(scope::selected_caller);sub_001B5F20(ctx,base);assert(ctx.esp==frame);
     ctx.esp=entry+4;
 }
-namespace d3d { gpu::State& State(){return scope::state;} std::recursive_mutex& Lock(){return scope::lock;} }
+namespace d3d {
+gpu::State& State(){return scope::state;}
+std::recursive_mutex& Lock(){return scope::lock;}
+void FlushPendingCommands(){
+    while(scope::pending_draws){--scope::pending_draws;scope::observed.push_back(scope::state.tire_fit);}
+}
+}
 namespace mem {uint32_t VirtualFromPhysical(uint32_t data){return data;}}
 void x86_icall(X86Context&ctx,uint8_t*,uint32_t target){
     assert(target==0x123456);assert(ctx.ecx==scope::record+0x20);
-    scope::observed.push_back(scope::state.tire_fit);
+    if(scope::deferred)++scope::pending_draws;
+    else scope::observed.push_back(scope::state.tire_fit);
     if(scope::fail)throw std::runtime_error("test original draw failure");
     ctx.esp+=28;
 }
 void UnitTests(){
     using namespace scope;using kernel::W32;Setup();
+    // Raw push draws are consumed later: drain the previous scope before override, and the tire before restore.
+    deferred=true;pending_draws=1;observed.clear();Draw(0);
+    assert(observed.size()==2&&!Active(observed[0])&&Active(observed[1]));
+    assert(observed[1].target_ratio==.975f&&!pending_draws&&!Active(state.tire_fit));
+    Draw(1,0x109A9C);assert(observed.back().target_ratio==.95f&&!pending_draws&&!Active(state.tire_fit));
+    deferred=false;observed.clear();
     Draw(0);assert(Active(observed.back())&&observed.back().source_ratio==.83f&&observed.back().target_ratio==.975f);
     assert(!Active(state.tire_fit));
     UnscopedTireCall(0);assert(!Active(observed.back()));

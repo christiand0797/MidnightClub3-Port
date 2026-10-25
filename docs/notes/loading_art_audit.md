@@ -128,6 +128,12 @@ Final proof hashes:
 
 ## Adoption and media gates
 
+Private native comparison on2026-10-25 observed the original active San Diego loading portrait in r7 and
+the joined CPU candidate in r8/r9. The candidate reduces blocky facial overpainting and keeps a continuous
+brow/skin/hand across the original panel join, with no visible hard seam. The other three cities still need
+their native Flash-layout comparisons. No canonical PNG was replaced. The isolated QA directory uses7073
+read-only base hardlinks and eight separate candidate copies; those base hardlinks must never be overwritten.
+
 Candidate generation and review do not supersede the original-derived 7,081-texture pass. Before any adoption,
 the coordinator must require an explicit approved overlay with:
 

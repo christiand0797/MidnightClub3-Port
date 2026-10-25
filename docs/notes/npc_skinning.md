@@ -99,3 +99,15 @@ animation phase. The report separates zero observed nonroot bones from a measure
 - If fresh captures show correct c9 and a changing relative palette while limbs remain wrong, investigate actual
   input layout/weights and translated skin execution next. If the same matched pedestrian's relative palette
   remains unchanged during non-idle motion, trace its original animation-controller update and time input.
+
+## Fresh native evidence — 2026-10-25
+
+The r7 native build captured the career background at `013050` and `013051` under
+`.local/bead-npc6-trace-captures/`. Both frames contain12 indexed skin draws with c9.w=256 and no analyzer
+issues. All12 geometry/root matches show changed relative articulated poses:173 nonroot bone comparisons,
+maximum inferred root distance2.43336m. The declared matching bound was8m to allow the menu camera movement;
+nearest-root ambiguity rejection remains enabled. Report: `.local/r7-career-npc-temporal.json`.
+
+This is fresh evidence that the selected native shader receives the expected index scale and evolving relative
+bone matrices. It supersedes the old zero-c9 captures for this candidate. Geometry/root identity remains inferred;
+the small on-screen pedestrians do not replace close-up walking/arm/leg validation for every NPC and location.

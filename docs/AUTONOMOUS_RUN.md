@@ -5,78 +5,62 @@ a complete project backup, public GitHub source/development releases, and comple
 PBR implementation must wait until the media pass
 and a verified full backup. Existing PBR experiments are inherited; the renderer remains on its current path.
 
-## Current continuation — 2026-10-24
+## Current continuation — 2026-10-25 02:08 MDT
 
-The latest user reports are tire sidewall/rim gaps and intersections, width growing only inward, broken NPC
-limbs/animation, touchy garage navigation, glitched garage loading artwork, and road penetration at stock ride
-steps6–8. Prioritize concrete corrections and original-code regressions; do not claim complete reverse engineering.
+The active reports concern tire bead/rim gaps, inward-only width growth, NPC animation, garage navigation,
+loading portraits and lowered stock ride steps6–8. Preserve current user work and original saves.
 
-- Width centering and per-draw tire bead repair are implemented but **not released**. The source adds owned
-  host-side radial deformation; original shared tire resources stay unchanged. CPU checks cover 89,760 original
-  vertex cases, 2,288 actual original resource draw checks and raw/converted threaded draw assembly. All28 CTests
-  passed after the ride-step/input and constant-shadow/cursor work. See tire_profile_bead_fit.md and tire_width_centering.md.
-- Original ordinary tire shoulders reach normalized X=-0.263825; a too-tight initial runtime guard failed
-  closed. The corrected .27 guard is in isolated candidate `.local/native-tire-fit-20261024-r2/`, EXE SHA-256
-  `14fcdff99fb6e7f94de02e28a2d3add3d0b1ae5150ac6ba79c46e839ae7c8a5c`. Native verification is pending.
-  The installed r5 candidate is now `e528b3a1265fdea0b0d212c39fef23f7ac1e9178c2c313d2af711aa713a01606`
-  (23,615,488 bytes), built normally with all affected dependencies. It includes the .27 guard and the other
-  CPU-tested changes below, but has not yet had a fresh native run. The earlier `585d7edd…` was used by a human
-  in instance8; controls were left with them. `--instance9` clamps to8: use an unused instance2–7 for QA.
-- The stock low ride offsets are indices6=-.125m,7=-.1375m,8=-.15m. Their visual tuck bypass previously required
-  a value below-.15m. The new source applies the cosmetic bypass for every owned lowered axle when tuck is
-  enabled; physical queries/travel remain separate. The regression now also passes188 original vehicle tunes,
-  both axles and20,304 render queries across original and extended low settings. Native confirmation remains open.
-- Garage navigation is integrated with immediate directional pulses,300ms initial repeat and150ms cadence,
-  stick hysteresis, a fresh garage-only lease and explicit concrete-street-driver clearing. Raw GUI input,
-  action buttons, triggers and driving remain unchanged. Time-grid regressions pass; native menu QA is pending.
-- NPC skinning and loading-image failures remain under source/asset investigation. Older constant/state fixes
-  alone do not establish correct pedestrian animation. A verified original-XDK constant-shadow parity gap is
-  being repaired with an original setter/state-block-reader fixture; it is not yet proven to cause the NPC defect.
-  Exact original setter/state-block-reader fixtures now verify the guest shadow, partial uploads, the raw load
-  cursor and method-specific component lanes. New F3-only skin diagnostics and a relative-pose analyzer enable
-  same-NPC two-frame checks; animation itself is still unverified. The loading audit verified475 images against205
-  original bundles; no corrupt PNG/alpha was proved. Pixel registration establishes six shared source columns
-  between garage photo panels; exact Flash fill transforms are retained separately. Separate AI inference
-  can create a facial seam across that join.
-  Visual thumbnail triage is complete for all12,716 original source/dump textures:7,081 HD replacements plus
-  5,635 originals (5,603 masks,23 flat,9 tiny),128 sheets and79 larger outlier pairs. The parent verified every
-  coverage sheet hash and exact inventory equality. No decode or original-alpha mismatch was found. Eight
-  joint-context CPU x4plus garage candidates are complete (471.046 seconds total), with strict split/alpha
-  proofs and static improvements; no active image was replaced. Native A/B and approved-fix integration remain.
-- Strict original source/model-weight video provenance is now mandatory for the worker and final backup/PBR
-  gate. Legacy unverified startup outputs are regenerated. Video23/23 and coordinator27/27 tests pass; original
-  RNinja remains verified. The earlier coordinator PID10928 has now exited cooperatively (verify live PIDs).
-- At the latest inspection, strict videos were9/106 with zero failures; the GPU worker finished rg55 and stopped.
-  Another human game (Fortnite client PID19236 at22:08 MDT; verify live) is running, so native QA and GPU inference
-  wait without touching it. The coordinator now also waits/drains for that actual installed client;28 pipeline
-  regressions pass. The unchanged root marker `root-tire-bead-native-qa-20261024` was removed after the worker
-  exited, and the single new coordinator PID4912 is safely waiting for the Fortnite client to close. Its logs
-  are `.local/overnight-coordinator-gaming-20261024-2215.{out,err}.log`. No user stop flag was cleared. Future
-  native QA must request another cooperative boundary before launch. A guarded unused-instance6 launcher is
-  `.local/launch-bead-npc6.ps1`; it refuses live game/media processes and recent keyboard/mouse activity, verifies
-  the candidate hash, backs up and hashes every HDD/settings/log file, and uses fresh hdd8→hdd6 copies.
-  Complete all106, final audits and a new all-file verified backup before new offline PBR. Runtime PBR is unchanged.
-- Pre-test copies of every HDD/settings and the old EXE/PDB are in
-  `G:\MC3_Backups\saves_2026-10-24_105112_pre-tire-fit`. Current human save/settings changes must be preserved.
-
-### Overnight checkpoint — 2026-10-25 01:04 MDT
-
-- Public source is pushed through `f898d0c` (runtime fixes `c0559ca`, scheduling `89b19ab`, loading/CPU tools
-  `f898d0c`). Visual/reviewed-fix audit helper handoffs were preserved when agent usage was exhausted; avoid
-  respawning them before the reported03:05 reset. Parent checks pass5 visual and13 reviewed-fix tests.
-- The scheduler resumed automatically after Fortnite closed and reached14/106 strict movies, zero failures.
-  Root requested another cooperative stop with exact marker `root-r5-native-qa-20261025`; r68corv finished
-  intact and all movie workers/coordinator exited. Do not clear that marker until this native QA is complete.
-- Fresh native instance6 is PID15320 (verify live), launched from the r5 hash above. All HDDs, settings and logs
-  were copied and SHA-256 checked first in `G:\MC3_Backups\saves_2026-10-25_010415_pre-r5-native6`; hdd6 is a
-  fresh hdd8 copy. No old saves were modified. HD intro and rendered title run without fence failures so far.
-  The additive live file is `.local/pad-bead-npc6-live.txt`, captures `.local/bead-npc6-captures/`.
-- Staged photo proof: `.local/loading-garage-joined-20261024-r3/`; final split record SHA-256
-  `12d86dced46c952b48aedb3ea12474c25aed76c4d6c185424a9d8084a37e54a5`, integrity proof
-  `041588adddcf14cfce54faf40c4dc37b1f8fa0e4cb1ad99f4ecc58da081bf4fa`. See loading_art_audit.md.
-- `reviewed_fixes.py` is a tested, read-only future audit wrapper with no active ledger or adoption command.
-  Scheduler support for approved supersessions must be integrated/tested before installing a candidate, or the
-  normal base-pass worker would restore it. Preserve the original pass ledger and archived original outputs.
+- Public source is pushed through `61e07c5`; the next scoped update contains the native-tested raw push-command
+  boundary correction and evidence below. Width centering, bead deformation, lowered-step visual tuck,
+  navigation cadence and original constant-shadow/cursor parity are implemented. All28 CTests pass. The tire
+  CPU checks include89,760 original vertex cases,2,288 original resource draws,704 stock negative controls,
+  1,144 wrong-brand guards and188 vehicle tunes/20,304 render queries. Runtime PBR is unchanged.
+- The current r9 executable is23,617,536bytes, SHA-256
+  `7bb7fcd1928156db88e33c78cd5a799ed9b04d4c9c19c9a9bbd6b00e2aa9d1ad`.
+  Private native QA used `.local/native-artwork-qa-r7/mc3.exe` (historical folder name), instance6.
+  HD startup, rendered menus, garage navigation, profile purchase/save/reload and garage→street transitions
+  passed without a recurring fence stall. No physical controls were blocked.
+- Native Golf R32 checks confirm both axle selections33/33, calibrated rim0.6096m, tire diameter0.625231m,
+  purchased755mm widths and centered hub translations. F3 captures `020022`/`020102` contain two actually
+  applied180-vertex0.83→0.975 corrections; a30% preview `020232` contains two0.415532→0.3 corrections.
+  Scoped VB identities match the actual draws. One captured tire draw at a different angle is not evidence
+  that the other axle failed: visibility and the actual captured frame must be inspected.
+- Stock ride steps6/7/8 now have native previews at−0.125/−0.1375/−0.15m. The visible tire's clip-matrix
+  components differ by at most0.00005 across a fixed garage camera while the body lowers. Step8 purchase
+  retained all four−0.15m offsets outside the garage. This is a bounded Golf check, not all-car road/spark QA.
+  Evidence: `.local/r9-native-validation-20261025.json`, SHA-256
+  `2caa21db509984ecb2303381961b596323577a2b13892d4a1ee4e9792c835253`.
+- Fresh NPC frames `013050`/`013051` in `.local/bead-npc6-trace-captures/` each contain12 indexed skin draws,
+  correct c9.w=256 and no analyzer issues. All12 inferred geometry/root pairs show changed relative articulated
+  poses across173 nonroot comparisons. This supersedes older zero-c9 captures, but close-up walking/limb
+  visual validation remains open. Do not claim every NPC animation is fixed.
+- All12,716 original textures have thumbnail visual triage:7,081 active HD plus5,635 excluded originals
+  (5,603 masks,23 flat,9 tiny),128 sheets and79 larger outlier pairs. Coverage hashes and exact inventory
+  equality were independently verified. No PNG decode or original-alpha mismatch was found. This is complete
+  thumbnail coverage, not full-pixel or every in-game UV certification. See `notes/texture_visual_review.md`.
+- Loading audit confirms475 original sources/205 bundles. Exact Flash UV/layout reconstruction and six-column
+  original overlap registration produced four joined CPU x4plus composites/eight candidate PNGs. All four
+  actual CPU jobs completed in471.046s with original-alpha/split/model proofs. Private San Diego native A/B
+  shows cleaner continuous face/hand detail; the other three cities still need native comparison.
+  No canonical replacement is installed. The QA directory's7073 base hardlinks are read-only by convention;
+  never overwrite them. Eight candidate files are separate copies.
+- `reviewed_fixes.py` passes13 tests and the actual absent-ledger audit verifies7081/7081 unchanged base
+  replacements. No accepted correction ledger exists. Integrate strict coordinator supersession auditing,
+  dependency signatures and reversible installation before adopting any PNG; preserve the historical base pass.
+- Movies are14/106 strict original/model-provenance verified, zero failures,96,474frames remaining at resume.
+  After Fortnite closed, native QA requested and received a cooperative movie-boundary stop. The root marker
+  `root-r5-native-qa-20261025` was removed only after private QA closed and its contents were checked unchanged.
+  One coordinator PID18212 resumed at02:08MDT, child PID7564 (verify live), logs
+  `.local/overnight-coordinator-after-r9-20261025-020817.{out,err}.log`. No user stop flag was cleared.
+  Wait for MC3 and the installed Fortnite client to close before any new native launch or GPU inference.
+- Canonical personal settings were restored and match the pre-QA file byte-for-byte. All original HDDs remain
+  preserved; test purchases are in the isolated instance6 copy. Pre-test backup:
+  `G:/MC3_Backups/saves_2026-10-25_010415_pre-r5-native6`. Agents exhausted their allowance until03:05MDT;
+  their finished work is saved. Avoid repeated quota retries before then.
+- Remaining gates: close-up NPC and broader native vehicle checks; other-city loading A/B; authenticated
+  correction adoption;106/106 detailed movies and final media audits; new all-file verified full backup;
+  offline starter PBR only afterward. Keep current public release assets and personal saves/settings intact.
+  Publish a new development release only after its required native checks; public source may advance separately.
 
 ## Historical night continuation — 2026-10-23
 

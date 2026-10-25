@@ -11,13 +11,19 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <mutex>
+
+// Opt-in native diagnostics must survive release filtering; ordinary LOG_FIRST uses Info severity.
+#define TIRE_TRACE_FIRST(n, ...) do { static std::atomic<unsigned> reported{0}; \
+    if (reported.fetch_add(1, std::memory_order_relaxed) < (n)) LOGR(__VA_ARGS__); } while (0)
 
 namespace {
 using kernel::G;
 using kernel::R32;
 struct DrawScope { uint32_t render = 0, resources = 0; };
 thread_local DrawScope active_draw;
+bool Trace() { static const bool enabled = std::getenv("XBE_TIRE_FIT_TRACE") != nullptr; return enabled; }
 
 bool Committed(uint32_t va, uint64_t bytes) {
     const uint64_t end = uint64_t(va) + bytes;
@@ -25,6 +31,11 @@ bool Committed(uint32_t va, uint64_t bytes) {
     for (uint64_t page = va & ~(uint64_t(mem::kPage) - 1); page < end; page += mem::kPage)
         if (!mem::IsCommitted(uint32_t(page))) return false;
     return true;
+}
+
+bool TraceExtended(uint32_t render) {
+    return Trace() && Committed(render, 0x11BC) &&
+           (R32(render + 0x11B4) >= 8 || R32(render + 0x11B8) >= 8);
 }
 
 bool TireVertexData(uint32_t handle, float source_ratio, std::array<uint32_t, 4>& data_ids) {
@@ -90,6 +101,8 @@ X86_FUNC(sub_00106F90) {
         ~RestoreDraw() { active_draw = previous; }
     } restore{active_draw};
     active_draw = {Committed(ctx.esp + 0x10, 4) ? R32(ctx.esp + 0x10) : 0, ctx.ecx};
+    if (TraceExtended(active_draw.render)) TIRE_TRACE_FIRST(8, "tire-fit scope: render %08X resources %08X caller %08X",
+                          active_draw.render, active_draw.resources, R32(ctx.esp));
     __imp__sub_00106F90(ctx, base);
 }
 
@@ -99,13 +112,21 @@ X86_FUNC(sub_001B5F20) {
     const uint32_t caller = Committed(ctx.esp, 0x38) ? R32(ctx.esp) : 0;
     if ((caller == 0x1080C5 || caller == 0x109A9C) && ctx.ebx == active_draw.resources) {
         const uint32_t axle = R32(ctx.esp + 0x34);
-        if (GarageTireFitForDraw(active_draw.render, ctx.ebx, ctx.ecx, axle, fit.source_ratio, fit.target_ratio) &&
-            !TireVertexData(ctx.ecx, fit.source_ratio, fit.vertex_data)) fit = {};
+        const bool owner = GarageTireFitForDraw(active_draw.render, ctx.ebx, ctx.ecx, axle,
+                                                fit.source_ratio, fit.target_ratio);
+        const bool geometry = owner && TireVertexData(ctx.ecx, fit.source_ratio, fit.vertex_data);
+        if (TraceExtended(active_draw.render)) TIRE_TRACE_FIRST(16, "tire-fit draw: caller %08X render %08X resources %08X handle %08X axle %u owner %u geometry %u ratios %.6f/%.6f",
+                              caller, active_draw.render, ctx.ebx, ctx.ecx, axle, owner, geometry,
+                              fit.source_ratio, fit.target_ratio);
+        if (!geometry) fit = {};
     }
+    else if (TraceExtended(active_draw.render)) TIRE_TRACE_FIRST(8, "tire-fit dispatch: caller %08X scope %08X/%08X ecx %08X ebx %08X",
+                               caller, active_draw.render, active_draw.resources, ctx.ecx, ctx.ebx);
     // State is snapshotted by the threaded backend at the actual draw. Never temporarily edit guest VBs:
     // the render worker deliberately reads their vertex data later. RAII also prevents an exceptional call
     // or a following non-tire resource draw from inheriting the previous car's requested ratio.
     std::lock_guard<std::recursive_mutex> lock(d3d::Lock());
+    d3d::FlushPendingCommands(); // Older raw draws belong to the previous metadata scope.
     auto& state = d3d::State();
     struct Restore {
         gpu::State::TireFit& destination;
@@ -116,4 +137,5 @@ X86_FUNC(sub_001B5F20) {
     if (fit.vertex_data[0]) LOG_FIRST(8, "garage: tire bead fit %.6f -> %.6f, axle %u, side %u",
                                     fit.source_ratio, fit.target_ratio, R32(ctx.esp + 0x34), caller == 0x109A9C);
     __imp__sub_001B5F20(ctx, base);
+    d3d::FlushPendingCommands(); // The last raw tire draw must be queued before RAII restores its metadata.
 }

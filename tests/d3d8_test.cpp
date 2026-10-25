@@ -98,4 +98,12 @@ int main() {
     d3d::Walk(d3d::Dev(d3d::kDevPush));
     assert(observer->draws == 2 && observer->assembled.pretransformed && (observer->last.vs_handle & 0x40));
     assert(observer->bytes.size() == 20 && observer->bytes[16] == 255 && observer->bytes[18] == 0 && observer->bytes[19] == 255);
+    // Real pending push packets take the current scoped metadata at parsing time, not at later restoration.
+    Commands({0x000417FC, 1, 0x00101A00, Bits(1), Bits(2), Bits(.5f), Bits(1), 0x000417FC, 0});
+    d3d::State().tire_fit.source_ratio=.83f;d3d::State().tire_fit.target_ratio=.975f;
+    assert(observer->draws==2);
+    d3d::FlushPendingCommands();
+    assert(observer->draws==3&&observer->last.tire_fit.target_ratio==.975f);
+    d3d::State().tire_fit={};d3d::FlushPendingCommands();
+    assert(observer->draws==3&&d3d::g_walk==d3d::Dev(d3d::kDevPush));
 }

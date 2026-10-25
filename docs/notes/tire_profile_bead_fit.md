@@ -123,3 +123,43 @@ These checks establish the bead math and original-data coverage. Native profile 
 axles, different rims, saved reconstruction, correct queued draw selection, and player/AI isolation remain
 separate integration checks. Width centering is a different original hub-placement rule and is not changed by
 this helper. No all-car road clearance or scrape/spark claim follows from this bead test.
+
+## Native scope and push-command boundaries — 2026-10-25
+
+An isolated Golf R32 save purchased profile33 on both axles, retained it through garage→street, and loaded it
+in a new process. Read-only checks confirm selected/render profile33/33, rim21/21, calibrated rim0.609600m and
+tire diameter0.625231m. Both hub fit translations are zero with purchased755mm widths. The native scope
+confirms owner/geometry validation and source0.83→target0.975 for both axles.
+
+Normal `LOG_FIRST` uses Info severity, hidden in release builds. Its absence does not show that fitting failed.
+Opt-in `XBE_TIRE_FIT_TRACE` now emits bounded Report-level diagnostics. F3 also records actual assembled fits
+and scoped VB identities. `.local/bead-npc6-trace-captures/013141/frame.txt` confirms a180-vertex correction;
+per-visible-draw coverage and lower-profile visual checks remain under native investigation.
+
+Raw GPU commands may remain pending after a resource-render function returns. The wrapper now parses older
+commands before setting its metadata and the resource's last commands before restoring it. The new
+`d3d::FlushPendingCommands()` parses existing CPU push packets without a GPU/fence wait. The deferred fixture
+distinguishes a previous unscoped draw from the fitted draw, checks independent axle targets and restoration.
+The real HLE parser fixture checks scoped metadata on a pending raw draw and idempotent empty draining.
+
+All28 CTests pass after the boundary change. Original resource replay still passes2,288 extended draws,704
+stock controls and1,144 wrong-brand guards with original bytes unchanged. New proof:
+`.local/tire-raw-boundary-original-resources-20261025.json`.
+
+The r9 private executable SHA-256 is `7bb7fcd1928156db88e33c78cd5a799ed9b04d4c9c19c9a9bbd6b00e2aa9d1ad`.
+Fresh F3 captures `020022` and `020102` each contain two actually applied180-vertex tire draws at0.83→0.975;
+the latter uses a garage angle with front/rear tires visible. A30% preview (`020232`) contains two actual
+0.415532→0.3 corrections. Both extremes were inspected in-game: the sidewall meets the rim; the30% ratio
+creates a physically large outer tire because this game's ratio is rim diameter divided by tire diameter.
+The game retains its original rim size and overall tire-diameter rule.
+
+Native stock ride previews6/7/8 confirm four suspension offsets of−0.125/−0.1375/−0.15m. At the same camera
+angle, the captured tire clip-matrix components differ by at most0.00005 while the body visibly lowers.
+Step8 was purchased in the private save and retained all four−0.15m offsets on the street, with profiles33/33.
+This covers the Golf R32 and selected wheels; the original-data CPU fixtures cover the other ordinary variants.
+It is not an all-car road clearance, scraping/sparks or every-rim native certification.
+
+Bounded native evidence: `.local/r9-native-validation-20261025.json`, SHA-256
+`2caa21db509984ecb2303381961b596323577a2b13892d4a1ee4e9792c835253`. All original user HDDs were preserved;
+the canonical personal settings match the pre-test copy byte-for-byte. The private QA instance was closed
+before the single durable movie coordinator resumed.
