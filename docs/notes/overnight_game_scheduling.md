@@ -15,8 +15,11 @@ The full coordinator fixture suite passes28/28. The new regression verifies anot
 boundary exit, wait and resume ordering, with no GPU or real game process. The actual read-only process
 inventory also returns the live client. Existing user-cancellation priority and marker-ownership tests pass.
 
-The current marker `.local/stop-overnight-pipeline` contains exactly
-`root-tire-bead-native-qa-20261024`. It belongs to this root QA task. Before resuming, verify no active native
-QA or candidate worker, preserve any replaced marker or other user stop flag, and remove only this unchanged
-owned marker. A newly started coordinator will still wait for human game clients to close. CPU-only texture
-analysis can proceed without using the GPU; explicit two-thread CPU model work has its own staged outputs.
+The earlier marker `.local/stop-overnight-pipeline`, exact content `root-tire-bead-native-qa-20261024`, was
+removed only after verifying that it was unchanged and its worker had exited. No user stop flag was cleared.
+The new coordinator PID4912 is waiting for the live client, with logs
+`.local/overnight-coordinator-gaming-20261024-2215.{out,err}.log`. Verify actual PIDs before acting. Future
+native QA needs a new cooperative boundary request; do not launch beside a resumed GPU movie worker.
+CPU-only texture analysis can proceed without using the GPU; explicit two-thread CPU model work has its own
+staged outputs. A guarded local `.local/launch-bead-npc6.ps1` also refuses recent keyboard/mouse activity,
+checks the candidate hash and makes a hashed all-HDD/settings/log backup before copying an unused test save.

@@ -35,21 +35,48 @@ steps6–8. Prioritize concrete corrections and original-code regressions; do no
   Exact original setter/state-block-reader fixtures now verify the guest shadow, partial uploads, the raw load
   cursor and method-specific component lanes. New F3-only skin diagnostics and a relative-pose analyzer enable
   same-NPC two-frame checks; animation itself is still unverified. The loading audit verified475 images against205
-  original bundles; no corrupt PNG/alpha was proved. Flash geometry and pixel registration establish about6px
-  of overlap between garage photo panels: separate AI inference can create a facial seam across that join.
-  Joint-context candidates and the full7,081-image visual review remain staged work, with no active image replaced.
+  original bundles; no corrupt PNG/alpha was proved. Pixel registration establishes six shared source columns
+  between garage photo panels; exact Flash fill transforms are retained separately. Separate AI inference
+  can create a facial seam across that join.
+  Visual thumbnail triage is complete for all12,716 original source/dump textures:7,081 HD replacements plus
+  5,635 originals (5,603 masks,23 flat,9 tiny),128 sheets and79 larger outlier pairs. The parent verified every
+  coverage sheet hash and exact inventory equality. No decode or original-alpha mismatch was found. Eight
+  joint-context CPU x4plus garage candidates are complete (471.046 seconds total), with strict split/alpha
+  proofs and static improvements; no active image was replaced. Native A/B and approved-fix integration remain.
 - Strict original source/model-weight video provenance is now mandatory for the worker and final backup/PBR
   gate. Legacy unverified startup outputs are regenerated. Video23/23 and coordinator27/27 tests pass; original
   RNinja remains verified. The earlier coordinator PID10928 has now exited cooperatively (verify live PIDs).
 - At the latest inspection, strict videos were9/106 with zero failures; the GPU worker finished rg55 and stopped.
   Another human game (Fortnite client PID19236 at22:08 MDT; verify live) is running, so native QA and GPU inference
   wait without touching it. The coordinator now also waits/drains for that actual installed client;28 pipeline
-  regressions pass. Root created
-  `.local/stop-overnight-pipeline` with exact text `root-tire-bead-native-qa-20261024` to drain cooperatively for
-  native QA. Remove only that unchanged root-owned marker after validation; preserve every user stop request.
+  regressions pass. The unchanged root marker `root-tire-bead-native-qa-20261024` was removed after the worker
+  exited, and the single new coordinator PID4912 is safely waiting for the Fortnite client to close. Its logs
+  are `.local/overnight-coordinator-gaming-20261024-2215.{out,err}.log`. No user stop flag was cleared. Future
+  native QA must request another cooperative boundary before launch. A guarded unused-instance6 launcher is
+  `.local/launch-bead-npc6.ps1`; it refuses live game/media processes and recent keyboard/mouse activity, verifies
+  the candidate hash, backs up and hashes every HDD/settings/log file, and uses fresh hdd8→hdd6 copies.
   Complete all106, final audits and a new all-file verified backup before new offline PBR. Runtime PBR is unchanged.
 - Pre-test copies of every HDD/settings and the old EXE/PDB are in
   `G:\MC3_Backups\saves_2026-10-24_105112_pre-tire-fit`. Current human save/settings changes must be preserved.
+
+### Overnight checkpoint — 2026-10-25 01:04 MDT
+
+- Public source is pushed through `f898d0c` (runtime fixes `c0559ca`, scheduling `89b19ab`, loading/CPU tools
+  `f898d0c`). Visual/reviewed-fix audit helper handoffs were preserved when agent usage was exhausted; avoid
+  respawning them before the reported03:05 reset. Parent checks pass5 visual and13 reviewed-fix tests.
+- The scheduler resumed automatically after Fortnite closed and reached14/106 strict movies, zero failures.
+  Root requested another cooperative stop with exact marker `root-r5-native-qa-20261025`; r68corv finished
+  intact and all movie workers/coordinator exited. Do not clear that marker until this native QA is complete.
+- Fresh native instance6 is PID15320 (verify live), launched from the r5 hash above. All HDDs, settings and logs
+  were copied and SHA-256 checked first in `G:\MC3_Backups\saves_2026-10-25_010415_pre-r5-native6`; hdd6 is a
+  fresh hdd8 copy. No old saves were modified. HD intro and rendered title run without fence failures so far.
+  The additive live file is `.local/pad-bead-npc6-live.txt`, captures `.local/bead-npc6-captures/`.
+- Staged photo proof: `.local/loading-garage-joined-20261024-r3/`; final split record SHA-256
+  `12d86dced46c952b48aedb3ea12474c25aed76c4d6c185424a9d8084a37e54a5`, integrity proof
+  `041588adddcf14cfce54faf40c4dc37b1f8fa0e4cb1ad99f4ecc58da081bf4fa`. See loading_art_audit.md.
+- `reviewed_fixes.py` is a tested, read-only future audit wrapper with no active ledger or adoption command.
+  Scheduler support for approved supersessions must be integrated/tested before installing a candidate, or the
+  normal base-pass worker would restore it. Preserve the original pass ledger and archived original outputs.
 
 ## Historical night continuation — 2026-10-23
 

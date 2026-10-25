@@ -106,6 +106,26 @@ crop: x=256, 640, 1024, 1408, 1792; y=256, 640. Mean RGB line jumps are compared
 and saved alongside full-size, equally registered review images. These statistics guide visual inspection;
 natural scene edges can coincide with tile lines. They do not establish whole-image inference equivalence.
 
+All four serial CPU jobs completed: s=116.906 s, t=117.656 s, a=118.750 s, d=117.734 s; total inference
+**471.046 s**. The authenticated split produced eight 1024×1024 RGBA candidates under `r3/neural-candidates/`.
+The final integrity check confirms original-alpha Lanczos equality, identical shared 24 RGB columns, exact
+pixels from the recorded padded composite output, and unchanged **205 original bundles +475 source PNGs
++475 active PNGs**. No candidate was installed.
+
+Of 28 measured internal tile lines, 23 are below their neighboring 95th-percentile gradient. The five flagged
+lines coincide with a source or existing-HD scene edge at the same position (a:y256/x1792, d:y640/x1024,
+t:x1792). Full-image inspection found no obvious rectangular grid; this is not proof of whole-image inference
+equivalence. Face/detail review and native A/B remain separate gates. The complete equally registered figures
+are `r3/boundary-review/{a,d,s,t}/source_active_candidate.png`, ordered original Lanczos, active HD, CPU candidate.
+
+Final proof hashes:
+
+- `r3/inference-record.json`: `8c031f350f4b9749a1b6df19b9e19ff70a09f1560889dfc946d99a45c6377079`.
+- `r3/neural-candidate-records.json`: `12d86dced46c952b48aedb3ea12474c25aed76c4d6c185424a9d8084a37e54a5`.
+- `r3/candidate-integrity.json`: `041588adddcf14cfce54faf40c4dc37b1f8fa0e4cb1ad99f4ecc58da081bf4fa`.
+- Frozen compute helper: `da0387f01faa984fd98ff07a364c2cf807c6dcfb2695b17547848734b80ae989`.
+- Separate boundary diagnostic helper: `2441318dc293fc802cfc9af6bf7fab630571538a93d8bc8b66932fa937fe7e49`.
+
 ## Adoption and media gates
 
 Candidate generation and review do not supersede the original-derived 7,081-texture pass. Before any adoption,
