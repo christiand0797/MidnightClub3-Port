@@ -26,6 +26,9 @@ ROOT = Path(__file__).resolve().parents[2]
 PASS_ID = "2026-10-22-originals-pass"
 EXPECTED_MOVIES = 106
 MEDIA_PROVENANCE_POLICY = "original-bink-and-model-weights-v1"
+# A human session in another installed game gets the same cooperative GPU scheduling as MC3.
+# Keep this explicit; launchers and unrelated desktop apps are not reasons to stop CPU work.
+INTERACTIVE_GPU_GAMES = frozenset(("mc3.exe", "fortniteclient-win64-shipping.exe"))
 LIVE = ".local/overnight_pipeline/live"
 LIVE_NOTE = "docs/notes/overnight_pipeline.md"
 
@@ -280,14 +283,15 @@ def active_workers():
     if os.name != "nt":
         raise RuntimeError("live orchestration requires Windows process inventory")
     query = ("Get-CimInstance Win32_Process | Where-Object { $_.Name -in "
-             "@('python.exe','pythonw.exe','realesrgan-ncnn-vulkan.exe','mc3.exe') } | "
+             "@('python.exe','pythonw.exe','realesrgan-ncnn-vulkan.exe','mc3.exe',"
+             "'FortniteClient-Win64-Shipping.exe') } | "
              "Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress")
     result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", query],
                             capture_output=True, text=True, check=True)
     values = json.loads(result.stdout) if result.stdout.strip() else []
     values = values if isinstance(values, list) else [values]
     return [row for row in values if row["ProcessId"] != os.getpid()
-            and (row["Name"].lower() in ("mc3.exe", "realesrgan-ncnn-vulkan.exe")
+            and (row["Name"].lower() in INTERACTIVE_GPU_GAMES | {"realesrgan-ncnn-vulkan.exe"}
                  or any(name in (row.get("CommandLine") or "").lower().replace(chr(92), "/")
                         for name in ("tools/video/upscale_movies.py", "tools/texture_pack/upscale.py")))]
 
@@ -348,7 +352,7 @@ class Coordinator:
                 "all106 x4plus movies; both complete audits; full project copy and all-file SHA-256 verification; "
                 "verified backup gate; offline starter PBR regeneration. Runtime PBR is unchanged.\n\n"
                 f"Current details:\n\n```json\n{json.dumps(self.state, indent=2)}\n```\n\n"
-                "GPU children also pause at a batch/movie boundary when MC3 starts, wait for it to close, and resume "
+                "GPU children also pause at a batch/movie boundary when MC3 or the installed Fortnite client starts, wait for it to close, and resume "
                 "the same phase automatically. No game process or input is stopped.\n\n"
                 "Stop gracefully: create `.local/stop-overnight-pipeline`, or the texture/video user stop flag. "
                 "The current GPU batch/movie completes first. User cancellation takes priority over game resume, "
@@ -427,7 +431,7 @@ class Coordinator:
                             if cancelled and request:
                                 request.request()
                             elif request and not game_pause:
-                                games = [row for row in active_workers() if row["Name"].lower() == "mc3.exe"]
+                                games = [row for row in active_workers() if row["Name"].lower() in INTERACTIVE_GPU_GAMES]
                                 if games:
                                     game_pause = True
                                     request.request()

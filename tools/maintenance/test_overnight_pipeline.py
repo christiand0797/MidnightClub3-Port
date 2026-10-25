@@ -27,18 +27,19 @@ def valid_reports():
 
 class FakeMedia:
     """A resumable child that acknowledges --stop-file only after its current item completes."""
-    def __init__(self, coordinator, phase="textures", drain_polls=0, boundary_code=2):
+    def __init__(self, coordinator, phase="textures", drain_polls=0, boundary_code=2, game_name="mc3.exe"):
         self.coordinator, self.phase = coordinator, phase
         self.external_stop = coordinator.texture_stop if phase == "textures" else coordinator.video_stop
         self.args = ["fixture-python", "fixture-worker", "--pass-id", "same-pass", "--stop-file", str(self.external_stop)]
         self.completed, self.launches, self.events = [], [], []
         self.game, self.clock = False, 0
+        self.game_name = game_name
         self.drain_polls, self.boundary_code = drain_polls, boundary_code
         self.on_first_poll = lambda: setattr(self, "game", True)
         self.on_sleep = lambda _seconds: None
 
     def workers(self):
-        return [{"Name": "mc3.exe", "ProcessId": 700, "CommandLine": "mc3.exe"}] if self.game else []
+        return [{"Name": self.game_name, "ProcessId": 700, "CommandLine": self.game_name}] if self.game else []
 
     def sleep(self, seconds):
         self.clock += seconds
@@ -385,6 +386,17 @@ class CoordinatorTests(unittest.TestCase):
                 self.assertFalse(media.external_stop.exists())
                 self.assertFalse(coordinator.stop_file.exists())
                 self.assertEqual(media.launches[0][:-1], media.launches[1][:-1])
+
+    def test_other_installed_game_drains_and_prevents_gpu_resume_until_closed(self):
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        media = FakeMedia(coordinator, game_name="FortniteClient-Win64-Shipping.exe")
+        with media.installed():
+            coordinator.command("textures", media.args, child_stop=media.external_stop)
+        self.assertEqual(media.completed, ["item0", "item1", "item2"])
+        self.assertEqual(len(media.launches), 2)
+        self.assertLess(media.events.index(("boundary-exit", 1, 2)), media.events.index(("game-closed",)))
+        self.assertLess(media.events.index(("game-closed",)), media.events.index(("launch", 2)))
+        self.assertFalse(media.external_stop.exists())
 
     def test_existing_user_stop_flags_prevent_launch_and_are_preserved(self):
         coordinator = pipeline.Coordinator(self.source, self.backup)
