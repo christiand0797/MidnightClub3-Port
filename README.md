@@ -6,7 +6,7 @@ game is translated to C++ ahead of time; no emulator is needed.
 ## Download and play
 
 Use the **complete-content Windows portable ZIP** on the
-[v0.3.1 development release page](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.1-dev.20261023).
+[v0.3.2 development release page](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.2-dev.20261025).
 Read its release notes for the available assets, tested features and known
 limitations. Choose `MidnightClub3-Native-…-win64.zip`.
 

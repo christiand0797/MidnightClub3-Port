@@ -5,7 +5,67 @@ a complete project backup, public GitHub source/development releases, and comple
 PBR implementation must wait until the media pass
 and a verified full backup. Existing PBR experiments are inherited; the renderer remains on its current path.
 
-## Current continuation — 2026-10-25 02:08 MDT
+## Latest checkpoint — 2026-10-25 12:05 MDT
+
+- v0.3.2-dev.20261025 is now **published**, ID423384119, exact tag/source08bcab9687e55db8245e149d39fd92db78944dff.
+  The9703711byte ZIP has SHA-256 `0a4fb2fa3fb2f22ff46c35e658ec31a85781038578eae2259f397e0982050ed7`.
+  Both remote assets and an unauthenticated public ZIP download match. All15 older assets/bodies/tags remain
+  unchanged. External control is the r1 directory below; do not rerun its draft uploader or replace its assets.
+- Strict movies are25/106, zero failures,90390frames remaining. The old coordinator/worker stopped cleanly at
+  RF355; no inference is currently running. Root marker remains `root-r9-closeup-qa-20261025-0604`.
+- Native UI sole owner is `texture_visual_review`, performing a short cold BASE/candidate San Diego capture
+  attempt after a native avoidance jump with visibly articulated arms/knees. Walking/footplant QA remains open.
+  Root must not send simultaneous game input. Preserve its native artifacts/private HDD6 and never touch the
+  other7073 QA hardlinks. Canonical personal settings stay restored; fresh11:40 private save/log backup exists.
+- New transactional apply/recover helper passes22 Windows fixture tests twice, including independent review,
+  prepared-temp corruption, foreign edits, hardlinks, interrupted rollback and durable owner-marker cleanup.
+  Apply SHA-256 `961679835dd7293037299d9b1844cc7e5ab87dc6f55651d8c6ee786542f59caf`.
+  Coordinator now refuses **any** `.local/reviewed_texture_install/active.json` presence before cached reuse,
+  GPU phases, backup or PBR;36 tests pass independently. No real canonical apply/active marker has occurred.
+  Obtain actual accepted native evidence/new r2 proposal before apply; never bypass unknown marker contents.
+- All25 completed movies/75 exact-PTS frame pairs have actual full-scene/detail visual review. Larger contours
+  improve, but fine grain often smooths and specific synthetic-detail examples are documented.150 frame PNGs
+  and50 sheets are verified; sampler6/6 tests pass.81 movies and temporal stability remain unreviewed.
+- CPU NPC reconstruction from145 original vertices/150 triangles shows coherent limbs and distinct strides
+  after root cancellation, without claiming actual post-VS output. Its private proof/report is preserved.
+- Next: finish bounded native attempt, close only owned QA, apply S correction only with accepted proof and
+  clean transaction checks, then remove only the unchanged owned QA stop marker and resume one coordinator
+  with the new gates. Keep completing strict movies; full media audit/verified full backup must precede PBR.
+
+## Earlier checkpoint — 2026-10-25 06:23 MDT
+
+- Public HEAD is `08bcab9687e55db8245e149d39fd92db78944dff`. The new reviewed-correction coordinator
+  integration passes34 tests; its actual reviewed-chain report integration passes14 tests. Live coordinator18212
+  still runs the preceding loaded code and must restart after the owned stop before image adoption.
+- Strict movies advanced to24/106, zero failures. Coordinator18212/child7564 is cooperatively stopping after
+  `reward/rf355.bik`; verify live. Root's exact shared marker is `root-r9-closeup-qa-20261025-0604`.
+  Do not launch native/GPU work until all old workers exit. No user stop request was cleared or process killed.
+- A new tested0.3.2 runtime is staged in owned GitHub **draft423384119**, not published. Exact source08bcab9,
+  unchanged r9 EXE7bb7fcd1…, ZIP9703711bytes SHA-256
+  `0a4fb2fa3fb2f22ff46c35e658ec31a85781038578eae2259f397e0982050ed7`.
+  External control: `G:/MC3_Backups/release-work/runtime-hotfix-0.3.2-dev.20261025-r1/control`.
+  All19 ZIP entries/dependencies/content pins, fresh headless archive interoperability and28 CTests pass.
+  Both old releases'15 assets/bodies/tags are unchanged. Only root may run `publish_reviewed_draft.py
+  --publish-reviewed` after final bounded visual QA and review; the new draft reuses frozen content, not new media.
+- Root is preparing fresh NPC close-up and persisted San Diego loading A/B evidence. Guarded launch:
+  `.local/launch-r9-closeup-6.ps1`; live file `.local/pad-r9-closeup-live.txt`; captures
+  `.local/r9-closeup-captures/`. Private QA is currently closed. Its HDD/settings/log and independent candidate
+  PNGs were copied/hashed to `G:/MC3_Backups/saves_2026-10-25_0613_pre-closeup`. Canonical settings stay restored.
+  `.local/switch_private_s.py` switches only the two independent San Diego QA copies, refuses live game/media
+  workers and checks nlink1 plus exact old/new hashes. Never overwrite the other7073 QA base hardlinks.
+- Original NPC audit found no further verified input/weight/order fault across48 vertex ranges/10665 vertices
+  from all four city bundles and96 fresh captured vertex cases. Current menu actors are only10.5–34.6console
+  pixels high. Native walking/elbow/knee/foot inspection still needs a full-body close-up, ideally80pixels or more.
+  Findings: `notes/npc_source_weights.md`. No runtime code was changed by that audit.
+- The San Diego-only proposal `.local/reviewed-san-diego-proposal-20261025-r1/` is frozen and deliberately
+  pending native review. New `install_reviewed.py` is a dry-run plan builder, not an installer;11 tests pass,
+  current7081/7081base audit passes and independent archives are verified. No canonical PNG/archive/ledger was
+  changed. Persist fresh native before/after captures before building a new r2; see its documentation/schema.
+- One agent is sampling completed strict movies for visual detail/artifacts with bounded CPU decoding.
+  This starts no inference and changes no existing media. Other agents have completed draft staging and the
+  pending correction plan. Full project inventory is52864files/39.74GB at06:10; backup space is sufficient.
+
+## Earlier checkpoint — 2026-10-25 02:08 MDT
 
 The active reports concern tire bead/rim gaps, inward-only width growth, NPC animation, garage navigation,
 loading portraits and lowered stock ride steps6–8. Preserve current user work and original saves.

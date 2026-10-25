@@ -1,6 +1,36 @@
 # Public portable release and upload maintenance
 
-## Latest runtime hotfix
+## Latest runtime — v0.3.2-dev.20261025
+
+[v0.3.2-dev.20261025](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.2-dev.20261025)
+is public as of2026-10-25 12:05MDT, prerelease ID423384119. Its exact source/tag is
+`08bcab9687e55db8245e149d39fd92db78944dff`; the native executable SHA-256 is
+`7bb7fcd1928156db88e33c78cd5a799ed9b04d4c9c19c9a9bbd6b00e2aa9d1ad`.
+The [portable Windows ZIP](https://github.com/christiand0797/MidnightClub3-Port/releases/download/v0.3.2-dev.20261025/MidnightClub3-Native-0.3.2-dev.20261025-win64.zip)
+is9703711bytes, SHA-256 `0a4fb2fa3fb2f22ff46c35e658ec31a85781038578eae2259f397e0982050ed7`.
+
+Both remote assets (ZIP and checksum sidecar) matched their approved sizes/digests before and after publication.
+An unauthenticated HTTPS ZIP download returned200 and matched the exact9703711bytes/SHA-256. All19 package
+entries, dependencies, source/EXE identity and fixed content-manifest metadata passed verification. A fresh
+headless archive checker passed synthetic split-content interoperability and damaged-chunk rejection;28/28
+native CTests passed. Existing v0.3.0/v0.3.1 release assets (15 total), both bodies and both tags remain unchanged.
+
+This build ships bead fitting across queued draw boundaries, centered tire-width growth, the affected lowered
+ride-step tuck correction, gentler garage navigation and original-XDK vertex-constant parity. Bounded Golf
+native checks cover both axle profiles30%/97.5%,755mm widths, save/reload, ride steps6–8 and street retention
+of step8. Later private native observation shows an articulated avoidance jump. Close-up walking/foot contact,
+all-car/extreme-camber support and actual scraping/sparks remain separate checks; the release does not claim
+every NPC or vehicle is certified.
+
+First launch still downloads the immutable v0.3.0 complete content using manifest SHA-256
+`26595f26e83354cc18b5351b12811d1e9f0564855ae8114500213f37094e3bed`. The newer local texture/movie pass and
+staged loading corrections are not shipped in these frozen content bytes. Runtime PBR is unchanged.
+
+External publication/download/preservation evidence:
+`G:/MC3_Backups/release-work/runtime-hotfix-0.3.2-dev.20261025-r1/control/`.
+Use a new version for any subsequent package change; never replace these published assets.
+
+## Earlier runtime — v0.3.1-dev.20261023
 
 [v0.3.1-dev.20261023](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.1-dev.20261023)
 was published at **2026-10-24 05:12:27 UTC**, public prerelease ID `422531680`. Its tag resolves to exact native
