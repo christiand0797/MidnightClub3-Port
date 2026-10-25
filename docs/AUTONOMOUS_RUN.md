@@ -5,7 +5,54 @@ a complete project backup, public GitHub source/development releases, and comple
 PBR implementation must wait until the media pass
 and a verified full backup. Existing PBR experiments are inherited; the renderer remains on its current path.
 
-## Latest checkpoint — 2026-10-25 12:05 MDT
+## Latest checkpoint — 2026-10-25 17:49 MDT
+
+- Maintenance changes are pushed as `f346b2de76a51d514b7521b79d7150b915df5bd1`. The public
+  v0.3.2 runtime/release assets and exact source tag remain unchanged. No native C++ change was made today
+  after the already validated r9 release.
+- One hidden coordinator, PID **9824**, is alive in `waiting-for-game-and-existing-media-workers`, correctly
+  waiting on the active installed BlackOps3 client. No MC3 or GPU/media child is running. The new coordinator
+  will continue automatically when the game closes; do not start a second worker or take over the human game.
+  Logs: `.local/overnight-coordinator-game-pause-20261025-174736.{out,err}.log`.
+- Root retired only the exact unchanged owned QA request into
+  `.local/overnight_pipeline/live/retired-qa-stop-20261025-1747.txt`. User texture/video stop files and the
+  active texture-transaction marker were absent. Old unrelated private markers remain preserved.
+- Source-derived textures remain 7,081/7,081 complete. All **25/106** strict movie records still match exact
+  original-source, current-model and output hashes; **81 movies / 90,390 frames** remain. The coordinator's
+  inherited `progress` and `command` fields can still show the historical 24-movie checkpoint until its next
+  worker starts; use `video-progress.json` and the actual live child PID for current evidence.
+- Production video scheduling now retains the same child, encoder and decoded originals across game pauses.
+  Each NCNN invocation is capped at eight frames; the current invocation finishes, so there is no fixed
+  wall-clock latency guarantee. Explicit stop or owner loss exits2 and discards only the in-flight temporary
+  movie, preserving published results. MC3, Fortnite and BlackOps3 are recognized; launchers alone are not.
+  Texture batch scheduling is unchanged. See `notes/media_game_pause.md` and `notes/video_cooperative_pause.md`.
+- Root independently passed **49 coordinator + 38 complete video + 12 planner + 22 transaction tests**.
+  Independent review also passed, including a real Windows parent/child owner-handle probe. Root proof is
+  `.local/media-game-pause-validation-20261025-root.json`, SHA-256
+  `73c593fe015d7bc2af99ae65593b30305565cfa99aa2bbf390209f15b1d2a9b8`.
+  Coordinator SHA-256 is `5b0c38d697f8c263488b4c9d9cd979658a038015f4e22df476680509f1dc3762`;
+  worker SHA-256 is `4693056a2615fe45a9ca008ffcae1862d565e3ecc8a1f4189be2d0838c16f4b8`.
+  Live GPU pause overhead remains unmeasured; the historical ~64 GPU-hour estimate predates smaller batches.
+- Native QA is closed and has no active UI owner. Human activity prevented a new launch. The preserved
+  San Diego baseline is genuine raw JPEG despite its `.png` filename, with visible loading-wipe overlays.
+  `baseline-evidence.json` records its actual format/hash and contextual limitations. A comparable candidate
+  capture and accepted review are still missing. Private S copies hold the staged candidate; canonical S
+  images, the canonical ledger and real transaction marker remain unchanged/absent. Do not adopt CPU-only
+  comparisons as native acceptance.
+- The current readiness helper also refuses BlackOps3, SHA-256
+  `43163eb2e5476ad68da4008506faea77b6803be099c4bc8844731e5c8c168c48`. The frozen r1 proposal keeps its old
+  helper pin and is stale under current checks; build a **new** accepted r2 after actual native proof. Private
+  launch/switch helpers also now refuse the installed client. No actual canonical installation occurred.
+- The native avoidance-leap capture shows articulated arms/knees; its raw JPEG format/hash are recorded in
+  `notes/npc_source_weights.md`. Full-body walking/footplant, all-car contact and sparks validation remain open.
+  Private HDD6/settings/log/variant records have a new independent SHA-256-verified backup at
+  `G:/MC3_Backups/saves_2026-10-25_1743_post-closeup` (8 files, 249,936 bytes).
+- The hourly follow-up now includes BlackOps3 protection and the reviewed pause/proof rules. Continue one
+  coordinator-owned strict pass, then both final media audits and a newly verified full-project backup before
+  offline PBR generation. The small save backup is not that full-project gate. Runtime PBR remains unchanged.
+  Schedule later native QA only after safely coordinating media; never leave it blocking the queue unattended.
+
+## Earlier checkpoint — 2026-10-25 12:05 MDT
 
 - v0.3.2-dev.20261025 is now **published**, ID423384119, exact tag/source08bcab9687e55db8245e149d39fd92db78944dff.
   The9703711byte ZIP has SHA-256 `0a4fb2fa3fb2f22ff46c35e658ec31a85781038578eae2259f397e0982050ed7`.
