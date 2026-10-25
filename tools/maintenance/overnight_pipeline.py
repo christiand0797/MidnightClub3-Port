@@ -33,6 +33,7 @@ INTERACTIVE_GPU_GAMES = frozenset(("mc3.exe", "fortniteclient-win64-shipping.exe
 LIVE = ".local/overnight_pipeline/live"
 LIVE_NOTE = "docs/notes/overnight_pipeline.md"
 TEXTURES = "templates/game/out/native/textures"
+ACTIVE_TEXTURE_TRANSACTION = ".local/reviewed_texture_install/active.json"
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 TEXTURE_NAME = re.compile(r"[0-9A-F]{16}\.png\Z")
 
@@ -157,6 +158,7 @@ def media_signature(root):
     for relative in ("tools/texture_pack/upscale.py", "tools/texture_pack/audit.py", "tools/video/upscale_movies.py",
                      "tools/texture_pack/reviewed_fixes.py", "tools/texture_pack/cpu_x4plus.py",
                      "tools/texture_pack/loading_garage_join.py", "tools/maintenance/overnight_pipeline.py",
+                     "tools/texture_pack/install_reviewed.py", "tools/texture_pack/apply_reviewed.py",
                      "templates/game/out/native/textures/upscale_passes.json",
                      "templates/game/out/native/textures/upscale_state.json",
                      "templates/game/out/native/textures/source_index.json",
@@ -448,6 +450,11 @@ class Coordinator:
     def stop_reason(self, child_stop=None):
         if self.stop_file.exists():
             return "coordinator stop file exists"
+        # A crashed installer releases its OS lock. Its durable registration must still stop base
+        # regeneration, cached media/backup reuse and PBR until its exact transaction is recovered.
+        # Do not parse, clear or trust the marker: even malformed/foreign bytes remain a closed gate.
+        if os.path.lexists(self.root / ACTIVE_TEXTURE_TRANSACTION):
+            return "unfinished reviewed texture transaction; preserve and recover " + str(self.root / ACTIVE_TEXTURE_TRANSACTION)
         if child_stop and child_stop.exists():
             return f"child stop flag already exists: {child_stop}"
 
@@ -579,6 +586,7 @@ class Coordinator:
             os.replace(output, self.texture_report)
 
     def media_gate(self):
+        self.check_stop()
         signature = media_signature(self.root)
         if self.cached_media_verified(signature):
             self.checkpoint("using-unchanged-verified-media-gate")
@@ -662,6 +670,7 @@ class Coordinator:
             self.checkpoint("starting", root=str(self.root), texture_pass_id=self.pass_id,
                             stop_file=str(self.stop_file))
             try:
+                self.check_stop()
                 previous = self.state.get("pbr_complete", {})
                 old_marker = self.state.get("backup_marker")
                 old_pbr = self.root / "templates/game/out/native/textures/pbr/manifest.json"

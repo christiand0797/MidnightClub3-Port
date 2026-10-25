@@ -451,6 +451,35 @@ class CoordinatorTests(unittest.TestCase):
             launch.assert_not_called()
         self.assertEqual(json.loads(coordinator.state_path.read_text())["phase"], "failed")
 
+    def test_registered_texture_transaction_blocks_startup_media_and_pbr_without_mutation(self):
+        marker = self.source / pipeline.ACTIVE_TEXTURE_TRANSACTION
+        marker.parent.mkdir(parents=True)
+        for content in (b'{"status":"applying"}', b'{"status":"committed-before-marker-retirement"}',
+                        b'foreign registration', b'{truncated'):
+            marker.write_bytes(content)
+            coordinator = pipeline.Coordinator(self.source, self.backup)
+            with (patch.object(pipeline, "keep_awake", return_value=nullcontext()),
+                  patch.object(coordinator, "cached_media_verified") as cached,
+                  patch.object(coordinator, "media_gate") as media,
+                  patch.object(coordinator, "backup") as backup,
+                  patch.object(coordinator, "command") as launch):
+                self.assertEqual(coordinator.run(), 2)
+                cached.assert_not_called(); media.assert_not_called(); backup.assert_not_called(); launch.assert_not_called()
+            self.assertEqual(marker.read_bytes(), content)
+            self.assertEqual(coordinator.state["phase"], "paused")
+            self.assertIn("unfinished reviewed texture transaction", coordinator.state["reason"])
+            with self.assertRaises(pipeline.Paused): coordinator.media_gate()
+
+    def test_registered_transaction_prevents_child_launch_and_is_not_treated_as_a_game_pause(self):
+        marker = self.source / pipeline.ACTIVE_TEXTURE_TRANSACTION
+        marker.parent.mkdir(parents=True); marker.write_bytes(b'preserve exact registration')
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        with patch.object(pipeline.subprocess, "Popen") as process:
+            with self.assertRaisesRegex(pipeline.Paused, "unfinished reviewed texture transaction"):
+                coordinator.command("textures", ["fixture-python", "fixture-worker"])
+            process.assert_not_called()
+        self.assertEqual(marker.read_bytes(), b'preserve exact registration')
+
     def test_os_lock_excludes_a_second_owner(self):
         path = self.base / "coordinator.lock"
         with pipeline.exclusive_lock(path):
