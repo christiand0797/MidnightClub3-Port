@@ -60,7 +60,7 @@ def installation_workers():
     if os.name != "nt":
         raise RuntimeError("installation readiness requires the Windows process inventory")
     query = ("Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*python*' -or $_.Name -in "
-             "@('mc3.exe','FortniteClient-Win64-Shipping.exe','realesrgan-ncnn-vulkan.exe') } | "
+             "@('mc3.exe','FortniteClient-Win64-Shipping.exe','BlackOps3.exe','realesrgan-ncnn-vulkan.exe') } | "
              "Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress")
     result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", query],
                             capture_output=True, text=True, check=True)
@@ -69,7 +69,8 @@ def installation_workers():
     terms = ("overnight_pipeline.py", "upscale_movies.py", "tools/texture_pack/upscale.py",
              "loading_art_worker.py", "loading_garage_join.py", "cpu_x4plus.py")
     return [row for row in rows if row["ProcessId"] != os.getpid() and
-            (row["Name"].lower() in {"mc3.exe", "fortniteclient-win64-shipping.exe", "realesrgan-ncnn-vulkan.exe"}
+            (row["Name"].lower() in {"mc3.exe", "fortniteclient-win64-shipping.exe", "blackops3.exe",
+                                   "realesrgan-ncnn-vulkan.exe"}
              or any(term in (row.get("CommandLine") or "").lower().replace("\\", "/") for term in terms))]
 
 

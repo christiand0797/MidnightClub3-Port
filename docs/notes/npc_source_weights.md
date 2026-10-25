@@ -70,6 +70,15 @@ Private proof files are under `.local/npc-skinning-source-20261025/`:
 
 ## Close-up native check
 
+The later private native session captured a nearby pedestrian's avoidance leap outside the San Diego garage.
+The observed pose has a bent elbow, separated arms and differently bent knees/legs; it is useful evidence
+that this actor can articulate. The raw Sky capture is
+`.local/npc-native-closeup-20261025/evade-observed.png`, SHA-256
+`541d843f56e5868b75ada8e7819db4869a472753f0c36f2a3d6de6cc9520aaa9`, 1536×864, 174,036 bytes.
+Its payload is JPEG despite the filename. This single leap does not certify a walking cycle, foot contact,
+every pedestrian model or animation timing. A nearer idle capture cropped the actor's head/feet and was not
+accepted as full-body gait evidence. The walking check below remains open.
+
 1. After the scheduling owner confirms the cooperative GPU stop and no human session needs the GPU, use the
    isolated save/settings instance. Keep normal 60 fps, close F1/F2/pause overlays, and preserve physical input.
 2. In free roam, use the confirmed W/S and A/D driving controls to park near a sidewalk without hitting the

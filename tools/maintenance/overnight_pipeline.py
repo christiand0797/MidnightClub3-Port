@@ -4,8 +4,11 @@
 Inventory only (default): py -3.12 tools/maintenance/overnight_pipeline.py --dry-run
 Execute authorized work: py -3.12 tools/maintenance/overnight_pipeline.py --run
 
-No process is killed. GPU children yield at a batch/movie boundary if the game starts, then resume when idle.
-Create .local/stop-overnight-pipeline to stop children at a batch/movie boundary.
+MC3, Fortnite and Black Ops III defer GPU launch. Textures yield at batch boundaries; video pauses the same
+child between NCNN invocations of at most eight frames, then resumes after the game closes. The current
+invocation finishes; there is no wall-clock pause guarantee. No game process or physical input is stopped.
+Create .local/stop-overnight-pipeline to cancel. Video discards only its in-flight temporary movie; completed
+published movies stay intact. User cancellation wins over game resume and never clears user stop flags.
 PBR never runs unless both media audits and an all-file SHA-256 backup verify.
 """
 import argparse
@@ -29,7 +32,7 @@ EXPECTED_MOVIES = 106
 MEDIA_PROVENANCE_POLICY = "original-bink-and-model-weights-v1"
 # A human session in another installed game gets the same cooperative GPU scheduling as MC3.
 # Keep this explicit; launchers and unrelated desktop apps are not reasons to stop CPU work.
-INTERACTIVE_GPU_GAMES = frozenset(("mc3.exe", "fortniteclient-win64-shipping.exe"))
+INTERACTIVE_GPU_GAMES = frozenset(("mc3.exe", "fortniteclient-win64-shipping.exe", "blackops3.exe"))
 LIVE = ".local/overnight_pipeline/live"
 LIVE_NOTE = "docs/notes/overnight_pipeline.md"
 TEXTURES = "templates/game/out/native/textures"
@@ -368,7 +371,7 @@ def active_workers():
         raise RuntimeError("live orchestration requires Windows process inventory")
     query = ("Get-CimInstance Win32_Process | Where-Object { $_.Name -in "
              "@('python.exe','pythonw.exe','realesrgan-ncnn-vulkan.exe','mc3.exe',"
-             "'FortniteClient-Win64-Shipping.exe') } | "
+             "'FortniteClient-Win64-Shipping.exe','BlackOps3.exe') } | "
              "Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress")
     result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", query],
                             capture_output=True, text=True, check=True)
@@ -386,11 +389,22 @@ class Paused(Exception):
 
 class OwnedChildStop:
     """A private cooperative request; shared user stop flags are never written or removed."""
-    def __init__(self, directory):
+    def __init__(self, directory, *, purpose="stop"):
+        if purpose not in ("stop", "pause"):
+            raise ValueError("unknown private child marker purpose")
+        self.purpose = purpose
         token = uuid.uuid4().hex
-        self.path = directory / ("child-stop-" + token)
+        self.path = directory / ("child-" + purpose + "-" + token)
         self.content = "overnight-pipeline:" + token + "\n"
         self.created = False
+
+    def unchanged(self):
+        try:
+            return (not self.path.is_symlink()
+                    and not (hasattr(self.path, "is_junction") and self.path.is_junction())
+                    and self.path.is_file() and self.path.read_text(encoding="utf-8") == self.content)
+        except (OSError, UnicodeError):
+            return False
 
     def request(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -399,14 +413,15 @@ class OwnedChildStop:
                 stream.write(self.content)
             self.created = True
         except FileExistsError:
-            if not self.created or self.path.read_text(encoding="utf-8") != self.content:
-                raise Paused(f"private child stop marker was replaced; preserved: {self.path}")
+            if not self.created or not self.unchanged():
+                raise Paused(f"private child {self.purpose} marker was replaced; preserved: {self.path}")
 
     def clear(self):
-        if self.created and self.path.exists():
-            if self.path.read_text(encoding="utf-8") != self.content:
-                raise Paused(f"private child stop marker was replaced; preserved: {self.path}")
+        if self.created and os.path.lexists(self.path):
+            if not self.unchanged():
+                raise Paused(f"private child {self.purpose} marker was replaced; preserved: {self.path}")
             self.path.unlink()
+            self.created = False
 
 
 class Coordinator:
@@ -436,11 +451,14 @@ class Coordinator:
                 "all106 x4plus movies; both complete audits; full project copy and all-file SHA-256 verification; "
                 "verified backup gate; offline starter PBR regeneration. Runtime PBR is unchanged.\n\n"
                 f"Current details:\n\n```json\n{json.dumps(self.state, indent=2)}\n```\n\n"
-                "GPU children also pause at a batch/movie boundary when MC3 or the installed Fortnite client starts, wait for it to close, and resume "
-                "the same phase automatically. No game process or input is stopped.\n\n"
+                "MC3, Fortnite and Black Ops III defer GPU launch. Texture workers yield at batch boundaries. "
+                "Video keeps the same child and in-flight movie paused between NCNN invocations of at most eight frames, "
+                "then resumes after the game closes. The current invocation finishes; there is no wall-clock pause guarantee. "
+                "No game process or physical input is stopped.\n\n"
                 "Stop gracefully: create `.local/stop-overnight-pipeline`, or the texture/video user stop flag. "
-                "The current GPU batch/movie completes first. User cancellation takes priority over game resume, "
-                "even if its flag is removed while the child finishes. Remove user stop flags yourself and rerun "
+                "The current texture batch or video inference invocation finishes. Video then discards only its in-flight "
+                "temporary movie and retains every published movie. User cancellation takes priority over game resume, "
+                "even if its flag is removed while the child drains. Remove user stop flags yourself and rerun "
                 "the same command to resume. Only this coordinator's unique private child markers are cleared.\n\n"
                 "Backup exclusions are only the live coordinator directory, this generated checkpoint document and "
                 "its publication temporaries, plus explicitly listed file/directory links excluded without dereferencing. "
@@ -473,8 +491,11 @@ class Coordinator:
             self.checkpoint("waiting-for-game-and-existing-media-workers", waiting=workers)
             time.sleep(30)
 
-    def command(self, phase, args, success=(0,), child_stop=None):
+    def command(self, phase, args, success=(0,), child_stop=None, pause_for_games=False):
         self.check_stop(child_stop)
+        if pause_for_games and (phase != "videos" or not child_stop
+                                or "--pause-file" in args or "--pause-owner-pid" in args):
+            raise ValueError("game-pause protocol requires a video child with its own private pause argument")
         if child_stop:
             if args.count("--stop-file") != 1:
                 raise ValueError("cooperative child requires one explicit --stop-file")
@@ -483,12 +504,15 @@ class Coordinator:
                 raise ValueError("cooperative child stop argument differs from its user cancellation flag")
         while True:
             request = OwnedChildStop(self.live) if child_stop else None
+            pause = OwnedChildStop(self.live, purpose="pause") if pause_for_games else None
             command = list(args)
             if request:
                 self.wait_idle(child_stop)
                 command[stop_index] = str(request.path)
-            code, game_pause = self.command_once(phase, command, child_stop, request)
-            if code == 2 and request and game_pause:
+            if pause:
+                command += ["--pause-file", str(pause.path), "--pause-owner-pid", str(os.getpid())]
+            code, game_pause = self.command_once(phase, command, child_stop, request, pause)
+            if code == 2 and request and game_pause and pause is None:
                 self.checkpoint(phase + "-waiting-for-game", resume_phase=phase)
                 self.wait_idle(child_stop)
                 continue  # Both children already resume from their durable completed-batch/movie records.
@@ -498,18 +522,32 @@ class Coordinator:
                 raise RuntimeError(f"{phase} exited {code}; see {self.live / (phase + '.log')}")
             return
 
-    def command_once(self, phase, args, child_stop, request):
+    def command_once(self, phase, args, child_stop, request, pause=None):
         self.checkpoint(phase, command=args, child_stop=str(request.path) if request else None,
+                        child_pause=str(pause.path) if pause else None,
                         user_child_stop=str(child_stop) if child_stop else None, resume_phase=None)
         self.live.mkdir(parents=True, exist_ok=True)
         cancelled, game_pause = None, False
+        def cancel(reason):
+            nonlocal cancelled
+            cancelled = cancelled or reason
+            if request:
+                try:
+                    request.request()
+                except Paused:
+                    # A foreign existing stop still makes the worker stop; never overwrite it.
+                    pass
         try:
             with (self.live / (phase + ".log")).open("a", encoding="utf-8") as log:
                 log.write(f"\n{utc()} {subprocess.list2cmdline(args)}\n")
                 log.flush()
                 with subprocess.Popen(args, cwd=self.root, stdout=log, stderr=subprocess.STDOUT,
                                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)) as process:
-                    self.checkpoint(phase, child_pid=process.pid)
+                    try:
+                        self.checkpoint(phase, child_pid=process.pid)
+                    except (Exception, KeyboardInterrupt) as error:
+                        cancel("coordinator interrupted" if isinstance(error, KeyboardInterrupt)
+                               else "coordinator monitoring failed: " + str(error))
                     heartbeat = time.monotonic()
                     while True:
                         try:
@@ -520,6 +558,21 @@ class Coordinator:
                             cancelled = cancelled or self.stop_reason(child_stop)
                             if cancelled and request:
                                 request.request()
+                            elif pause:
+                                if os.path.lexists(pause.path) and (not pause.created or not pause.unchanged()):
+                                    raise Paused(f"private child pause marker was replaced; preserved: {pause.path}")
+                                # The child is deliberately still alive. Waiting on active_workers() here
+                                # would wait on that same child forever; inspect interactive games only.
+                                games = [row for row in active_workers() if row["Name"].lower() in INTERACTIVE_GPU_GAMES]
+                                if games:
+                                    pause.request()
+                                    if not game_pause:
+                                        self.checkpoint(phase + "-pause-requested-for-game", waiting=games)
+                                    game_pause = True
+                                elif game_pause:
+                                    pause.clear()  # Only the exact marker this owner created may be removed.
+                                    game_pause = False
+                                    self.checkpoint(phase + "-resumed-after-game", waiting=[])
                             elif request and not game_pause:
                                 games = [row for row in active_workers() if row["Name"].lower() in INTERACTIVE_GPU_GAMES]
                                 if games:
@@ -537,23 +590,35 @@ class Coordinator:
                                     if progress_path.exists():
                                         progress = json.loads(progress_path.read_text(encoding="utf-8"))
                                         details["named_pass_completed"] = len(progress.get("passes", {}).get(self.pass_id, {}).get("completed", {}))
-                                current = phase + ("-stopping" if cancelled else "-pausing-for-game" if game_pause else "")
+                                current = phase + ("-stopping" if cancelled else
+                                                   "-pause-requested-for-game" if game_pause and pause else
+                                                   "-pausing-for-game" if game_pause else "")
                                 self.checkpoint(current, progress=details)
                                 heartbeat = time.monotonic()
                             time.sleep(5)
-                        except KeyboardInterrupt:
-                            cancelled = cancelled or "coordinator interrupted"
-                            if request:
-                                request.request()
+                        except (Exception, KeyboardInterrupt) as error:
+                            cancel("coordinator interrupted" if isinstance(error, KeyboardInterrupt)
+                                   else "coordinator monitoring failed: " + str(error))
+                            try:
+                                time.sleep(5)
+                            except (KeyboardInterrupt, OSError):
+                                pass
                     code = process.returncode
-            self.checkpoint(phase + "-exited", child_exit_code=code, child_pid=None, child_stop=None)
+            self.checkpoint(phase + "-exited", child_exit_code=code, child_pid=None, child_stop=None, child_pause=None)
             if cancelled:
                 raise Paused(cancelled)
             self.check_stop(child_stop)
             return code, game_pause
         finally:
-            if request:
-                request.clear()
+            errors = []
+            for marker in (pause, request):
+                if marker:
+                    try:
+                        marker.clear()
+                    except Paused as error:
+                        errors.append(str(error))
+            if errors:
+                raise Paused("; ".join(errors))
 
     def cached_media_verified(self, signature):
         """Older model-only gates are cache misses, never permanent workflow failures."""
@@ -604,7 +669,7 @@ class Coordinator:
         self.command("videos", [self.python, "tools/video/upscale_movies.py", "--model", "realesrgan-x4plus",
                                 "--require-original-provenance",
                                 "--stop-file", str(self.video_stop), "--report", str(self.work / "video-progress.json")],
-                     child_stop=self.video_stop)
+                     child_stop=self.video_stop, pause_for_games=True)
         self.wait_idle()
         before = media_signature(self.root)
         self.audit_textures()

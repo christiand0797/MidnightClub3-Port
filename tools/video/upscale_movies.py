@@ -14,9 +14,14 @@ the complete picture stream, and their historical model attribution remains
 explicitly unverified. Create .local/stop-video-upscale to stop after a movie.
 Use --require-original-provenance for an all-original pass: historical markers
 remain usable by default but cannot satisfy that stricter resume/audit gate.
+Optional --pause-file keeps the same encoder/decoded frames across a game pause
+and bounds new inference calls to eight frames. With this option, --stop-file
+discards only the in-flight movie and exits 2; its next run starts that movie over.
 """
 import argparse
 import contextlib
+import ctypes
+from ctypes import wintypes
 import hashlib
 import json
 import os
@@ -39,6 +44,8 @@ QUARANTINE = ROOT / ".local" / "video-upscale-candidates"
 ESRGAN_DIR = ROOT / "upscale_tools" / "realesrgan-20220424"
 SCALE = 3
 CHUNK = 400
+PAUSE_CHUNK = 8
+PAUSE_POLL_SECONDS = 1.0
 PIPELINE_VERSION = 1
 MODELS = {  # folder, inference scale, post-resize unsharp amount
     "realesr-animevideov3": (ESRGAN_DIR / "models", 3, 0.5),
@@ -49,6 +56,79 @@ MODELS = {  # folder, inference scale, post-resize unsharp amount
     "remacri-4x": (ROOT / "upscale_tools" / "models_extra", 4, 0.0),
 }
 PRIORITY = ("rockstar", "sdlogo", "mc3intro", "reward/", "story/", "tokyotut/", "tutorial/")
+
+
+class MovieStopped(RuntimeError):
+    """Cooperative cancellation/orphan exit; the movie remains pending, not failed."""
+
+
+class PauseOwner:
+    """Pin the startup parent handle against later PID reuse; equality does not exclude reuse before open."""
+    def __init__(self, pid):
+        self.handle = None
+        if os.name != "nt" or pid <= 0 or pid != os.getppid():
+            raise MovieStopped("pause owner must be this worker's live Windows parent")
+        self.api = ctypes.WinDLL("kernel32", use_last_error=True)
+        self.api.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        self.api.OpenProcess.restype = wintypes.HANDLE
+        self.api.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        self.api.WaitForSingleObject.restype = wintypes.DWORD
+        self.api.CloseHandle.argtypes = [wintypes.HANDLE]
+        self.api.CloseHandle.restype = wintypes.BOOL
+        self.handle = self.api.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE only; no mutation rights.
+        if not self.handle:
+            raise MovieStopped("pause owner is unavailable; inference will not start")
+        try:
+            if pid != os.getppid():
+                raise MovieStopped("pause parent identity changed during startup")
+            self.check()
+        except BaseException:
+            self.close()
+            raise
+
+    def check(self):
+        if not self.handle or self.api.WaitForSingleObject(self.handle, 0) != 0x102:  # WAIT_TIMEOUT=still live.
+            raise MovieStopped("pause owner exited or its liveness is uncertain; inference will not resume")
+
+    def close(self):
+        if self.handle:
+            self.api.CloseHandle(self.handle)
+            self.handle = None
+
+    def __enter__(self): return self
+    def __exit__(self, *_args): self.close()
+
+
+def cooperate(pause_file=None, stop_file=None, owner=None):
+    """Presence requests a pause. Never clear markers; explicit stop wins over pause/owner checks."""
+    announced = False
+    while True:
+        if stop_file is not None and os.path.lexists(stop_file):
+            raise MovieStopped(f"stop requested by {stop_file}; in-flight movie will restart on resume")
+        if owner is not None:
+            owner.check()
+        if pause_file is None or not os.path.lexists(pause_file):
+            if announced:
+                print("    cooperative pause ended; resuming the same movie/encoder", flush=True)
+            return announced
+        if not announced:
+            print(f"    cooperative pause requested by {pause_file}; no new inference until removed", flush=True)
+            announced = True
+        time.sleep(PAUSE_POLL_SECONDS)
+
+
+def check_inference_identity(model, recipe):
+    if model_identity(model) != recipe.get("model"):
+        raise ValueError("model weights/executable changed during the movie; pinned recipe cannot be published")
+
+
+def cooperate_checked(pause_file, stop_file, owner, check):
+    while True:
+        cooperate(pause_file, stop_file, owner)
+        check()
+        # If a pause began while hashing, revalidate after that wait rather than trust a pre-pause identity.
+        if not cooperate(pause_file, stop_file, owner):
+            return
 
 
 def sha256(path):
@@ -184,9 +264,13 @@ def atomic_write(path, data):
         temp.unlink(missing_ok=True)
 
 
-def publish(part, dst, attempts=600, delay=1):
+def publish(part, dst, attempts=600, delay=1, *, pause_file=None, stop_file=None, owner=None, before_publish=None):
     # Only called after validation. The game can have the previous picture open.
     for attempt in range(attempts):
+        if before_publish is not None:
+            cooperate_checked(pause_file, stop_file, owner, before_publish)
+        else:
+            cooperate(pause_file, stop_file, owner)
         try:
             os.replace(part, dst)
             return
@@ -387,7 +471,9 @@ def quarantine_encoded_movie(part, src, dst, recipe, error):
     print(f"  completed candidate retained for recovery: {candidate}", flush=True)
 
 
-def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUNK):
+def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUNK, *, pause_file=None, stop_file=None,
+                  pause_owner=None):
+    cooperate(pause_file, stop_file, pause_owner)
     model_dir, model_scale, sharpen = MODELS[model]
     source = source or probe(ff, src)
     recipe = recipe or recipe_for(src, source, model_identity(model))
@@ -395,6 +481,8 @@ def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUN
     W, H = w * SCALE, h * SCALE
     if W % 2 or H % 2 or chunk_size < 1:
         raise ValueError("H.264 yuv420p needs even dimensions; chunk size must be positive")
+    if pause_file is not None:
+        chunk_size = min(chunk_size, PAUSE_CHUNK)
     dst.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix=f".{dst.stem}.", suffix=".part.mp4", dir=dst.parent)
     os.close(fd)
@@ -406,11 +494,13 @@ def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUN
             tmp = Path(tmp_name)
             lo = tmp / "lo"
             lo.mkdir()
+            cooperate(pause_file, stop_file, pause_owner)
             subprocess.run([binary(ff, "ffmpeg"), "-v", "error", "-xerror", "-i", str(src),
                             "-map", "0:v:0", "-an", "-fps_mode", "passthrough", str(lo / "f%06d.png")], check=True)
             frames = sorted(lo.glob("*.png"))
             if not frames or (source["frames"] is not None and len(frames) != source["frames"]):
                 raise ValueError(f"Bink decode returned {len(frames)} frames; expected {source['frames']}")
+            cooperate(pause_file, stop_file, pause_owner)
             enc = subprocess.Popen([binary(ff, "ffmpeg"), "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
                                     "-s", f"{W}x{H}", "-r", f"{fps.numerator}/{fps.denominator}", "-i", "-",
                                     "-an", "-vf", f"unsharp=5:5:{sharpen}", "-c:v", "libx264", "-preset", "slow",
@@ -419,6 +509,7 @@ def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUN
                                     "-video_track_timescale", str(fps.numerator), "-movflags", "+faststart", str(part)],
                                    stdin=subprocess.PIPE)
             for i in range(0, len(frames), chunk_size):
+                cooperate(pause_file, stop_file, pause_owner)
                 cin, cout = tmp / "cin", tmp / "cout"
                 for folder in (cin, cout):
                     if folder.exists():
@@ -427,6 +518,9 @@ def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUN
                 chunk = frames[i:i + chunk_size]
                 for frame in chunk:
                     frame.rename(cin / frame.name)
+                cooperate(pause_file, stop_file, pause_owner)
+                if pause_file is not None:
+                    cooperate_checked(pause_file, stop_file, pause_owner, lambda: check_inference_identity(model, recipe))
                 result = subprocess.run([str(ESRGAN_DIR / "realesrgan-ncnn-vulkan.exe"), "-i", str(cin), "-o", str(cout),
                                          "-n", model, "-s", str(model_scale), "-m", str(model_dir), "-f", "png", "-j", "1:2:2"],
                                         capture_output=True)
@@ -435,6 +529,7 @@ def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUN
                 if {p.name for p in cout.glob("*.png")} != {p.name for p in chunk}:
                     raise ValueError("upscaler returned a missing or unexpected frame")
                 for frame in chunk:
+                    cooperate(pause_file, stop_file, pause_owner)
                     with Image.open(cout / frame.name) as image:
                         if image.size != (w * model_scale, h * model_scale):
                             raise ValueError(f"incorrect model output size: {frame.name}, {image.size}")
@@ -443,11 +538,16 @@ def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUN
                             image = image.resize((W, H), Image.Resampling.LANCZOS)
                         enc.stdin.write(image.tobytes())
                 print(f"    {min(i + chunk_size, len(frames))}/{len(frames)}", flush=True)
+            cooperate(pause_file, stop_file, pause_owner)
             enc.stdin.close()
             if enc.wait():
                 raise RuntimeError(f"encoding {dst} failed")
             encoded = True
+        cooperate(pause_file, stop_file, pause_owner)
         info = validate_movie(ff, part, source, len(frames))
+        cooperate(pause_file, stop_file, pause_owner)
+        if pause_file is not None:
+            check_inference_identity(model, recipe)
         if sha256(src) != recipe["source_sha256"]:
             raise ValueError("original movie changed while the upscale was running")
         # Windows FlushFileBuffers requires a handle opened for writing.
@@ -456,11 +556,24 @@ def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUN
         record = {"recipe": recipe, "output": info, "output_sha256": sha256(part),
                   "origin": "original-bink", "historical_source_and_weights_verified": True,
                   "validated_at": datetime.now(timezone.utc).isoformat()}
-        publish(part, dst)
+        cooperate(pause_file, stop_file, pause_owner)
+        if pause_file is not None:
+            def before_publish():
+                check_inference_identity(model, recipe)
+                if sha256(src) != recipe["source_sha256"]:
+                    raise ValueError("original movie changed before publication")
+            publish(part, dst, pause_file=pause_file, stop_file=stop_file, owner=pause_owner, before_publish=before_publish)
+        else:
+            publish(part, dst)
         # JSON is authoritative for resume. Text markers remain for old tools.
         atomic_write(dst.with_suffix(".upscale.json"), json.dumps(record, indent=2) + "\n")
         atomic_write(dst.with_suffix(".model.txt"), model + "\n")
         return len(frames)
+    except MovieStopped:
+        # Close/stop our encoder in finally before unlinking its output (required by Windows file sharing).
+        # A fully encoded but unpublished file is also discarded on explicit cooperative cancellation.
+        encoded = False
+        raise
     except Exception as error:
         if encoded and part.exists():
             try:
@@ -588,6 +701,8 @@ def run_report(args, rows, mode):
     covers_all = len(rows) == len(movie_paths())
     all_verified = bool(rows) and verified == len(rows)
     report = {"mode": mode, "requested_model": args.model, "movies": len(rows),
+              "cooperative_pause_enabled": getattr(args, "pause_file", None) is not None,
+              "inference_batch_limit": PAUSE_CHUNK if getattr(args, "pause_file", None) is not None else CHUNK,
               "require_original_provenance": strict,
               "covers_all_sources": covers_all, "verified": verified,
               "all_requested_model_validated": all_verified,
@@ -610,10 +725,14 @@ def main():
                     help="regenerate/withhold legacy pictures lacking verified original-Bink and current model-weight provenance")
     ap.add_argument("--max-movies", type=int, default=0, help="exit after this many newly completed movies (0 = all)")
     ap.add_argument("--stop-file", type=Path, default=ROOT / ".local" / "stop-video-upscale")
+    ap.add_argument("--pause-file", type=Path, help="optional cooperative game-pause presence marker; inference batches are bounded to8 frames")
+    ap.add_argument("--pause-owner-pid", type=int, help="optional live parent PID; pin a read-only Windows handle and stop if this owner exits")
     ap.add_argument("--report", type=Path, help="atomic machine-readable coverage/progress JSON (also with --status/--audit-only)")
     args = ap.parse_args()
     if args.max_movies < 0:
         ap.error("--max-movies cannot be negative")
+    if args.pause_owner_pid is not None and (args.pause_file is None or args.pause_owner_pid <= 0):
+        ap.error("--pause-owner-pid requires --pause-file and a positive parent PID")
     ff = ffmpeg_bin()
     movies = movie_paths(args.only)
     if not movies:
@@ -662,7 +781,16 @@ def main():
         report = run_report(args, rows, "audit")
         return 1 if failures else (0 if report["all_requested_model_validated"] else 2)
     identity = model_identity(args.model)
-    with worker_lock(OUT):
+    with worker_lock(OUT), contextlib.ExitStack() as resources:
+        owner = None
+        if args.pause_owner_pid is not None:
+            try:
+                owner = resources.enter_context(PauseOwner(args.pause_owner_pid))
+            except MovieStopped as error:
+                rows[0].update(status="pending", cooperative_stop=True, stop_reason=str(error), restart_inflight_on_resume=True)
+                run_report(args, rows, "upscale")
+                print(f"Stopped before inference: {error}", flush=True)
+                return 2
         for src, row in zip(movies, rows):
             if args.stop_file.exists():
                 print(f"Stopped at movie boundary: remove {args.stop_file} to resume", flush=True)
@@ -670,6 +798,8 @@ def main():
             rel = src.relative_to(ASSETS).as_posix().lower()
             dst = (OUT / rel).with_suffix(".mp4")
             try:
+                if args.pause_file is not None:
+                    cooperate(args.pause_file, args.stop_file, owner)
                 source = probe(ff, src)
                 recipe = recipe_for(src, source, identity)
                 if not args.force and current_output(ff, src, dst, source, recipe,
@@ -682,7 +812,8 @@ def main():
                     continue
                 print(f"{rel} -> {dst.relative_to(OUT)}", flush=True)
                 start = time.monotonic()
-                n = upscale_movie(ff, src, dst, args.model, source, recipe)
+                controls = {"pause_file": args.pause_file, "stop_file": args.stop_file, "pause_owner": owner} if args.pause_file is not None else {}
+                n = upscale_movie(ff, src, dst, args.model, source, recipe, **controls)
                 completed += 1
                 row.update(status="verified", output_validated=True, recorded_model=args.model,
                            historical_source_and_weights_verified=True, origin="original-bink")
@@ -690,6 +821,12 @@ def main():
                 print(f"  done, {n} frames, {time.monotonic() - start:.1f} s", flush=True)
                 if args.max_movies and completed >= args.max_movies:
                     break
+            except MovieStopped as error:
+                row.update(status="pending", output_validated=False, cooperative_stop=True,
+                           stop_reason=str(error), restart_inflight_on_resume=True)
+                run_report(args, rows, "upscale")
+                print(f"  stopped {rel}: {error}", flush=True)
+                break
             except Exception as e:
                 failures += 1
                 row.update(status="failed", error=str(e))

@@ -1,5 +1,6 @@
 import json
 import os
+from types import SimpleNamespace
 from pathlib import Path
 import unittest
 from unittest import mock
@@ -9,6 +10,21 @@ from PIL import Image
 import install_reviewed as planner
 import reviewed_fixes as fixes
 import test_reviewed_fixes as fixture_module
+
+
+class InstallationWorkersTests(unittest.TestCase):
+    def test_installed_games_are_selected_without_blocking_steam_or_unrelated_python(self):
+        rows = [
+            {"ProcessId": os.getpid()+100, "Name": "BlackOps3.exe", "CommandLine": None},
+            {"ProcessId": os.getpid()+101, "Name": "mc3.exe", "CommandLine": None},
+            {"ProcessId": os.getpid()+102, "Name": "steam.exe", "CommandLine": None},
+            {"ProcessId": os.getpid()+103, "Name": "python.exe", "CommandLine": "unrelated.py"},
+            {"ProcessId": os.getpid(), "Name": "python.exe", "CommandLine": "install_reviewed.py"},
+        ]
+        with mock.patch.object(planner.os, "name", "nt"), mock.patch.object(
+                planner.subprocess, "run", return_value=SimpleNamespace(stdout=json.dumps(rows))) as run:
+            self.assertEqual(planner.installation_workers(), rows[:2])
+        self.assertIn("'BlackOps3.exe'", run.call_args.args[0][-1])
 
 
 class InstallPlanTests(unittest.TestCase):

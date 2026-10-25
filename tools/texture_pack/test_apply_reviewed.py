@@ -188,9 +188,11 @@ class TransactionTests(unittest.TestCase):
             self.apply(path)
         self.assertFalse(list((self.root/".local").glob("transaction-*/journal.json")))
         path, _plan = self.proposal()
-        with mock.patch.object(transaction.planner, "installation_workers", return_value=[{"Name": "mc3.exe", "ProcessId": 77}]):
-            with self.assertRaisesRegex(RuntimeError, "workers must close"):
-                self.apply(path)
+        for name in ("mc3.exe", "FortniteClient-Win64-Shipping.exe", "BlackOps3.exe"):
+            with self.subTest(game=name), mock.patch.object(
+                    transaction.planner, "installation_workers", return_value=[{"Name": name, "ProcessId": 77}]):
+                with self.assertRaisesRegex(RuntimeError, "workers must close"):
+                    self.apply(path)
         self.assertFalse(list((self.root/".local").glob("transaction-*/journal.json")))
         self.assert_old()
 

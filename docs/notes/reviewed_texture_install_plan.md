@@ -30,6 +30,14 @@ commit is `08bcab9687e55db8245e149d39fd92db78944dff`; the new planner is identif
 
 ## Native evidence is pending
 
+The current readiness helper also recognizes the installed `BlackOps3.exe` client, so planning/application
+must wait for that game as well as MC3, Fortnite and media workers. The helper SHA-256 is now
+`43163eb2e5476ad68da4008506faea77b6803be099c4bc8844731e5c8c168c48`.
+The frozen r1 proposal remains a historical pending snapshot under its original helper hash; current checks
+reject that stale helper pin. Build a new r2 with the current helper after actual accepted native evidence.
+The 12 planner and 22 transaction tests pass, including actual inventory selection and application refusal
+for the newly observed client. No canonical image, ledger or real transaction marker was changed.
+
 The parent observed a cleaner continuous San Diego face and hand in prior private native QA, but those displayed
 UI captures were not persisted. The r1 review truthfully remains `pending`; it does not fabricate before/after
 capture paths or accepted evidence. Fresh native evidence must be handed off before a **new r2 proposal** is
@@ -89,3 +97,23 @@ replacement bytes. They use temporary fixtures and run no inference:
 ```powershell
 python3.12.exe -m unittest discover -s tools/texture_pack -p test_install_reviewed.py -v
 ```
+
+## Pending native evidence checkpoint — 2026-10-25
+
+The actual baseline file `.local/loading-native-ab-20261025/s-before.png` shows the San Diego loading portrait
+at 1536×864. Its original SHA-256 is `21370866bebdb37337e1064fa91e0bd6b369212c607c449205db5da5916d82f2`.
+Despite the filename, its payload is **JPEG/JFIF**, with lossy capture encoding; it is preserved byte-for-byte.
+The planner accepts readable images and does not require a PNG payload, so no unnecessary transcode was made.
+
+The separate `.local/loading-native-ab-20261025/baseline-evidence.json`, SHA-256
+`60eaf1fd79f8ea1a010f8c9c34d4c91dc79eb4ae248eeb0e30c59bd06fe9fbc4`, records the image/decoder/file hashes,
+preflight hash and 18:02:52 UTC context, exact variant-receipt line hashes, and the later 23:26:02 UTC candidate
+switch. The preflight's original private pair, r9 executable, settings, window size and the image's filesystem
+18:13:04 UTC timestamp support baseline context. Neither a mutable timestamp nor that receipt log proves a
+per-frame texture binding; no embedded runtime metadata or detail recovery is claimed.
+
+The read-only graph check still passes for r1, both staged archives have one link, and the canonical pair still
+matches its old anchors. An after capture and an explicit accepted paired native review remain absent, so r1
+stays pending and no r2 or canonical installation is justified yet. Root preserved the active human session and
+deferred a new native launch. Existing images, plans, canonical files and stop markers were not changed by this
+evidence audit.

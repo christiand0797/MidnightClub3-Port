@@ -73,3 +73,20 @@ overpainting and coherent original shapes, without an obvious new tile grid at t
 eye shadows, heavy brows and compressed small details remain; no recovered-detail or native-layout claim follows.
 The complete candidate/hash/alpha chain is in [loading artwork](loading_art_audit.md). All candidates remain
 isolated until native source/HD/candidate A/B and strict correction provenance are complete.
+
+## San Diego checkpoint — 2026-10-25
+
+The genuine native baseline is `.local/loading-native-ab-20261025/s-before.png`, 1536×864,
+110,336 bytes, SHA-256 `21370866bebdb37337e1064fa91e0bd6b369212c607c449205db5da5916d82f2`.
+It preserves the raw returned screenshot bytes: **the encoding is JPEG despite the `.png` filename**.
+Diagonal loading-wipe overlays remain visible across the portrait. A candidate `s-after.png` has not been
+captured; an accepted native comparison still needs a candidate capture with comparable wipe phase and
+settings. This baseline alone does not establish candidate acceptance.
+
+A fresh CPU-only visual comparison of the joined original Lanczos, active HD and staged x4plus candidate
+shows cleaner face/hand continuity and less fuzzy texture in the candidate. No obvious regular inference
+grid was visible at the reviewed scale. The original already contains solid dark eye shadows and heavy brows;
+the candidate hardens some of their borders. Mottled finger/beard detail and unresolved tattoo/sign strokes
+remain source/model limitations, not authenticated recovered detail. These CPU composites are not native
+after images. Both canonical San Diego PNGs still matched their base hashes at the read-only check; this
+checkpoint records no adoption or canonical mutation.
