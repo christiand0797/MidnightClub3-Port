@@ -1,4 +1,5 @@
 import copy
+import importlib.util
 import json
 from pathlib import Path
 import shutil
@@ -129,6 +130,15 @@ class ReviewedFixTests(unittest.TestCase):
         self.assertEqual(report["reviewed_fixes"][self.name]["current_backend"],"pytorch-cpu-x4plus-v1")
         self.assertEqual((self.textures/"upscale_passes.json").read_bytes(),before_pass)
         self.assertEqual((self.textures/"replace"/self.name).read_bytes(),before_png)
+
+    def test_actual_verified_chain_satisfies_coordinator_texture_gate(self):
+        path=Path(__file__).resolve().parents[1]/"maintenance/overnight_pipeline.py"
+        spec=importlib.util.spec_from_file_location("reviewed_pipeline_gate_fixture",path)
+        pipeline=importlib.util.module_from_spec(spec);spec.loader.exec_module(pipeline)
+        report=self.audit()
+        pipeline.validate_texture_report(report,self.pass_id)
+        report["base_audit"]["issues"]["orphan_replacements"].append("UNKNOWN.png")
+        with self.assertRaises(RuntimeError):pipeline.validate_texture_report(report,self.pass_id)
 
     def test_no_ledger_exact_original_audit_parity(self):
         (self.textures/"reviewed_fixes.json").unlink()

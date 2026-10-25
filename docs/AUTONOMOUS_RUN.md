@@ -10,8 +10,8 @@ and a verified full backup. Existing PBR experiments are inherited; the renderer
 The active reports concern tire bead/rim gaps, inward-only width growth, NPC animation, garage navigation,
 loading portraits and lowered stock ride steps6–8. Preserve current user work and original saves.
 
-- Public source is pushed through `61e07c5`; the next scoped update contains the native-tested raw push-command
-  boundary correction and evidence below. Width centering, bead deformation, lowered-step visual tuck,
+- Public source is pushed through `cd8a43c`, including the native-tested raw push-command boundary correction
+  and evidence below. Width centering, bead deformation, lowered-step visual tuck,
   navigation cadence and original constant-shadow/cursor parity are implemented. All28 CTests pass. The tire
   CPU checks include89,760 original vertex cases,2,288 original resource draws,704 stock negative controls,
   1,144 wrong-brand guards and188 vehicle tunes/20,304 render queries. Runtime PBR is unchanged.
@@ -44,9 +44,12 @@ loading portraits and lowered stock ride steps6–8. Preserve current user work 
   shows cleaner continuous face/hand detail; the other three cities still need native comparison.
   No canonical replacement is installed. The QA directory's7073 base hardlinks are read-only by convention;
   never overwrite them. Eight candidate files are separate copies.
-- `reviewed_fixes.py` passes13 tests and the actual absent-ledger audit verifies7081/7081 unchanged base
-  replacements. No accepted correction ledger exists. Integrate strict coordinator supersession auditing,
-  dependency signatures and reversible installation before adopting any PNG; preserve the historical base pass.
+- `reviewed_fixes.py` passes14 tests and the actual absent-ledger audit verifies7081/7081 unchanged base
+  replacements. Strict coordinator preflight/final supersession auditing and dependency SHA-256 signatures
+  are implemented with34 passing coordinator tests. Invalid proofs stop before base regeneration; good mixed
+  reports preserve exact coverage/provenance and publish atomically. No accepted correction ledger exists.
+  Reversible installation remains open. The current live coordinator loaded the preceding code: restart it
+  at an owned cooperative movie boundary before any adoption; preserve the historical base pass.
 - Movies are14/106 strict original/model-provenance verified, zero failures,96,474frames remaining at resume.
   After Fortnite closed, native QA requested and received a cooperative movie-boundary stop. The root marker
   `root-r5-native-qa-20261025` was removed only after private QA closed and its contents were checked unchanged.

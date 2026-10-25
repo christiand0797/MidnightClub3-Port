@@ -14,7 +14,8 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import re
 import shutil
 import subprocess
 import sys
@@ -31,6 +32,9 @@ MEDIA_PROVENANCE_POLICY = "original-bink-and-model-weights-v1"
 INTERACTIVE_GPU_GAMES = frozenset(("mc3.exe", "fortniteclient-win64-shipping.exe"))
 LIVE = ".local/overnight_pipeline/live"
 LIVE_NOTE = "docs/notes/overnight_pipeline.md"
+TEXTURES = "templates/game/out/native/textures"
+SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+TEXTURE_NAME = re.compile(r"[0-9A-F]{16}\.png\Z")
 
 
 def utc():
@@ -140,6 +144,7 @@ def inventory(root):
 
 
 def media_signature(root):
+    root = Path(root).resolve()
     prefixes = ("templates/game/assets/video", "templates/game/out/native/video_hd",
                 "templates/game/out/native/textures/source", "templates/game/out/native/textures/dump",
                 "templates/game/out/native/textures/replace", "upscale_tools")
@@ -150,6 +155,8 @@ def media_signature(root):
                 info = path.stat()
                 records[path.relative_to(root).as_posix()] = [info.st_size, info.st_mtime_ns]
     for relative in ("tools/texture_pack/upscale.py", "tools/texture_pack/audit.py", "tools/video/upscale_movies.py",
+                     "tools/texture_pack/reviewed_fixes.py", "tools/texture_pack/cpu_x4plus.py",
+                     "tools/texture_pack/loading_garage_join.py", "tools/maintenance/overnight_pipeline.py",
                      "templates/game/out/native/textures/upscale_passes.json",
                      "templates/game/out/native/textures/upscale_state.json",
                      "templates/game/out/native/textures/source_index.json",
@@ -158,16 +165,91 @@ def media_signature(root):
         if path.exists():
             info = path.stat()
             records[relative] = [info.st_size, info.st_mtime_ns]
+    ledger = root / TEXTURES / "reviewed_fixes.json"
+    if ledger.exists() or ledger.is_symlink():
+        # Authenticate the whole small correction graph, including archives and review/inference proofs.
+        # Hashes also catch equal-size edits with preserved mtimes, which ordinary media inventory cannot.
+        try:
+            if root not in ledger.resolve().parents:
+                raise ValueError("ledger escapes project through a link")
+            content = ledger.read_bytes()
+            document = json.loads(content)
+            dependencies = document["dependencies"]
+            if not isinstance(dependencies, dict) or not dependencies:
+                raise ValueError("empty/non-object dependencies")
+            records[ledger.relative_to(root).as_posix()] = hashlib.sha256(content).hexdigest()
+            for relative, expected in dependencies.items():
+                if (not isinstance(relative, str) or not relative or "\\" in relative or ":" in relative
+                        or any(part in ("", ".", "..") for part in relative.split("/"))
+                        or PurePosixPath(relative).is_absolute() or not isinstance(expected, str)
+                        or not SHA256.fullmatch(expected)):
+                    raise ValueError("invalid dependency path/hash")
+                path = (root / relative).resolve()
+                if root not in path.parents or not path.is_file() or path.is_symlink():
+                    raise ValueError(f"missing/escaping dependency: {relative}")
+                digest = sha256(path)
+                if digest != expected:
+                    raise ValueError(f"changed dependency: {relative}")
+                info = path.stat()
+                records[relative] = [info.st_size, info.st_mtime_ns, digest]
+            if ledger.read_bytes() != content:
+                raise ValueError("ledger changed during signature")
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            raise RuntimeError(f"reviewed texture dependency signature failed; preserve corrections: {error}") from error
     return hashlib.sha256(json.dumps(records, sort_keys=True).encode()).hexdigest()
 
 
-def validate_media_reports(texture, video, pass_id=PASS_ID):
+def validate_texture_report(texture, pass_id=PASS_ID):
+    if not isinstance(texture, dict) or not isinstance(texture.get("counts"), dict) or not isinstance(texture.get("issues", {}), dict):
+        raise RuntimeError("texture audit report is malformed")
     counts = texture.get("counts", {})
-    if not (texture.get("complete") is True and texture.get("model") == "ultrasharp-4x"
+    if texture.get("format") == "mc3-reviewed-texture-audit-v1":
+        entries = texture.get("reviewed_fixes", {})
+        base = texture.get("base_audit", {})
+        if not isinstance(base, dict) or not isinstance(base.get("counts"), dict) or not isinstance(base.get("issues"), dict):
+            raise RuntimeError("reviewed base texture audit report is malformed")
+        base_counts = base.get("counts", {})
+        base_issues = base.get("issues", {})
+        integers = ("eligible", "base_named_pass_verified", "current_original_named_pass",
+                    "reviewed_fixes", "accounted_changed_pass_records")
+        valid = (all(type(counts.get(key)) is int and counts[key] >= 0 for key in integers)
+                 and counts.get("eligible", 0) > 0 and 1 <= counts.get("reviewed_fixes", 0) <= 8
+                 and texture.get("complete") is True and texture.get("base_complete") is True
+                 and texture.get("base_model") == "ultrasharp-4x" and texture.get("base_pass_id") == pass_id
+                 and texture.get("current_model") == "mixed-reviewed"
+                 and isinstance(texture.get("ledger_sha256"), str) and SHA256.fullmatch(texture["ledger_sha256"])
+                 and not any(texture.get("issues", {}).values()) and isinstance(entries, dict)
+                 and all(isinstance(name, str) for name in entries)
+                 and len(entries) == counts["reviewed_fixes"]
+                 and counts["base_named_pass_verified"] == counts["eligible"]
+                 and counts["accounted_changed_pass_records"] == counts["reviewed_fixes"]
+                 and counts["current_original_named_pass"] + counts["reviewed_fixes"] == counts["eligible"]
+                 and base.get("model") == "ultrasharp-4x" and base.get("pass_id") == pass_id
+                 and base_counts.get("eligible") == counts["eligible"]
+                 and base_counts.get("complete_named_pass") == counts["current_original_named_pass"]
+                 and isinstance(base_issues.get("missing_or_changed_pass_record"), list)
+                 and all(isinstance(name, str) for name in base_issues["missing_or_changed_pass_record"])
+                 and sorted(base_issues["missing_or_changed_pass_record"]) == sorted(entries)
+                 and not any(value for key, value in base_issues.items() if key != "missing_or_changed_pass_record")
+                 and all(isinstance(name, str) and TEXTURE_NAME.fullmatch(name) and isinstance(entry, dict)
+                         and entry.get("recipe") == "garage-joined-cpu-x4plus-v1"
+                         and entry.get("current_backend") == "pytorch-cpu-x4plus-v1"
+                         and all(isinstance(entry.get(key), str) and SHA256.fullmatch(entry[key])
+                                 for key in ("model_sha256", "source_sha256", "before_sha256", "after_sha256", "alpha_sha256"))
+                         and entry["before_sha256"] != entry["after_sha256"]
+                         and all(entry.get(key) for key in ("base_archive", "review_proof", "candidate_proofs"))
+                         for name, entry in entries.items()))
+    else:
+        valid = (texture.get("complete") is True and texture.get("model") == "ultrasharp-4x"
             and texture.get("pass_id") == pass_id and counts.get("eligible", 0) > 0
             and counts.get("complete_named_pass") == counts.get("eligible")
-            and not any(texture.get("issues", {}).values())):
+            and not any(texture.get("issues", {}).values()))
+    if not valid:
         raise RuntimeError("fresh texture pass has not passed its checksum/integrity audit")
+
+
+def validate_media_reports(texture, video, pass_id=PASS_ID):
+    validate_texture_report(texture, pass_id)
     rows = video.get("details", [])
     if not (video.get("mode") == "audit" and video.get("requested_model") == "realesrgan-x4plus"
             and video.get("require_original_provenance") is True
@@ -379,6 +461,7 @@ class Coordinator:
             self.check_stop(child_stop)
             workers = active_workers()
             if not workers:
+                self.state.pop("waiting", None)
                 return
             self.checkpoint("waiting-for-game-and-existing-media-workers", waiting=workers)
             time.sleep(30)
@@ -480,15 +563,35 @@ class Coordinator:
             pass
         return False
 
+    def audit_textures(self, phase="texture-audit"):
+        ledger = self.root / TEXTURES / "reviewed_fixes.json"
+        if ledger.is_symlink() and not ledger.exists():
+            raise RuntimeError("reviewed texture ledger link is broken; preserve corrections")
+        reviewed = ledger.exists()
+        # The reviewed CLI never overwrites a report. Publish its successful result atomically; retain failed
+        # evidence separately and leave the last good report intact. The immutable base CLI stays unchanged.
+        output = self.live / ("reviewed-audit-" + uuid.uuid4().hex + ".json") if reviewed else self.texture_report
+        script = "reviewed_fixes.py" if reviewed else "audit.py"
+        self.command(phase, [self.python, "tools/texture_pack/" + script, "--model", "ultrasharp-4x",
+                             "--pass-id", self.pass_id, "--output", str(output)])
+        if reviewed:
+            validate_texture_report(json.loads(output.read_text(encoding="utf-8")), self.pass_id)
+            os.replace(output, self.texture_report)
+
     def media_gate(self):
         signature = media_signature(self.root)
         if self.cached_media_verified(signature):
             self.checkpoint("using-unchanged-verified-media-gate")
             return signature
         self.wait_idle()
-        self.command("textures", [self.python, "tools/texture_pack/upscale.py", "--model", "ultrasharp-4x",
-                                  "--pass-id", self.pass_id, "--batch", "16", "--stop-file", str(self.texture_stop)],
-                     child_stop=self.texture_stop)
+        if (self.root / TEXTURES / "reviewed_fixes.json").exists():
+            # An approved correction is already a completed base+reviewed pack. A bad ledger must stop here,
+            # before the original worker can regenerate an approved PNG or overwrite diagnostic evidence.
+            self.audit_textures("reviewed-textures-preflight")
+        else:
+            self.command("textures", [self.python, "tools/texture_pack/upscale.py", "--model", "ultrasharp-4x",
+                                      "--pass-id", self.pass_id, "--batch", "16", "--stop-file", str(self.texture_stop)],
+                         child_stop=self.texture_stop)
         self.wait_idle()
         self.command("videos", [self.python, "tools/video/upscale_movies.py", "--model", "realesrgan-x4plus",
                                 "--require-original-provenance",
@@ -496,8 +599,7 @@ class Coordinator:
                      child_stop=self.video_stop)
         self.wait_idle()
         before = media_signature(self.root)
-        self.command("texture-audit", [self.python, "tools/texture_pack/audit.py", "--model", "ultrasharp-4x",
-                                       "--pass-id", self.pass_id, "--output", str(self.texture_report)])
+        self.audit_textures()
         self.command("video-audit", [self.python, "tools/video/upscale_movies.py", "--audit-only", "--model",
                                      "realesrgan-x4plus", "--require-original-provenance", "--report", str(self.video_report)])
         validate_media_reports(json.loads(self.texture_report.read_text()), json.loads(self.video_report.read_text()), self.pass_id)

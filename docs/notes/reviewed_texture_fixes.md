@@ -22,12 +22,27 @@ current per-entry recipe and separate base/current/reviewed counts. It does not 
 UltraSharp. Checksums authenticate the pinned recorded chain, not the identity of the reviewer; inference is
 not repeated during this audit.
 
-Parent verification passes13/13 tests: absent-ledger parity, valid chains, partial installation, missing
+Parent verification passes14/14 tests: absent-ledger parity, valid chains, partial installation, missing
 archive/proof/source, malformed global/entry data, model/pipeline/proof tampering, alpha and recomputed split
-checks after repinning, categorical masks, path bounds, unrelated failures and explicit review decisions.
-The actual untouched pack is also being audited through the absent-ledger path.
+checks after repinning, categorical masks, path bounds, unrelated failures, explicit review decisions and
+compatibility of an actual fully audited correction fixture with the coordinator's media gate.
+The actual untouched pack passes the absent-ledger path:7081/7081 with empty issue lists.
 
-Before adoption, native A/B remains required for the real Flash layout. The coordinator must then select this
-audit for approved supersessions, refuse any invalid ledger instead of rerunning the base worker over the
-corrections, include all correction dependencies in its media signature, and reverify media/backup gates.
-This scheduler integration and the reversible installation step are not implemented by the audit wrapper.
+The coordinator integration now audits an existing correction ledger **before** any original texture worker
+could run. A complete audited base+correction pack skips that worker; invalid/missing proofs stop the workflow
+and preserve the current PNGs. The final media check uses the same reviewed wrapper, with separate base/current
+counts, exact accounted names, declared CPU recipe and strict original-movie provenance still required.
+Reviewed audit reports use a unique temporary JSON path and are published atomically only after success;
+failed evidence remains separate and the last good report survives.
+
+`media_signature` includes the ledger, the correction audit/compute/join/coordinator code and every pinned
+dependency. Correction dependencies are SHA-256 checked on each signature, including equal-size edits with
+preserved timestamps. Missing, changed, traversing or escaping dependencies fail before GPU work. The normal
+base audit path and original pass/model records are unchanged. All34 coordinator tests pass, including original
+game/user-stop scheduling, bad-preflight preservation, original-worker exclusion, mixed coverage, proof tampering
+and unchanged-cache reuse; the14 correction tests include an actual verified-chain report accepted by this gate.
+
+Native A/B remains required for the real Flash layout before each adoption. No active ledger/PNG is installed;
+reversible installation remains outstanding. The live movie coordinator loaded its code before this integration:
+let its owned movie finish and restart at a cooperative boundary before installing any correction. Do not kill
+or duplicate the worker. Reverify media and full-backup gates before new offline PBR.

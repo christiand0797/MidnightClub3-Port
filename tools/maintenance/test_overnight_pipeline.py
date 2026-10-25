@@ -25,6 +25,22 @@ def valid_reports():
     return texture, video
 
 
+def reviewed_report():
+    base, _ = valid_reports()
+    name = "0000000000000001.png"
+    base.update(complete=False, counts={"eligible": 2, "complete_named_pass": 1},
+                issues={"missing_or_changed_pass_record": [name], "other": []})
+    entry = {"recipe": "garage-joined-cpu-x4plus-v1", "current_backend": "pytorch-cpu-x4plus-v1",
+             "model_sha256": "1" * 64, "source_sha256": "2" * 64, "before_sha256": "3" * 64,
+             "after_sha256": "4" * 64, "alpha_sha256": "5" * 64, "base_archive": "textures/archive.png",
+             "review_proof": ".local/review.json", "candidate_proofs": {"split": "authenticated"}}
+    return {"format": "mc3-reviewed-texture-audit-v1", "base_model": "ultrasharp-4x",
+            "base_pass_id": pipeline.PASS_ID, "current_model": "mixed-reviewed", "base_complete": True,
+            "complete": True, "ledger_sha256": "6" * 64, "base_audit": base, "reviewed_fixes": {name: entry},
+            "counts": {"eligible": 2, "base_named_pass_verified": 2, "current_original_named_pass": 1,
+                       "reviewed_fixes": 1, "accounted_changed_pass_records": 1}, "issues": {"other": []}}
+
+
 class FakeMedia:
     """A resumable child that acknowledges --stop-file only after its current item completes."""
     def __init__(self, coordinator, phase="textures", drain_polls=0, boundary_code=2, game_name="mc3.exe"):
@@ -118,6 +134,97 @@ class CoordinatorTests(unittest.TestCase):
 
     def copy_fixture(self):
         shutil.copytree(self.source, self.backup, dirs_exist_ok=True)
+
+    def correction_graph(self):
+        proof = self.source / ".local/review/proof.json"
+        proof.parent.mkdir(parents=True); proof.write_bytes(b"original review proof")
+        ledger = self.source / pipeline.TEXTURES / "reviewed_fixes.json"
+        pipeline.atomic_json(ledger, {"dependencies": {proof.relative_to(self.source).as_posix(): pipeline.sha256(proof)}})
+        return ledger, proof
+
+    def test_reviewed_report_keeps_exact_original_coverage_and_movie_provenance(self):
+        texture = reviewed_report(); _, video = valid_reports()
+        pipeline.validate_media_reports(texture, video)
+        mutations = [lambda x: x["counts"].update(reviewed_fixes=2),
+                     lambda x: x["counts"].update(current_original_named_pass=2),
+                     lambda x: x["counts"].update(accounted_changed_pass_records=0),
+                     lambda x: x.update(base_model="realesrgan-x4plus"),
+                     lambda x: x.update(current_model="ultrasharp-4x"),
+                     lambda x: x["base_audit"]["issues"]["other"].append("unknown.png"),
+                     lambda x: x["base_audit"]["issues"]["missing_or_changed_pass_record"].append("OTHER.png"),
+                     lambda x: x["reviewed_fixes"]["0000000000000001.png"].update(review_proof=None),
+                     lambda x: x.update(ledger_sha256="invalid")]
+        for change in mutations:
+            candidate = copy.deepcopy(texture); change(candidate)
+            with self.subTest(candidate=candidate), self.assertRaises(RuntimeError):
+                pipeline.validate_media_reports(candidate, video)
+        video["details"][0]["historical_source_and_weights_verified"] = False
+        with self.assertRaisesRegex(RuntimeError, "strict source/weights"):
+            pipeline.validate_media_reports(texture, video)
+
+    def test_reviewed_preflight_and_final_audit_never_launch_the_base_texture_worker(self):
+        self.correction_graph(); coordinator = pipeline.Coordinator(self.source, self.backup)
+        phases = []; texture = reviewed_report(); _, video = valid_reports()
+        def complete(phase, args, **_kwargs):
+            phases.append(phase)
+            if phase in ("reviewed-textures-preflight", "texture-audit"):
+                self.assertIn("tools/texture_pack/reviewed_fixes.py", args)
+                target = Path(args[args.index("--output") + 1])
+                self.assertFalse(target.exists())
+                pipeline.atomic_json(target, texture)
+            if phase == "video-audit": pipeline.atomic_json(coordinator.video_report, video)
+        with patch.object(coordinator, "wait_idle"), patch.object(coordinator, "command", side_effect=complete):
+            signature = coordinator.media_gate()
+        self.assertEqual(phases, ["reviewed-textures-preflight", "videos", "texture-audit", "video-audit"])
+        self.assertEqual(signature, pipeline.media_signature(self.source))
+        self.assertEqual(json.loads(coordinator.texture_report.read_text()), texture)
+        self.assertTrue(coordinator.cached_media_verified(signature))
+
+    def test_bad_reviewed_preflight_preserves_last_good_report_and_stops_before_gpu_work(self):
+        self.correction_graph(); coordinator = pipeline.Coordinator(self.source, self.backup)
+        coordinator.work.mkdir(parents=True, exist_ok=True)
+        coordinator.texture_report.write_bytes(b"preserved old report")
+        phases = []; targets = []
+        def bad_audit(phase, args, **_kwargs):
+            phases.append(phase); targets.append(Path(args[args.index("--output") + 1]))
+            candidate = reviewed_report(); candidate["complete"] = False
+            pipeline.atomic_json(targets[-1], candidate)
+        with patch.object(coordinator, "wait_idle"), patch.object(coordinator, "command", side_effect=bad_audit):
+            with self.assertRaises(RuntimeError): coordinator.media_gate()
+        self.assertEqual(phases, ["reviewed-textures-preflight"])
+        self.assertEqual(coordinator.texture_report.read_bytes(), b"preserved old report")
+        self.assertTrue(targets[0].exists())  # Failed evidence is retained separately.
+
+    def test_reviewed_dependency_tampering_fails_even_with_equal_size_and_mtime(self):
+        ledger, proof = self.correction_graph(); signature = pipeline.media_signature(self.source)
+        before = proof.stat(); proof.write_bytes(b"modified review proof")
+        self.assertEqual(before.st_size, proof.stat().st_size)
+        os.utime(proof, ns=(before.st_atime_ns, before.st_mtime_ns))
+        coordinator = pipeline.Coordinator(self.source, self.backup)
+        with patch.object(coordinator, "command") as command:
+            with self.assertRaisesRegex(RuntimeError, "changed dependency"): coordinator.media_gate()
+        command.assert_not_called()
+        document = json.loads(ledger.read_text()); document["dependencies"][".local/review/proof.json"] = pipeline.sha256(proof)
+        pipeline.atomic_json(ledger, document)
+        self.assertNotEqual(signature, pipeline.media_signature(self.source))
+        proof.unlink()
+        with self.assertRaisesRegex(RuntimeError, "dependency"): pipeline.media_signature(self.source)
+
+    def test_reviewed_signature_rejects_malformed_and_escaping_dependency_graphs(self):
+        ledger, _ = self.correction_graph()
+        for dependencies in (None, [], {}, {"../outside": "0" * 64}, {"C:/outside": "0" * 64},
+                             {"a//b": "0" * 64}, {".local/review/proof.json": "wrong"}):
+            pipeline.atomic_json(ledger, {"dependencies": dependencies})
+            with self.subTest(dependencies=dependencies), self.assertRaises(RuntimeError):
+                pipeline.media_signature(self.source)
+
+    def test_correction_code_changes_invalidate_the_media_signature(self):
+        signature = pipeline.media_signature(self.source)
+        helper = self.source / "tools/texture_pack/reviewed_fixes.py"
+        helper.parent.mkdir(parents=True); helper.write_text("first audit implementation")
+        first = pipeline.media_signature(self.source); self.assertNotEqual(signature, first)
+        helper.write_text("changed audited implementation")
+        self.assertNotEqual(first, pipeline.media_signature(self.source))
 
     def test_dry_run_is_read_only_and_records_exact_live_exclusions(self):
         live = self.source / pipeline.LIVE

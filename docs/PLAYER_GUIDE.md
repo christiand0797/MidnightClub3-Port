@@ -2,17 +2,16 @@
 
 This guide describes the PC settings in the current source. The native Golf R32
 check confirmed immediate ride-height changes and garage-to-street retention of
-ride, camber, wheel offset and engine-power values. The latest hotfix also checks an added tire profile on both
-axles and the private street chassis floor in a '57 Bel Air. The latest source passes **28 regression tests**;
-the current v0.3.1 portable release predates the new tire-bead, width-centering, lower-step tuck and garage-navigation
-changes. These source changes still require native confirmation. Release
-notes identify the included build; other cars and extreme physical combinations
-still need individual validation.
+ride, camber, wheel offset and engine-power values. The latest source passes **28 regression tests**.
+Bounded native Golf checks cover both axle profiles, save/reload, centered755mm widths, the30% and97.5%
+rim/tire ratios, garage navigation and lowered steps6–8. Step8 retained all four suspension offsets on the
+street. A separate '57 Bel Air check covers the private street chassis floor. Release notes identify the
+included build; other cars, close-up NPC animation and extreme physical combinations still need validation.
 
 ## Download and start
 
 Use the Windows x64 portable asset from the
-[v0.3.1 development release](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.1-dev.20261023).
+[development releases](https://github.com/christiand0797/MidnightClub3-Port/releases).
 Read its notes for available assets, the included build and known limitations.
 Extract the entire `MidnightClub3-Native-…-win64.zip`, then double-click
 `mc3.exe`. The supplied DLLs must stay beside it. The automatic GitHub source ZIP
@@ -154,7 +153,16 @@ off. Confirm the release notes include the expansion before relying on its new
 entries. The generated game-code regression checks pass; each vehicle's fit in
 driving still requires a playtest.
 
+The current bead correction reshapes the original sidewall to the selected rim/tire ratio while keeping the
+outer tread radius and rim size. Width grows both inward and outward from the wheel hub. F2's wheel offset
+remains an additional positioning control. Very small rim/tire ratios create large outer tires; they are not
+conventional low-profile aspect-ratio percentages.
+
 ## Input
+
+Original garage D-pad and stick navigation moves once immediately, waits0.3seconds, then repeats about every
+0.15seconds while held. Stick navigation also needs a firmer deflection than light driving input. This applies
+inside the original garage; driving, camera movement and PC settings controls retain their normal response.
 
 | Option | Range / built-in default | Behavior |
 | --- | --- | --- |
