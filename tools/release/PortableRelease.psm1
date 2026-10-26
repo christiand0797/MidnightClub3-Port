@@ -116,6 +116,91 @@ function Test-PortableWindowsDll {
     )
 }
 
+function ConvertTo-PortableMovieTargets {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$SourceRelativePaths,
+        [ValidateRange(1, 200000)][int]$ExpectedCount = 106
+    )
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $targets = [Collections.Generic.List[string]]::new()
+    foreach ($relative in $SourceRelativePaths) {
+        if (-not $relative -or $relative -match '[\x00-\x1f:\\<>"|?*]' -or
+            [IO.Path]::IsPathRooted($relative) -or [IO.Path]::GetExtension($relative) -ine '.bik') {
+            throw 'Unsafe original movie path.'
+        }
+        foreach ($component in $relative.Split('/')) {
+            if (-not $component -or $component -in '.', '..' -or $component.EndsWith('.') -or $component.EndsWith(' ') -or
+                $component.Split('.')[0] -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$') {
+                throw 'Unsafe original movie path component.'
+            }
+        }
+        $target = [IO.Path]::ChangeExtension($relative, '.mp4').Replace('\', '/').ToLowerInvariant()
+        if (-not $seen.Add($target)) { throw "Duplicate case-insensitive original movie path: $relative" }
+        $targets.Add($target)
+    }
+    if ($targets.Count -ne $ExpectedCount) {
+        throw "Original movie catalogue has $($targets.Count) entries; expected $ExpectedCount."
+    }
+    $targets | Sort-Object
+}
+
+function Assert-PortableMovieNoLink([string]$Path, [string]$Root) {
+    $current = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    if ($current.FullName -ine $Root -and -not $current.FullName.StartsWith($Root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Movie path escapes its selected root.'
+    }
+    while ($true) {
+        if ($current.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Movie path crosses a link: $Path" }
+        # Inspect root ancestors too: a normal directory below a junction must not hide a linked input.
+        $parent = [IO.Path]::GetDirectoryName($current.FullName.TrimEnd('\', '/'))
+        if (-not $parent) { return }
+        $current = Get-Item -LiteralPath $parent -Force -ErrorAction Stop
+    }
+}
+
+function Get-PortableMovieFiles {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$SourceVideoDirectory,
+        [Parameter(Mandatory)][string]$VideoDirectory,
+        [ValidateRange(1, 200000)][int]$ExpectedCount = 106
+    )
+    $original = Get-Item -LiteralPath $SourceVideoDirectory -Force -ErrorAction Stop
+    $generated = Get-Item -LiteralPath $VideoDirectory -Force -ErrorAction Stop
+    if (-not $original.PSIsContainer -or -not $generated.PSIsContainer) { throw 'Movie roots must be directories.' }
+    $sourceRoot = $original.FullName.TrimEnd('\', '/')
+    $videoRoot = $generated.FullName.TrimEnd('\', '/')
+    if ($sourceRoot -ieq ([IO.Path]::GetPathRoot($original.FullName).TrimEnd('\', '/')) -or
+        $videoRoot -ieq ([IO.Path]::GetPathRoot($generated.FullName).TrimEnd('\', '/'))) {
+        throw 'Movie roots must be dedicated directories, not a filesystem root.'
+    }
+    Assert-PortableMovieNoLink $sourceRoot $sourceRoot
+    Assert-PortableMovieNoLink $videoRoot $videoRoot
+    $relativeSources = @(foreach ($file in (Get-ChildItem -LiteralPath $sourceRoot -File -Recurse -Force | Where-Object Extension -IEQ '.bik')) {
+        Assert-PortableMovieNoLink $file.FullName $sourceRoot
+        $file.FullName.Substring($sourceRoot.Length + 1).Replace('\', '/')
+    })
+    $targets = @(ConvertTo-PortableMovieTargets -SourceRelativePaths $relativeSources -ExpectedCount $ExpectedCount)
+    $expected = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($target in $targets) { [void]$expected.Add($target) }
+    $selected = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($file in (Get-ChildItem -LiteralPath $videoRoot -File -Recurse -Force | Where-Object Extension -IEQ '.mp4')) {
+        $relative = $file.FullName.Substring($videoRoot.Length + 1).Replace('\', '/')
+        # Select only exact source-derived names. In-flight .part.mp4 and unrelated exports stay untouched.
+        if (-not $expected.Contains($relative)) { continue }
+        if ($selected.ContainsKey($relative)) { throw "Duplicate case-insensitive generated movie path: $relative" }
+        Assert-PortableMovieNoLink $file.FullName $videoRoot
+        $selected.Add($relative, $file.FullName)
+    }
+    foreach ($target in $targets) {
+        if (-not $selected.ContainsKey($target)) { throw "Missing expected generated movie: $target" }
+    }
+    foreach ($target in $targets) {
+        [pscustomobject]@{ Source = $selected[$target]; Target = 'video_hd/' + $target }
+    }
+}
+
 function New-PortableContentArchive {
     [CmdletBinding()]
     param(
@@ -222,4 +307,4 @@ function New-PortableContentArchive {
     }
 }
 
-Export-ModuleMember -Function Get-PortablePEInfo, Find-PortableCRT, Test-PortableWindowsDll, New-PortableContentArchive
+Export-ModuleMember -Function Get-PortablePEInfo, Find-PortableCRT, Test-PortableWindowsDll, ConvertTo-PortableMovieTargets, Get-PortableMovieFiles, New-PortableContentArchive

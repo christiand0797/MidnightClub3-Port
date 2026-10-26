@@ -9,7 +9,8 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$')][string]$Version,
     [string]$TextureDirectory,
     [string]$VideoDirectory,
-    [ValidateRange(1, 1900)][int]$ChunkSizeMiB = 1800
+    [ValidateRange(1, 1900)][int]$ChunkSizeMiB = 1800,
+    [string]$SourceVideoDirectory = (Join-Path $PSScriptRoot '../../templates/game/assets/video')
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -69,12 +70,9 @@ if ($TextureDirectory) {
     }
 }
 if ($VideoDirectory) {
-    $videoRoot = (Get-Item -LiteralPath $VideoDirectory).FullName.TrimEnd('\', '/')
-    foreach ($file in (Get-ChildItem -LiteralPath $videoRoot -File -Filter '*.mp4' -Recurse | Sort-Object FullName)) {
-        if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Linked movie file cannot be bundled: $($file.Name)" }
-        $relative = $file.FullName.Substring($videoRoot.Length + 1).Replace('\', '/')
-        if ($relative -match '[\x00-\x1f:\\<>"|?*]' -or $relative.Split('/') -contains '..') { throw 'Unsafe movie path.' }
-        $files.Add([pscustomobject]@{ Source = $file.FullName; Target = 'video_hd/' + $relative })
+    Import-Module (Join-Path $PSScriptRoot 'PortableRelease.psm1') -Force
+    foreach ($file in (Get-PortableMovieFiles -SourceVideoDirectory $SourceVideoDirectory -VideoDirectory $VideoDirectory -ExpectedCount 106)) {
+        $files.Add($file)
     }
 }
 Import-Module (Join-Path $PSScriptRoot 'PortableRelease.psm1') -Force
