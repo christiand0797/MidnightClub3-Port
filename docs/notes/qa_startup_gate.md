@@ -43,8 +43,10 @@ rename rather than a closed direct write. The controlled QA publisher must enfor
    A successful game close uses that same scheduler path. Keep all release/log/receipt evidence.
 
 The user's native-QA authorization already covers this handoff; no additional permission prompt is required.
-Scheduling/quiescence and human-session availability remain necessary. Actual same-PID movie retention and
-absence of a native window/device before release still require root's later controlled protocol validation.
+Scheduling/quiescence and human-session availability remain necessary. Root subsequently validated the
+controlled r11 protocol, three HD-enabled starts and same-PID movie/encoder retention and resume; see
+[native evidence](native_photo_r11_20261026.md). The pre-release source/log ordering is persisted. A direct
+historical HWND inventory was observed during root control but was not separately persisted as a receipt.
 
 ## CPU coverage
 
@@ -57,6 +59,6 @@ before deadline and delayed probes ending at/beyond deadline. The shared main/he
 260-character relative path before long-path normalization can make it absolute. These tests create no game,
 window or GPU device.
 
-Photo-capture hooks and the frozen r10 build/staging evidence remain unchanged. A new r11 build/receipt is
-needed for the gate. Canonical r9, public release assets, original textures and unadopted photo candidates
-are outside this implementation.
+Photo-capture hooks and frozen r10 build/staging evidence remain unchanged. The later r11 build/overlay
+and actual native receipts are documented in the linked follow-up. Canonical r9, public release assets
+and original textures were unchanged by the gate implementation and its private validation.

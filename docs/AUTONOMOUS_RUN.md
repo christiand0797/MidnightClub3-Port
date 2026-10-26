@@ -5,7 +5,35 @@ a complete project backup, public GitHub source/development releases, and comple
 PBR implementation must wait until the media pass
 and a verified full backup. Existing PBR experiments are inherited; the renderer remains on its current path.
 
-## Latest checkpoint — 2026-10-25 23:04 MDT
+## Latest checkpoint — 2026-10-26 06:20 MDT
+
+- Public source includes `5b5e2d7`, the independently CPU-tested opt-in startup gate. Isolated r11
+  EXE `73279609...` completed three HD-enabled starts and normal exits. Canonical/public r9 stays
+  unchanged. See [native photo/handoff evidence](notes/native_photo_r11_20261026.md).
+- All owned QA games are closed. Coordinator9824 and the same video child18460/encoder retained
+  `story/sqtuner.bik` at24/996 across the actual pause, then resumed and advanced after the final
+  normal close. Strict coverage is38/106, zero failures. No user stop marker was cleared or duplicate
+  inference worker started. A usage interruption left the candidate idle/queue paused for several
+  hours; this delay is recorded, not presented as continuous processing.
+- The first four actual BMPs caught only the outgoing menu and are explicitly rejected as a photo
+  baseline. Fresh BASE/candidate sequences at later ordinals now contain actual visible San Diego
+  face/hands in1920×1080 lossless backbuffers. Both source variants are pinned at gated release,
+  before pack initialization. Root and independent review accept the two S panels as a local
+  face/hands/join improvement; residual wipe phases differ, so no whole-frame equality claim is
+  valid. Accepted proof SHA `4c44b4dc...`; fresh r2 proposal is
+  `.local/reviewed-san-diego-proposal-20261026-r2` (plan `fe63c428...`). Its full base audit still
+  passes7,081/7,081. Actual installation correctly remains blocked by live media/coordinator
+  workers; do not bypass this check. Preserve frozen r1 and the current in-flight movie. Prefer
+  a safe published-movie boundary for a needed paired restart/apply and activating tested
+  identical-original reuse. Canonical textures and reviewed ledger remain unchanged.
+- Both private HDD6/HDD7 save sets and settings match their initial receipts. The regular desktop
+  shortcut was found pointing at old private QA r7, backed up exactly, restored to canonical r9,
+  and stayed unchanged during all new QA launches. Old private saves and assets remain preserved.
+- Full-body NPC gait/footplants, all-car road clearance/sparks, other-city portrait native review,
+  strict movie completion/final audits and the verified post-media backup remain open. No new
+  offline PBR was generated and runtime PBR is unchanged.
+
+## Earlier checkpoint — 2026-10-25 23:04 MDT
 
 - Source changes are public through `db7df67`: `9fd0900` adds exact-original movie reuse, `b2ec102` adds
   authored vehicle-bound audits/extreme fixtures, and `db7df67` fixes capture-session collisions and adds
