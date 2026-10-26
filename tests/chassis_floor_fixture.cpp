@@ -160,6 +160,29 @@ void TaperAndSparseLayers() {
     for (unsigned i : {0u, 2u, 6u}) assert(Near(F(kVertices + 12 * i + 4), -.25f));
 }
 
+void AuthoredClearanceAndExtremeRadii() {
+    // Original F355 base/mods author 8 cm, SLR base/mods 9 cm. Most other tunes use the constructor's
+    // 5 cm default or author 5 cm. These values remain inputs; the floor correction must not flatten them.
+    // The geometry here remains the explicit synthetic shape, not either car's visible floorpan.
+    for (float skin : {.05f, .08f, .09f}) {
+        Setup(); Classify(); F(kSim+0xD8,skin);
+        const auto cached=std::vector<uint8_t>(guest.begin()+kBody+0x190,guest.begin()+kBody+0x1AC);
+        for (const auto heights : {std::array{-.125f,-.15f}, std::array{-.1375f,-.125f},
+                                   std::array{-.15f,-.1375f}, std::array{-.35f,0.0f}}) {
+            const float mean=(heights[0]+heights[1])*.5f;
+            for(float radius:{(.38100001215934753f/.975f)*.5f,.35f,(.7874000072479248f/.3f)*.5f}) {
+                // Same argument transform as guarded 121440, followed here by the real original writer.
+                // A small tire intentionally retains stock-minus-current compensation; the cap still wins.
+                const float original=std::max(0.0f,.35f-radius-mean);
+                const float corrected=std::max(0.0f,original+mean);
+                Floor(corrected); CheckFloor(std::min(-.4f+skin+corrected,.15f));
+                assert(F(kSim+0xD8)==skin);
+                assert(std::memcmp(cached.data(),guest.data()+kBody+0x190,cached.size())==0);
+            }
+        }
+    }
+}
+
 void TypeTwoAndAliasWitness() {
     Setup(); W(kBody + 0x18, 2);
     const auto before = guest;
@@ -205,7 +228,7 @@ void x86_icall(X86Context& c, uint8_t*, uint32_t target) {
 }
 
 int main() {
-    BasicAndCandidate(); TaperAndSparseLayers(); TypeTwoAndAliasWitness();
+    BasicAndCandidate(); TaperAndSparseLayers(); AuthoredClearanceAndExtremeRadii(); TypeTwoAndAliasWitness();
     std::cout << "actual 121150 / 121440 / 1214F0 / 2395F0 / 1A5730 chassis floor: PASS\n"
                  "synthetic shared-bound setter witness: PASS (real per-car uniqueness remains unproved)\n";
 }

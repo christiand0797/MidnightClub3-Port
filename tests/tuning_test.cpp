@@ -401,6 +401,26 @@ int main(int argc, char** argv) {
         for (int n = 0; n < 180; ++n) move_bag(w, 0, baseline);
         assert(Near(Float(bag + 0x20 + w * 4), baseline));
     }
+    // Original garage steps 6/7/8, deliberately different on each axle. Channel pairs 0/1 and 2/3 must
+    // independently reach their low H and high H+2*abs(H), without a tick changing another channel.
+    for (const auto heights : {std::array{-.125f, -.15f}, std::array{-.1375f, -.125f},
+                               std::array{-.15f, -.1375f}}) {
+        for (unsigned w = 0; w != 4; ++w) PutFloat(bag + 0x20 + 4*w, 0);
+        for (int state : {+1, -1, 0}) {
+            for (unsigned w = 0; w != 4; ++w) {
+                const float baseline = heights[w / 2], high = baseline + 2*std::abs(baseline);
+                std::array<float, 4> before{};
+                for (unsigned other = 0; other != 4; ++other) before[other] = Float(bag + 0x20 + 4*other);
+                for (int n = 0; n < 180; ++n) {
+                    const float current = move_bag(w, state, baseline);
+                    assert(current >= baseline-.00001f && current <= high+.00001f);
+                }
+                assert(Near(Float(bag + 0x20 + 4*w), state == -1 ? high : baseline));
+                for (unsigned other = 0; other != 4; ++other)
+                    if (other != w) assert(Float(bag + 0x20 + 4*other) == before[other]);
+            }
+        }
+    }
     settings.airbag_match_ride = false; PutFloat(bag + 0x20, 0);
     for (int n = 0; n < 120; ++n) move_bag(0, +1, -.35f);
     assert(Near(Float(bag + 0x20), -.1f)); // disabled: unmodified original endpoint
@@ -496,16 +516,31 @@ int main(int argc, char** argv) {
         PutFloat(w+0x40,.5f);PutFloat(w+0x44,.18f);PutFloat(w+0x4C,.24f);PutFloat(w+0x50,.23f);
     }
     settings=app::Settings::Tuning{};TuningSetPlayerSim(stepSim,true);
-    for(float height:{-.125f,-.1375f,-.15f}) {
-        PutFloat(stepFront+0x48,height);PutFloat(stepRear+0x48,height);TuningCarCfgApplied(stepSim);
-        for(uint32_t tune:{stepFront,stepRear}) {
-            kernel::W32(runtimeWheel+4,tune);PutFloat(runtimeWheel+0x10C,height);PutFloat(runtimeWheel+0x144,.001f);
-            assert(Near(displacement(0xF7525),.04999f));assert(Near(displacement(0xF7B7D),.04999f));
-            assert(Near(displacement(0xF74D5),0));assert(Near(displacement(0xAEAE1),.001f-height));
-            assert(Near(Float(runtimeWheel+0x144),.001f)&&Near(Float(tune+0x48),height));
-            settings.wheel_tuck=false;assert(Near(displacement(0xF7525),.001f-height));settings.wheel_tuck=true;
+    // XBE calibrated rim table / allowed profile catalogue extrema, not physical inch-label conversion.
+    // The previous optional 188-tune sweep's largest radius was only .60 m; the allowed rim28/profile8 is
+    // 1.312333... m. No road/body settling is simulated by this one-wheel contact fixture.
+    const float smallestRadius=(.38100001215934753f/.975f)*.5f;
+    const float largestRadius=(.7874000072479248f/.3f)*.5f;
+    for(const auto heights:{std::array{-.125f,-.15f},std::array{-.1375f,-.125f},std::array{-.15f,-.1375f}}) {
+        PutFloat(stepFront+0x48,heights[0]);PutFloat(stepRear+0x48,heights[1]);TuningCarCfgApplied(stepSim);
+        for(unsigned axle=0;axle!=2;++axle) {
+            const uint32_t tune=axle?stepRear:stepFront;
+            const float height=heights[axle];
+            for(float radius:{smallestRadius,.35f,largestRadius}) {
+                kernel::W32(runtimeWheel+4,tune);PutFloat(runtimeWheel+0x10C,height);PutFloat(runtimeWheel+0x100,radius);
+                // Actual A7250 contact solver accepts in-range positive/negative compression unchanged.
+                for(float compression:{.001f,.9f*Float(tune+0x4C),-.9f*Float(tune+0x44)}) {
+                    assert(Near(solve(compression,true),compression));
+                    const float fitted=.4f-radius-.00001f;
+                    assert(Near(displacement(0xF7525),fitted));assert(Near(displacement(0xF7B7D),fitted));
+                    assert(Near(displacement(0xF74D5),0));assert(Near(displacement(0xAEAE1),compression-height));
+                    assert(Near(Float(runtimeWheel+0x144),compression)&&Near(Float(tune+0x48),height));
+                    settings.wheel_tuck=false;assert(Near(displacement(0xF7525),compression-height));settings.wheel_tuck=true;
+                }
+            }
         }
     }
+    PutFloat(runtimeWheel+0x144,.001f);
     PutFloat(stepFront+0x48,0);PutFloat(stepRear+0x48,0);TuningCarCfgApplied(stepSim);
     kernel::W32(runtimeWheel+4,stepFront);PutFloat(runtimeWheel+0x10C,0);
     assert(Near(displacement(0xF7525),.001f)); // stock/raised and non-render queries remain original

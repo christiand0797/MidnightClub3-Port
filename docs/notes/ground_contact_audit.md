@@ -30,6 +30,11 @@ guarded correction taking effect on this car; it does not certify visible floorp
 isolation, cambered tire support or sparks. The following source and fixture investigation remains separate
 from that later live run.
 
+The later CPU-only [original bounds and ride-range audit](vehicle_ride_bounds_audit.md) decodes all 282 main
+resource variants, checks the original bottom-layer assumptions and authored .05/.08/.09 m skins, and extends
+focused original solver/AirRide/floor fixtures through the actual allowed 1.312333 m tire-radius maximum.
+It preserves the existing 188-tune/20,304-query evidence and does not certify visible road contact or sparks.
+
 ## Exact native dataflow
 
 All addresses below are guest addresses from the original `default.xbe`. Its SHA-256 is
