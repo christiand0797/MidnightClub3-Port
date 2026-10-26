@@ -1,0 +1,31 @@
+# NPC walking evidence and capture isolation — 2026-10-25
+
+This bounded source pass found an evidence-corruption bug in frame capture, **not a new proven NPC animation defect**. Existing original-weight, shader-index, evolving-palette and CPU mesh proofs remain in `npc_source_weights.md` and `npc_skinning.md`. The observed native avoidance leap articulates arms and knees; a complete close-up walking cycle and foot contact are still unverified. No GPU/game/input operation was performed for this pass.
+
+The original time-manager body at 0x20B6F0 reads elapsed ticks, performs its configured rounding/clamping/recording, and advances its original clock state. The native wrapper in `templates/game/src/game/hooks.cpp` still calls that body. The existing paired captures already contain changing relative joint poses. These facts do not support replacing the animation clock or certify every actor/controller; a source-only reading cannot establish a walking cadence for a specific live pedestrian.
+
+## Concrete capture defect and bounded correction
+
+The former `D3D12Backend::StartCapture` named sessions with only local `HHMMSS`, accepted an existing directory, and opened `frame.txt` with mode `w`. Requests within the same second could overwrite the earlier log/final image and retain unrelated files from the earlier capture. Therefore the earlier recommendation to capture at approximately 0/.23/.61 seconds could not reliably retain all three samples.
+
+The correction changes only session creation in `runtime/gpu/d3d12.cpp`, using `runtime/gpu/capture_directory.h`. It atomically creates a new directory identified by the actual backend frame/present counters, wall-clock Unix nanoseconds, monotonic nanoseconds and process ID. Bounded collision suffixes preserve existing files/directories even when every supplied identifier is identical. `capture.json` records the actual **armed** counters/times and states the capture scope; the log and metadata use exclusive creation. Failures leave capture inactive and report an error; existing evidence is never reused. F3/F4 requests, physical input, draw/shader behavior and the default disabled capture setting are unchanged.
+
+The real-filesystem CTest in `tests/capture_directory_test.cpp` passes in `.local/capture-directory-cpu-20261025/build`. It exercises identical same-second requests, eight simultaneous requests, separation of per-session files, exclusive log/metadata creation, existing directory/file preservation, retry exhaustion and an obstructing-parent create failure. This is CPU filesystem validation. The parent must compile the native backend and validate a scheduled native capture before release.
+
+## What existing F3/F4 evidence actually measures
+
+- `Present` starts a new full-frame capture after the current frame's draw calls have already run, then finishes it at the next `Present`. The captured draw sequence follows the arming point. Metadata names the armed counters explicitly rather than claiming an observed finish time.
+- `CaptureInputs` prints at most four input vertices and decimal `s.vsc` constants. `UploadVertexBuffers` subsequently copies the assembled buffers into upload memory; `DrawGeometry` separately copies indices and uses `a.base_vertex` in `DrawIndexedInstanced`. The full actual uploaded index/VB contents are not saved by the current capture.
+- `UploadConstants` first copies `s.vsc`, then allows `Extension::Constants` to modify that uploaded copy. The diagnostic prints `s.vsc`; this is a potential observation gap, **not evidence that an extension modifies NPC bones**.
+- No post-vertex-shader position buffer is recorded. Original-source/CPU pose reconstruction consequently cannot certify actual GPU vertex output, depth/occlusion or planted feet.
+- `CapSave(Target)` uses guest target dimensions; `ReadBack` submits and waits synchronously. It is neither a physical-resolution window screenshot nor a zero-cost animation recorder. The separate loading-photo capture design remains visual-agent-owned.
+
+Relevant source anchors are `runtime/gpu/d3d12.cpp`: `UploadConstants`, `CaptureRawVertices`/`CaptureInputs`, `UploadVertexBuffers`/`DrawGeometry`, `Present`, `StartCapture`, `ReadBack` and `CapSave(Target)`. The normal pipeline has no stream-output target and its root signature currently opts into the input assembler only.
+
+## Smallest remaining walking diagnostic
+
+First retain a full-body actor at useful scale in a stationary native view, record an uninterrupted walking cycle, and use distinct capture sessions with the new counter/time metadata. Three stills and a single leap do not prove a gait. Keep head, hands, knees and feet visible; the earlier 10–35 console-pixel menu actors are inadequate.
+
+If that native cycle remains wrong, select one exact indexed-skin draw and retain its shader identity, full assembled/uploaded VB and index bytes, input layout/strides, base vertex, actual post-extension constant buffers and target/viewport. These close the current input-binding observation gap. Actual post-VS positions require a GPU diagnostic, not another CPU pose claim.
+
+A bounded future stream-output capture could collect that selected draw's output while preserving its normal rasterization. This requires an opt-in pipeline/root-signature change and is **not implemented here**. Microsoft documents the [stream-output root flag](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/ne-d3d12-d3d12_root_signature_flags), [output declaration/stride descriptor](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/ns-d3d12-d3d12_stream_output_desc), [buffer state/counter requirements](https://learn.microsoft.com/en-us/windows/win32/direct3d12/stream-output-counters) and [written-versus-required primitive counts](https://learn.microsoft.com/en-us/windows/win32/api/d3d12/ns-d3d12-d3d12_query_data_so_statistics). The implementation must reject truncated/overflowed captures and account for indexed triangle-strip expansion rather than assuming one output record per unique source vertex. Restore/unbind diagnostic state after the selected draw and read back only after its fence completes. A post-VS mismatch would then justify a targeted rendering fix; correct output would redirect investigation to timing, visibility or the authored motion for that actor.

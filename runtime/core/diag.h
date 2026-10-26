@@ -81,4 +81,14 @@ inline uint32_t CaptureSnapTexture() {
     return va;
 }
 
+// Opt-in same-present photo evidence. Parsed/validated by the backend; absent hashes leave it inert.
+inline const char* CaptureTextureHashes() {
+    static const char* value = std::getenv("XBE_CAPTURE_TEXTURE_HASHES");
+    return value;
+}
+inline const char* CaptureTextureFrames() {
+    static const char* value = std::getenv("XBE_CAPTURE_TEXTURE_FRAMES");
+    return value ? value : "1,4,8,16";
+}
+
 }  // namespace diag

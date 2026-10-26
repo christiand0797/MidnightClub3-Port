@@ -37,6 +37,10 @@
 #include "gpu/ext.h"
 #include "gpu/shaders.h"
 #include "gpu/skinning_capture.h"
+#include "gpu/capture_directory.h"
+#include "gpu/photo_capture_policy.h"
+#include "gpu/photo_capture_io.h"
+#include "gpu/photo_capture_shader.h"
 #include "gpu/texture.h"
 #include "gpu/texture_pack.h"
 #include "gpu/video_hd.h"
@@ -443,6 +447,7 @@ struct Tex {
     bool pack_enabled = false;  // selection used for the cached pixels; settings can change without guest writes
     uint32_t uploads = 0;   // times its bytes changed: past a few it is video or drawn to, never packed
     uint8_t role = 0;       // TexRole: a texture the graphics settings scale the draws of
+    photo_capture::TextureIdentity photo_identity;  // original bytes; retained across cached binds
 };
 
 // textures recognised by their content hash (texture_pack.h ContentHash, the names in textures/source_index.json)
@@ -517,6 +522,8 @@ struct DrawTextures {
     float wide[4] = {};         // host texels per console texel of a target read into a smaller one, 0 otherwise
     Target* tgt[4] = {};        // the target a stage samples
     uint8_t role[4] = {};       // TexRole of a guest texture
+    photo_capture::TextureIdentity photo_identity[4];
+    bool photo_replaced[4] = {};
 };
 
 // a draw's shaders: what they are made from, their cache keys, the hashes Compile returned and the compiled blobs
@@ -697,6 +704,10 @@ private:
     // Present, in call order, each callee right after its caller; DrawFrame runs the two after it
     void FinishCapture(const Surface& front);
     void StartCapture();
+    void InitPhotoCapture();
+    void ObservePhotoDraw(const State& s, const Assembled& a, const PsoKey& k,
+                          const DrawShaders& sh, const DrawTextures& stages);
+    void CapturePhoto(const photo_capture::Decision& decision, uint32_t backbuffer);
     void ResizeSwap();
     void UploadGammaRamp();
     void DrawFrame(Target* t, uint32_t bi);
@@ -818,6 +829,10 @@ private:
     Extension* ext_ = nullptr;
     // one frame capture: every draw in a text file, each target as the frame leaves it, the textures it read
     FILE* cap_ = nullptr;
+    photo_capture::Config photo_config_;
+    photo_capture::Policy photo_policy_;
+    std::array<photo_capture::Observation, photo_capture::kMaxTextures> photo_observed_{};
+    std::unordered_map<uint64_t, uint32_t> photo_sampled_;
     std::filesystem::path cap_dir_;
     uint32_t cap_i_ = 0;
     uint32_t cap_rt_ = 0;
@@ -895,6 +910,7 @@ private:
 };
 
 bool D3D12Backend::Init(uint32_t width, uint32_t height) {
+    InitPhotoCapture();
     guest_w_ = width;
     guest_h_ = height;
     HWND hwnd = static_cast<HWND>(app::Window());
@@ -1991,27 +2007,34 @@ ID3D12Resource* D3D12Backend::BindGuestTexture(const State& s, int stage, const 
             if (content_changed) tx.uploads++;
             bool replace = packable && pack::ReplaceEnabled(), dump = packable && pack::DumpEnabled();
             bool roled = fi.compressed && d.width <= kRoleMaxSize && d.height <= kRoleMaxSize;
-            if (replace || dump || roled) name = pack::ContentHash(d, p, total, palette.hash);
-            auto img = replace ? pack::Find(name) : nullptr;
-            if (!(img && UploadReplacement(tx, *img))) {
-                if (tx.replaced) {
-                    // its bytes changed to a texture the pack has no image for: back to the console's own
-                    uint32_t uploads = tx.uploads;
-                    if (!CreateTexture(tx, d, fi, key)) return nullptr;
-                    tx.uploads = uploads;
-                    tx.sig = sig;
-                    tx.frame = presents_ + 1;
-                    tx.palette = palette.hash;
-                    same = false;
+            const bool photo = photo_policy_.Armed() && d.format == 0x0F && d.width == 256 && d.height == 256
+                               && !d.cube && d.depth == 1;
+            if (replace || dump || roled || photo) name = pack::ContentHash(d, p, total, palette.hash);
+            if (!photo_capture::UploadWithIdentity(tx.photo_identity, name, [&]() -> bool {
+                auto img = replace ? pack::Find(name) : nullptr;
+                if (!(img && UploadReplacement(tx, *img))) {
+                    if (tx.replaced) {
+                        // its bytes changed to a texture the pack has no image for: back to the console's own
+                        uint32_t uploads = tx.uploads;
+                        if (!CreateTexture(tx, d, fi, key)) return false;
+                        tx.uploads = uploads;
+                        tx.sig = sig;
+                        tx.frame = presents_ + 1;
+                        tx.palette = palette.hash;
+                        same = false;
+                    }
+                    UploadTexture(tx, d, fi, p, palette.va ? palette.colours : nullptr, same, dump ? name : 0);
                 }
-                UploadTexture(tx, d, fi, p, palette.va ? palette.colours : nullptr, same, dump ? name : 0);
-            }
+                return tx.res.Get() != nullptr;
+            })) return nullptr;
             tx.pack_enabled = pack_enabled;
             tx.role = roled ? TextureRole(name) : kRoleNone;
         }
     }
     FillTextureView(tx, d, stages.sv[stage]);
     stages.role[stage] = tx.role;
+    stages.photo_identity[stage] = tx.photo_identity;
+    stages.photo_replaced[stage] = tx.replaced;
     if (fi.depth) info.shadow = ShadowDepthKind(d.format);
     if (ext_) ext_->Sampled(d, nullptr, tx.flags, info);
     return tx.res.Get();
@@ -2991,6 +3014,7 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
         }
     }
     EndCountedDraw(query);
+    if (photo_policy_.Armed()) ObservePhotoDraw(s, a, k, sh, stages);
     bool snap_tex = false;
     if (cap_ && diag::CaptureSnapTexture())
         for (int i = 0; i < 4; i++) {
@@ -3350,6 +3374,105 @@ void D3D12Backend::ResizeSwap() {
     post_failed_ = false;
 }
 
+void D3D12Backend::InitPhotoCapture() {
+    const char* hashes = diag::CaptureTextureHashes();
+    if (!hashes || !*hashes) return;
+    const auto config = photo_capture::Parse(hashes, diag::CaptureTextureFrames());
+    if (!config || diag::CaptureDir().empty()) {
+        LOGE("capture: photo diagnostic disabled; valid texture hashes/ordinals and XBE_CAPTURE_DIR are required");
+        return;
+    }
+    photo_config_ = *config;
+    photo_policy_ = photo_capture::Policy(*config);
+    LOGR("capture: same-present photo diagnostic armed (%u hashes, at most %u attempts, 64 MiB/frame ceiling)",
+         photo_config_.hash_count, photo_config_.ordinal_count);
+}
+
+void D3D12Backend::ObservePhotoDraw(const State& s, const Assembled& a, const PsoKey& k,
+                                    const DrawShaders& sh, const DrawTextures& stages) {
+    if (!bound_rt_ || !(k.wmask & 7) || !(a.index_count || a.draw_count) || !s.viewport.w || !s.viewport.h) return;
+    bool relevant = false;
+    for (int i = 0; i < 4; ++i)
+        relevant |= stages.res[i] && photo_policy_.Wants(stages.photo_identity[i].original_hash);
+    if (!relevant) return;
+    auto [found, inserted] = photo_sampled_.try_emplace(sh.ph, 0);
+    if (inserted) {
+        auto mask = photo_capture::CompiledTextureStages(sh.ps_code);
+        if (!mask) LOGE("capture: photo shader reflection failed; this shader cannot trigger a capture");
+        found->second = mask.value_or(0);  // Fail closed: merely bound textures do not count.
+    }
+    for (uint32_t stage = 0; stage < 4; ++stage) {
+        const auto hash = stages.photo_identity[stage].original_hash;
+        if (!(found->second & (1u << stage)) || !stages.res[stage] || !photo_policy_.Wants(hash)) continue;
+        TextureDesc guest;
+        if (!Describe(s.textures[stage], guest)) continue;
+        const auto host = stages.res[stage]->GetDesc();
+        photo_policy_.ObserveIssuedTexture(hash);
+        for (uint32_t i = 0; i < photo_config_.hash_count; ++i)
+            if (photo_config_.hashes[i] == hash)
+                photo_observed_[i] = {hash, stage, guest.data, bound_rt_->data, guest.width, guest.height,
+                                      uint32_t(host.Width), host.Height, stages.photo_replaced[stage]};
+    }
+}
+
+void D3D12Backend::CapturePhoto(const photo_capture::Decision& decision, uint32_t backbuffer) {
+    CaptureStamp stamp{frame_, presents_,
+        uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count()),
+        uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count()), GetCurrentProcessId()};
+    std::error_code error;
+    const auto base = std::filesystem::weakly_canonical(app::ExeDir() / diag::CaptureDir() / "photo", error);
+    if (error) { LOGE("capture: photo directory resolution failed: %s", error.message().c_str()); return; }
+    const auto directory = CreateUniqueCaptureDirectory(base, stamp);
+    if (directory.error) { LOGE("capture: new photo directory failed: %s", directory.error.message().c_str()); return; }
+    std::vector<uint8_t> pixels;
+    D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_PRESENT;  // DrawFrame completed this transition.
+    const bool read = photo_capture::ReadPresented(bb_w_, bb_h_, pixels,
+        [&] { Transition(bb_[backbuffer].Get(), state, D3D12_RESOURCE_STATE_COPY_SOURCE); },
+        [&](auto& out) { return ReadBack(bb_[backbuffer].Get(), bb_w_, bb_h_, out); },
+        [&] { Transition(bb_[backbuffer].Get(), state, D3D12_RESOURCE_STATE_PRESENT); });
+    const bool saved = read && photo_capture::SaveBmpNew(directory.path / "present.bmp", bb_w_, bb_h_, pixels);
+    FILE* metadata = OpenCaptureFileNew(directory.path / "photo.json");
+    bool metadata_ok = false;
+    if (metadata) {
+        const auto& settings = app::Get();
+        const auto& graphics = settings.graphics;
+        bool wrote = std::fprintf(metadata,
+            "{\n  \"format\": \"mc3-photo-capture-v1\",\n"
+            "  \"scope\": \"same completed backbuffer post-DrawFrame/pre-Present; no Shrink\",\n"
+            "  \"frame\": %llu, \"completed_presents\": %llu, \"matching_ordinal\": %u,\n"
+            "  \"wall_unix_ns\": %llu, \"monotonic_ns\": %llu, \"process_id\": %u,\n"
+            "  \"width\": %u, \"height\": %u, \"backbuffer_index\": %u, \"format_name\": \"BGRA8\",\n"
+            "  \"byte_ceiling\": %llu, \"readback_succeeded\": %s, \"bmp_saved\": %s,\n"
+            "  \"observed_mask\": %u, \"render_percent\": %u, \"scene_width\": %u, \"scene_height\": %u,\n"
+            "  \"post\": %s, \"aa\": %u, \"sharpen\": %.9g, \"texture_pack\": %s, \"texture_detail\": %u,\n"
+            "  \"context_limit\": \"EXE/source/settings/file SHA-256 require external receipt; shader access does not prove visible pixels; swapchain Present result not recorded\",\n"
+            "  \"textures\": [\n",
+            static_cast<unsigned long long>(stamp.frame), static_cast<unsigned long long>(stamp.presents), decision.matched_ordinal,
+            static_cast<unsigned long long>(stamp.wall_unix_ns), static_cast<unsigned long long>(stamp.monotonic_ns), stamp.process_id,
+            bb_w_, bb_h_, backbuffer, static_cast<unsigned long long>(photo_capture::kMaxFrameBytes),
+            read ? "true" : "false", saved ? "true" : "false", decision.observed_mask, settings.render_percent,
+            graphics.scene_width, graphics.scene_height, graphics.post ? "true" : "false", graphics.aa,
+            double(graphics.sharpen), graphics.texture_pack ? "true" : "false", graphics.texture_detail) >= 0;
+        for (uint32_t i = 0; i < photo_config_.hash_count; ++i) {
+            const auto& o = photo_observed_[i];
+            wrote &= std::fprintf(metadata,
+                "    {\"original_hash\": \"%016llX\", \"stage\": %u, \"guest_data\": %u, \"draw_target_data\": %u, "
+                "\"guest_size\": [%u,%u], \"host_size\": [%u,%u], \"replacement_used\": %s}%s\n",
+                static_cast<unsigned long long>(o.original_hash), o.stage, o.guest_data, o.target_data,
+                o.guest_w, o.guest_h, o.host_w, o.host_h, o.replaced ? "true" : "false",
+                i + 1 < photo_config_.hash_count ? "," : "") >= 0;
+        }
+        wrote &= std::fprintf(metadata, "  ]\n}\n") >= 0;
+        metadata_ok = std::fclose(metadata) == 0 && wrote;
+    }
+    if (saved && metadata_ok) LOGR("capture: photo ordinal %u saved to %s", decision.matched_ordinal,
+                                   hostpath::Utf8(directory.path).c_str());
+    else LOGE("capture: photo attempt %u incomplete (read %u, BMP %u, metadata %u); inspect %s", decision.matched_ordinal,
+              unsigned(read), unsigned(saved), unsigned(metadata_ok), hostpath::Utf8(directory.path).c_str());
+}
+
 void D3D12Backend::FinishCapture(const Surface& front) {
     CapStep(Surface{});
     if (Target* f = FindTarget(front, false)) CapSave(*f, "final");
@@ -3366,14 +3489,30 @@ void D3D12Backend::FinishCapture(const Surface& front) {
 }
 
 void D3D12Backend::StartCapture() {
-    SYSTEMTIME tm;
-    GetLocalTime(&tm);
-    char stamp[32];
-    snprintf(stamp, sizeof(stamp), "%02u%02u%02u", tm.wHour, tm.wMinute, tm.wSecond);
     std::error_code ec;
-    cap_dir_ = std::filesystem::weakly_canonical(app::ExeDir() / diag::CaptureDir() / stamp, ec);
-    std::filesystem::create_directories(cap_dir_, ec);
-    cap_ = _wfopen((cap_dir_ / "frame.txt").c_str(), L"w");
+    auto base = std::filesystem::weakly_canonical(app::ExeDir() / diag::CaptureDir(), ec);
+    if (ec) {
+        LOGE("capture: cannot resolve output directory: %s", ec.message().c_str());
+        return;
+    }
+    CaptureStamp stamp{frame_, presents_,
+        uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count()),
+        uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count()), GetCurrentProcessId()};
+    auto directory = CreateUniqueCaptureDirectory(base, stamp);
+    if (directory.error || !WriteCaptureMetadata(directory, stamp, ec)) {
+        const auto error = directory.error ? directory.error : ec;
+        LOGE("capture: cannot create new evidence session: %s", error.message().c_str());
+        return;
+    }
+    FILE* stream = OpenCaptureFileNew(directory.path / "frame.txt");
+    if (!stream) {
+        LOGE("capture: cannot create new frame log (errno %d)", errno);
+        return;
+    }
+    cap_dir_ = std::move(directory.path);
+    cap_ = stream;
     cap_i_ = cap_rt_ = 0;
     cap_seen_.clear();
     cap_sh_.clear();
@@ -3633,6 +3772,7 @@ void D3D12Backend::Present(const Surface& front) {
     } else if ((g_capture.exchange(false) || diag::CaptureFrame(frame_ + 1)) && CaptureOn()) {
         StartCapture();
     }
+    const auto photo = photo_policy_.FinishPresent();
     ResizeSwap();
     Target* t = EnsureTarget(front, false);
     if (t) app::ReportRenderResolution({t->w, t->h});
@@ -3643,6 +3783,8 @@ void D3D12Backend::Present(const Surface& front) {
 
     uint32_t bi = swap_->GetCurrentBackBufferIndex();
     DrawFrame(t, bi);
+    if (photo.capture) CapturePhoto(photo, bi);
+    photo_observed_ = {};
     Submit(false);
     DeliverReports();
     bool vsync = app::Get().vsync;
@@ -3892,7 +4034,12 @@ bool D3D12Backend::ReadBack(ID3D12Resource* res, uint32_t w, uint32_t h, std::ve
     cl_->CopyTextureRegion(&dl, 0, 0, 0, &sl, nullptr);
     Flush();
     uint8_t* p = nullptr;
-    rb->Map(0, nullptr, reinterpret_cast<void**>(&p));
+    const HRESULT mapped = rb->Map(0, nullptr, reinterpret_cast<void**>(&p));
+    if (FAILED(mapped) || !p) {
+        if (SUCCEEDED(mapped)) rb->Unmap(0, nullptr);
+        LOGE("capture: readback Map failed or returned null (0x%08lX)", static_cast<unsigned long>(mapped));
+        return false;
+    }
     out.resize(size_t(w) * h * 4);
     for (uint32_t y = 0; y < h; y++) std::memcpy(&out[size_t(y) * w * 4], p + size_t(y) * fp.Footprint.RowPitch, w * 4);
     rb->Unmap(0, nullptr);
