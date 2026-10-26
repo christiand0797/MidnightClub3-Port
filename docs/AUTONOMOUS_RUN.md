@@ -5,7 +5,33 @@ a complete project backup, public GitHub source/development releases, and comple
 PBR implementation must wait until the media pass
 and a verified full backup. Existing PBR experiments are inherited; the renderer remains on its current path.
 
-## Latest checkpoint — 2026-10-26 11:40 MDT
+## Latest checkpoint — 2026-10-26 16:28 MDT
+
+- The corrected content cohort is now frozen externally at
+  `G:\MC3_Backups\release-work\corrected-content-0.3.3-dev.20261026-r1\content-snapshot-r1`.
+  Manifest `46505b35...` seals 7,188 playable files and 7,391 total inventory files including
+  separate evidence. Actual copied evidence gives 44 strict original/model records, 5 marker-only
+  and 57 unrecorded historical movies. The historical 39/67 plan and proof ZIP remain unchanged.
+- The graceful stop followed authenticated SqMuscle publication. The snapshot completed 13:01 MDT.
+  Retirement then failed because a C: to G: rename is not atomic across volumes; the exact owned
+  request stayed preserved. Usage exhaustion delayed recovery. A PATH-selected Python 3.15 retry
+  lacked Pillow and refused before retirement. Reviewed recovery used explicit Python 3.12,
+  same-volume retirement and a separate verified G: evidence copy at 16:26 MDT. One coordinator
+  **13372** and video child **18468** now process Svincint; discover actual live identities before
+  future work. No human game/input or foreign stop was interrupted. See
+  [snapshot and recovery](notes/content_snapshot_20261026.md).
+- The read-only frozen validator passed 23 focused CPU tests independently and at root. Full
+  inventory hashing, fresh integrity decoding of 7,081 PNGs, authenticated original/reviewed hash joins
+  and all 106 movie decode/frame/timing checks are now running in the new external `validation-r1`
+  directory. Its source must stay unchanged while that audit runs. Historical timing findings
+  cannot become strict provenance or silent release approval. Native archive/clean first launch
+  and exact runtime/source sealing still gate a new release; none was uploaded or published.
+- San Diego remains installed as 7,079 original-pass images plus 2 reviewed corrections. Bounded
+  movie still review covers 43, not the newly frozen 44th clip. Other-city native comparisons,
+  NPC walking/footplants and road scrape evidence remain open. Final 106 strict outputs, final
+  audits and a verified full-project backup still gate new offline PBR; runtime PBR is unchanged.
+
+## Earlier checkpoint — 2026-10-26 11:40 MDT
 
 - The original coordinator17636/video11568 pair remains healthy with no duplicate inference
   worker or game session. The frozen report now has43 strict completed movies, zero failures;

@@ -1,8 +1,11 @@
 # A stopped-worker window is required for the content snapshot
 
-The tested snapshot tool is ready, but no real full-content snapshot has run yet. The movie
-coordinator and its single child continue their current movie. Preserve that in-flight work and
-schedule a later snapshot after an authenticated movie publication and graceful maintenance stop.
+The real corrected-content snapshot completed on 2026-10-26 at 19:01:20 UTC / 13:01:20 MDT after an
+authenticated SqMuscle publication and graceful worker exit. It froze 7,188 payload files and
+7,391 total inventory files, including 44 strict movie records, 5 marker-only and 57 unrecorded movies.
+An automatic cross-volume stop-retirement failure and subsequent usage outage delayed the reviewed
+recovery until 16:26 MDT. One coordinator and movie child then restarted. Exact hashes, failure/recovery
+receipts and pending validation scope are in [the completed snapshot note](content_snapshot_20261026.md).
 
 ## Actual Windows finding
 
@@ -61,8 +64,10 @@ strict-record versus historical cohort from the frozen files. Model-marker-only 
 historical movies are not authenticated x4plus outputs. The full106 strict-movie completion and
 verified post-media full-project backup remain separate pre-PBR gates.
 
-Next: at a suitable published-movie boundary, create a new exclusive owned maintenance request,
-let the existing pair exit normally, run the quiescent freeze under all three locks, verify its
-manifest, retire only the unchanged owned request and resume one current coordinator. Then perform
-frozen-content decode/timing, native archive and clean-install validation before publishing a new
-release. Do not hold an idle game window or discard the current movie to force this window.
+That window has now completed; do not repeat the copy or modify its sealed cohort to track newer
+live movies. Finish the separately running frozen-content decode/timing audit, then verify content
+chunks/native archive reading, clean-install behavior and exact release source/EXE evidence before
+publication. The live coordinator continues the remaining strict movie pass. Future maintenance
+still requires an authenticated publication boundary and all three locks; retire an owned request
+on the same volume, preserve independent external evidence, and use the explicit validated Python
+interpreter. Do not hold an idle game window or discard a current movie to force another window.
