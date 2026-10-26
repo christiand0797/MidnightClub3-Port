@@ -5,7 +5,40 @@ a complete project backup, public GitHub source/development releases, and comple
 PBR implementation must wait until the media pass
 and a verified full backup. Existing PBR experiments are inherited; the renderer remains on its current path.
 
-## Latest checkpoint — 2026-10-26 06:20 MDT
+## Latest checkpoint — 2026-10-26 07:20 MDT
+
+- The two native-reviewed San Diego panels are now installed in the canonical HD pack through
+  the tested r2 transaction path. The full mixed audit passes **7,081 accounted outputs**:
+  7,079 unchanged original-pass images plus two reviewed corrections, all final issue lists empty.
+  Journal `9428aa3c...` is committed, ledger `f8ed40b4...` matches r2 exactly, and the active
+  transaction registration is retired. Both old PNG archives are independent verified copies.
+  See [installation and restart evidence](notes/reviewed_s_install_20261026.md).
+- Sqtuner published all996 frames with strict original/model/output provenance before the owned
+  maintenance stop. All39 published strict movies are retained, zero failures. The next temporary
+  Sqperfom movie had reached24 frames and restarts; do not call this a zero-work-loss stop.
+- Root retired only its exact unchanged maintenance request after commit/full audit, then started
+  one hidden current-source coordinator **17636** with video child **11568**. The new worker contains
+  tested identical-original reuse (`fb400b34...`) and Sqperfom is advancing. No actual reused output
+  is claimed yet. The coordinator's own fresh mixed-pack audit passes and preserves the new PNGs.
+  The former9824/18460 pair exited normally; old private launch helpers pin those PIDs and need
+  fresh reviewed contexts before any future QA. No game or physical input was stopped.
+- Independent install review `ad5a7ab2...` confirms actual PNG/archive/ledger bytes, retired markers,
+ 31 pinned native run references, unchanged settings and all10 private save files. Frozen r1 and
+  accepted native proof stay preserved. Other-city native comparisons, full-body NPC walking/
+  footplants and all-car road contact/sparks remain open.
+- Canonical r9 and older public release assets are unchanged. A future release must freeze and
+  authenticate the new corrected content explicitly. Complete the remaining strict movies and
+  final audits, then verify the full project backup before new offline PBR. Runtime PBR is unchanged.
+- Fixed an actual content-packaging bug: recursive MP4 collection selected retained/in-flight
+  `.part.mp4` files. The builder now selects exactly the106 original-source-relative names and
+  rejects missing/ambiguous/unsafe/linked selections. Root and agent passed9 focused fixture
+  groups plus existing portable synthetic tests; real read-only selection was106 of108, with
+  both partials preserved. See [release selection and next snapshot](notes/release_movie_selection.md).
+  A corrected-content development release can honestly freeze39 new/67 historical playable
+  movies now; it needs a new manifest, exact source proof, separately authenticated reviewed
+  texture proof graph and clean-install validation. No new release or large archive was created.
+
+## Earlier checkpoint — 2026-10-26 06:20 MDT
 
 - Public source includes `5b5e2d7`, the independently CPU-tested opt-in startup gate. Isolated r11
   EXE `73279609...` completed three HD-enabled starts and normal exits. Canonical/public r9 stays

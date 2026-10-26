@@ -1,5 +1,9 @@
 # Native loading-photo and startup handoff — 2026-10-26
 
+Follow-up: the accepted San Diego correction was subsequently installed through the tested
+transaction path; see [canonical installation and controlled restart](reviewed_s_install_20261026.md).
+The evidence below preserves the earlier capture/review checkpoint and its exact limits.
+
 The isolated r11 executable completed three HD-enabled starts and normal exits. The startup gate
 held each process before game initialization, then released it after the existing media worker
 acknowledged its cooperative pause. All tests used independent private saves/settings and two
