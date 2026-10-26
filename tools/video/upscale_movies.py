@@ -389,6 +389,86 @@ def original_provenance(saved):
             and saved.get("historical_source_and_weights_verified") is True)
 
 
+def recipe_key(recipe):
+    return json.dumps(recipe, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def reuse_identical_movie(ff, src, dst, source, recipe, original, *, pause_file=None, stop_file=None,
+                         pause_owner=None):
+    """Copy a proved result of byte-identical original Bink data; never infer identity from its filename."""
+    other_src, other_dst = map(Path, original)
+    src, dst = Path(src), Path(dst)
+    if src.resolve() == other_src.resolve() or dst.resolve() == other_dst.resolve():
+        raise ValueError("identical-source reuse requires distinct movie paths")
+    metadata = other_dst.with_suffix(".upscale.json")
+    evidence = metadata.read_bytes()
+    saved = json.loads(evidence)
+    evidence_sha = hashlib.sha256(evidence).hexdigest()
+    if not original_provenance(saved) or saved.get("recipe") != recipe:
+        raise ValueError("identical-source reuse requires exact original/model/picture provenance")
+    output_sha = saved.get("output_sha256")
+    source_sha = recipe["source_sha256"]
+    targets = (dst, dst.with_suffix(".upscale.json"), dst.with_suffix(".model.txt"))
+
+    def target_state(path):
+        if not os.path.lexists(path):
+            return None
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("identical-source destination is not a regular generated file")
+        return sha256(path)
+
+    before = {path: target_state(path) for path in targets}
+
+    def check_inputs():
+        check_inference_identity(recipe["model"]["name"], recipe)
+        if (sha256(src) != source_sha or sha256(other_src) != source_sha
+                or src.stat().st_size != recipe["source_bytes"]
+                or other_src.stat().st_size != recipe["source_bytes"]):
+            raise ValueError("identical-source original bytes changed")
+        if (sha256(metadata) != evidence_sha or sha256(other_dst) != output_sha):
+            raise ValueError("identical-source picture/proof changed")
+        if any(target_state(path) != expected for path, expected in before.items()):
+            raise ValueError("identical-source destination changed; preserve the new files")
+
+    cooperate_checked(pause_file, stop_file, pause_owner, check_inputs)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix=f".{dst.stem}.identical.", suffix=".part.mp4", dir=dst.parent)
+    part = Path(name)
+    try:
+        with os.fdopen(fd, "wb") as outgoing, other_dst.open("rb") as incoming:
+            shutil.copyfileobj(incoming, outgoing)
+            outgoing.flush()
+            os.fsync(outgoing.fileno())
+        cooperate(pause_file, stop_file, pause_owner)
+        if part.stat().st_nlink != 1 or os.path.samefile(part, other_dst) or sha256(part) != output_sha:
+            raise ValueError("identical-source independent picture copy failed")
+        info = validate_movie(ff, part, source, source["frames"])
+
+        def before_publish():
+            check_inputs()
+            if part.stat().st_nlink != 1 or sha256(part) != output_sha:
+                raise ValueError("identical-source prepared picture changed")
+
+        record = {"recipe": recipe, "output": info, "output_sha256": output_sha,
+                  "origin": "original-bink", "historical_source_and_weights_verified": True,
+                  "identical_source_reuse": {
+                      "method": "byte-identical-original-and-exact-picture-recipe-v1",
+                      "original_movie": other_src.relative_to(ASSETS).as_posix(),
+                      "original_source_sha256": source_sha,
+                      "original_output": other_dst.relative_to(OUT).as_posix(),
+                      "original_output_sha256": output_sha,
+                      "original_record_sha256": evidence_sha},
+                  "validated_at": datetime.now(timezone.utc).isoformat()}
+        publish(part, dst, pause_file=pause_file, stop_file=stop_file, owner=pause_owner,
+                before_publish=before_publish)
+        atomic_write(dst.with_suffix(".upscale.json"), json.dumps(record, indent=2) + "\n")
+        atomic_write(dst.with_suffix(".model.txt"), recipe["model"]["name"] + "\n")
+        print(f"  reused authenticated byte-identical original: {other_src.relative_to(ASSETS)}", flush=True)
+        return source["frames"]
+    finally:
+        part.unlink(missing_ok=True)
+
+
 def current_output(ff, src, dst, source, recipe, adopt_legacy=True, require_original_provenance=False):
     if not dst.is_file():
         return False
@@ -782,6 +862,7 @@ def main():
         return 1 if failures else (0 if report["all_requested_model_validated"] else 2)
     identity = model_identity(args.model)
     with worker_lock(OUT), contextlib.ExitStack() as resources:
+        originals_by_recipe = {}
         owner = None
         if args.pause_owner_pid is not None:
             try:
@@ -808,15 +889,22 @@ def main():
                     row.update(status="verified", output_validated=True, recorded_model=args.model,
                                historical_source_and_weights_verified=saved.get("historical_source_and_weights_verified", False),
                                origin=saved.get("origin", "unrecorded"))
+                    if original_provenance(saved) and saved.get("recipe") == recipe:
+                        originals_by_recipe.setdefault(recipe_key(recipe), (src, dst))
                     run_report(args, rows, "upscale")
                     continue
                 print(f"{rel} -> {dst.relative_to(OUT)}", flush=True)
                 start = time.monotonic()
                 controls = {"pause_file": args.pause_file, "stop_file": args.stop_file, "pause_owner": owner} if args.pause_file is not None else {}
-                n = upscale_movie(ff, src, dst, args.model, source, recipe, **controls)
+                original = originals_by_recipe.get(recipe_key(recipe)) if not args.force else None
+                if original is not None:
+                    n = reuse_identical_movie(ff, src, dst, source, recipe, original, **controls)
+                else:
+                    n = upscale_movie(ff, src, dst, args.model, source, recipe, **controls)
                 completed += 1
                 row.update(status="verified", output_validated=True, recorded_model=args.model,
                            historical_source_and_weights_verified=True, origin="original-bink")
+                originals_by_recipe.setdefault(recipe_key(recipe), (src, dst))
                 run_report(args, rows, "upscale")
                 print(f"  done, {n} frames, {time.monotonic() - start:.1f} s", flush=True)
                 if args.max_movies and completed >= args.max_movies:
