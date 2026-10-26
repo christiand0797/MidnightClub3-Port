@@ -1,5 +1,9 @@
 # Exact movie selection for content bundles
 
+Follow-ups: [proof archive/publisher support](release_proof_tools.md) is implemented and locally
+verified. [Snapshot execution](content_snapshot_window.md) requires a stopped-worker window on
+this host; a held-target API test rejected the earlier concurrent-copy assumption.
+
 The content-bundle builder previously collected every recursive `*.mp4`. The live media folder
 contained106 expected movies plus an old retained temporary output and the current worker's
 temporary output. Both ended in `.part.mp4`; the old builder would have included them as playable

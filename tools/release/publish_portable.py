@@ -1,6 +1,7 @@
 """Stage an owned GitHub draft prerelease; this tool deliberately has no publish operation.
 
 Resume at asset boundaries using GitHub's server SHA-256 digests. Authentication stays inside gh/keyring.
+Optional --auxiliary-plan pins separately reviewed proof archives; this tool neither builds nor reviews them.
 """
 from __future__ import annotations
 
@@ -8,13 +9,30 @@ import argparse
 import concurrent.futures
 import hashlib
 import json
+import os
 import re
+import stat
 import subprocess
 import threading
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+AUXILIARY_FORMAT = "mc3-release-auxiliary-assets-v1"
+AUXILIARY_RECEIPT = "auxiliary-assets.json"
+
+
+def regular_unlinked(path):
+    """Check lexical ancestors before resolving; resolve() alone would conceal a junction."""
+    path = Path(path).absolute()
+    for item in (path, *path.parents):
+        info = item.lstat()
+        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+            raise RuntimeError("Auxiliary input crosses a link or junction.")
+    if not stat.S_ISREG(path.stat().st_mode):
+        raise RuntimeError("Auxiliary input must be a regular file.")
+    return path.resolve()
 
 
 class ControlLock:
@@ -158,10 +176,14 @@ class DraftUploader:
                 raise RuntimeError("Runtime checksum sidecar is not exact.")
             for file in [path, sidecar]:
                 assets.append({"path": str(file), "name": file.name, "size": file.stat().st_size, "sha256": sha256(file)})
-        names = [asset["name"] for asset in assets]
-        if len(set(names)) != len(names):
+        auxiliary, receipt = self.auxiliary_assets()
+        assets.extend(auxiliary)
+        names = [asset["name"].casefold() for asset in assets]
+        if len(set(names)) != len(names) or "sha256sums.txt" in names:
             raise RuntimeError("Duplicate release asset name.")
-        # SHA256SUMS deliberately excludes itself. With no runtime flag, it covers only the approved content.
+        if receipt is not None:
+            self.pin_auxiliary(receipt)
+        # SHA256SUMS deliberately excludes itself; it covers every approved content/runtime/auxiliary asset.
         sums = self.control / "SHA256SUMS.txt"
         sums.write_text("".join(f"{asset['sha256']}  {asset['name']}\n" for asset in sorted(assets, key=lambda a: a["name"])), encoding="utf-8", newline="\n")
         assets.append({"path": str(sums), "name": sums.name, "size": sums.stat().st_size, "sha256": sha256(sums)})
@@ -170,6 +192,91 @@ class DraftUploader:
         self.state["runtime_included"] = bool(self.args.runtime_zip)
         self.save()
         return assets
+
+    def auxiliary_assets(self):
+        request = getattr(self.args, "auxiliary_plan", None)
+        pinned = self.state.get("auxiliary_plan")
+        receipt_path = self.control / AUXILIARY_RECEIPT
+        if request is None:
+            if pinned or os.path.lexists(receipt_path):
+                raise RuntimeError("Pinned auxiliary plan cannot be omitted on resume.")
+            return [], None
+        path = regular_unlinked(request)
+        if path.stat().st_size > 1 << 20:
+            raise RuntimeError("Auxiliary plan is oversized.")
+        raw = path.read_bytes()
+        document = json.loads(raw)
+        if (not isinstance(document, dict) or set(document) != {"format", "assets"}
+                or document["format"] != AUXILIARY_FORMAT or not isinstance(document["assets"], list)
+                or not 1 <= len(document["assets"]) <= 32):
+            raise RuntimeError("Invalid auxiliary asset plan.")
+        assets, names = [], set()
+        controls = {"release-state.json", "release-state.json.tmp", "upload.log", "uploader.lock",
+                    "sha256sums.txt", AUXILIARY_RECEIPT}
+        for row in document["assets"]:
+            if not isinstance(row, dict) or set(row) != {"name", "path", "size", "sha256"}:
+                raise RuntimeError("Invalid auxiliary asset record.")
+            name, relative, size, digest = (row[key] for key in ("name", "path", "size", "sha256"))
+            if (not isinstance(name, str) or name.casefold() in controls
+                    or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,179}\.(?:zip|7z|tar\.gz|tar\.zst)", name)
+                    or re.fullmatch(r"CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]", name.split(".")[0], re.I)):
+                raise RuntimeError("Unsafe auxiliary archive basename or control-file collision.")
+            if name.casefold() in names:
+                raise RuntimeError("Duplicate auxiliary archive name.")
+            names.add(name.casefold())
+            if (not isinstance(relative, str) or re.search(r"[\x00-\x1f\\:]", relative)
+                    or any(part in ("", ".", "..") for part in relative.split("/"))
+                    or any(part.endswith((".", " ")) or re.fullmatch(r"CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]", part.split(".")[0], re.I)
+                           for part in relative.split("/"))
+                    or Path(relative).is_absolute() or Path(relative).name != name):
+                raise RuntimeError("Unsafe auxiliary artifact path.")
+            if (type(size) is not int or not 0 < size <= 1900 << 20 or not isinstance(digest, str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", digest)):
+                raise RuntimeError("Invalid auxiliary size or SHA-256.")
+            artifact = regular_unlinked(path.parent / relative)
+            if path.parent not in artifact.parents or artifact == self.control or self.control in artifact.parents:
+                raise RuntimeError("Auxiliary artifact escapes its input root or collides with control files.")
+            if artifact.stat().st_size != size or sha256(artifact) != digest:
+                raise RuntimeError("Auxiliary artifact bytes changed.")
+            assets.append({"path": str(artifact), "name": name, "size": size, "sha256": digest})
+        if path.read_bytes() != raw:
+            raise RuntimeError("Auxiliary plan changed during validation.")
+        receipt = {"format": AUXILIARY_FORMAT, "input_path": str(path),
+                   "input_sha256": hashlib.sha256(raw).hexdigest(), "assets": assets}
+        if pinned:
+            stored = regular_unlinked(receipt_path)
+            stored_bytes = stored.read_bytes()
+            if (hashlib.sha256(stored_bytes).hexdigest() != pinned.get("receipt_sha256")
+                    or json.loads(stored_bytes) != receipt):
+                raise RuntimeError("Immutable auxiliary plan changed; use a new reviewed release/control.")
+        elif os.path.lexists(receipt_path):
+            raise RuntimeError("Foreign/unregistered auxiliary control receipt; preserve it.")
+        return assets, receipt
+
+    def pin_auxiliary(self, receipt):
+        if self.state.get("auxiliary_plan"):
+            return
+        path = self.control / AUXILIARY_RECEIPT
+        # Exclusive creation deliberately fails closed after an incomplete first registration; never adopt it.
+        data = (json.dumps(receipt, indent=2) + "\n").encode("utf-8")
+        digest = hashlib.sha256(data).hexdigest()
+        with path.open("xb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if sha256(path) != digest:
+            raise RuntimeError("Auxiliary control receipt changed during registration; preserve it.")
+        self.state["auxiliary_plan"] = {"receipt_sha256": digest, "names": [a["name"] for a in receipt["assets"]]}
+        self.save()
+
+    def check_auxiliary_upload(self, local):
+        pinned = self.state.get("auxiliary_plan")
+        if not pinned or local["name"].casefold() not in {n.casefold() for n in pinned["names"]}:
+            return False
+        assets, _receipt = self.auxiliary_assets()
+        if local not in assets:
+            raise RuntimeError("Auxiliary upload differs from its immutable plan.")
+        return True
 
     def ensure_draft(self):
         notes = self.args.notes.read_text(encoding="utf-8").rstrip() + "\n\n" + self.marker + "\n"
@@ -240,13 +347,18 @@ class DraftUploader:
 
     def upload_one(self, local):
         name = local["name"]
+        auxiliary = self.check_auxiliary_upload(local)
         self.owned_draft()
-        matches = [asset for asset in self.assets() if asset["name"] == name]
+        matches = [asset for asset in self.assets() if asset["name"].casefold() == name.casefold()]
         if len(matches) > 1:
             raise RuntimeError(f"Duplicate remote assets named {name}.")
         if matches:
             remote = matches[0]
+            if remote["name"] != name:
+                raise RuntimeError(f"Remote asset case collision: {name}; preserve it.")
             if self.remote_matches(remote, local):
+                if auxiliary:
+                    self.check_auxiliary_upload(local)
                 self.record(local, remote, "verified-existing")
                 return
             previous = self.state["assets"].get(name, {})
@@ -259,14 +371,20 @@ class DraftUploader:
             retry_starter = (remote.get("state") == "starter" and remote.get("size") == 0 and attempt and created and
                              datetime.fromisoformat(created.replace("Z", "+00:00")) >= datetime.fromisoformat(attempt).replace(microsecond=0) and
                              remote.get("uploader", {}).get("login") == self.account)
+            if auxiliary:
+                retry_starter = retry_starter and previous.get("size") == local["size"] and previous.get("sha256") == local["sha256"]
             if not (replace_sums or retry_starter):
                 raise RuntimeError(f"Existing remote asset differs: {name}; refusing to clobber it.")
             self.owned_draft()
+            if auxiliary:
+                self.check_auxiliary_upload(local)
             self.log(f"Removing owned {'checksum revision' if replace_sums else 'empty failed upload'} {name}, asset {remote['id']}")
             gh_json(f"{self.prefix}/releases/assets/{remote['id']}", method="DELETE")
         path = Path(local["path"])
         if not path.is_file() or path.stat().st_size != local["size"] or sha256(path) != local["sha256"]:
             raise RuntimeError(f"Local release asset changed before upload: {name}")
+        if auxiliary:
+            self.check_auxiliary_upload(local)
         with self.lock:
             self.state["assets"].setdefault(name, {}).update({"attempt_started_utc": utc(), "size": local["size"], "sha256": local["sha256"]})
             self.save()
@@ -275,9 +393,11 @@ class DraftUploader:
         result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
         # A lost response can still leave a complete asset. Always inspect it before considering another attempt.
         self.owned_draft()
-        matches = [asset for asset in self.assets() if asset["name"] == name]
-        if len(matches) != 1 or not self.remote_matches(matches[0], local):
+        matches = [asset for asset in self.assets() if asset["name"].casefold() == name.casefold()]
+        if len(matches) != 1 or matches[0]["name"] != name or not self.remote_matches(matches[0], local):
             raise RuntimeError(f"Upload did not authenticate: {name}; gh exit={result.returncode}, {result.stderr.strip()}")
+        if auxiliary:
+            self.check_auxiliary_upload(local)
         self.record(local, matches[0], "verified-upload")
 
     def record(self, local, remote, status):
@@ -330,6 +450,8 @@ def main():
     parser.add_argument("--notes", type=Path, required=True)
     parser.add_argument("--runtime-zip", type=Path)
     parser.add_argument("--runtime-sha256")
+    parser.add_argument("--auxiliary-plan", type=Path,
+                        help="immutable JSON proof-archive allowlist: format mc3-release-auxiliary-assets-v1; assets name/path/size/sha256, paths relative to the plan")
     parser.add_argument("--workers", type=int, choices=range(1, 4), default=2)
     parser.add_argument("--upload", action="store_true")
     parser.add_argument("--update-owned-target", action="store_true")

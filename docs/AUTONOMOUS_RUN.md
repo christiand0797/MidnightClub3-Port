@@ -5,7 +5,34 @@ a complete project backup, public GitHub source/development releases, and comple
 PBR implementation must wait until the media pass
 and a verified full backup. Existing PBR experiments are inherited; the renderer remains on its current path.
 
-## Latest checkpoint — 2026-10-26 07:20 MDT
+## Latest checkpoint — 2026-10-26 11:40 MDT
+
+- The original coordinator17636/video11568 pair remains healthy with no duplicate inference
+  worker or game session. The frozen report now has43 strict completed movies, zero failures;
+  SqMuscle is in progress. No new stop request or full-content copy was started.
+- Six newly completed clips received actual CPU-only visual review:18 exact-time pairs and12
+  sheets, zero sampling failures and6,808 matching packet timestamps/durations. Bounded coverage
+  is now43 distinct strict movies. Fine reconstructed lettering/grille detail and smoothed
+  faces/fabric remain limitations; this is not full temporal certification. See
+  [six-movie review](notes/video_visual_delta_20261026_r4.md).
+- The reviewed-texture proof archive is built and fully reread locally:110 required files plus
+  embedded inventory,157,905,338 bytes, SHA `21105dea...`. It preserves exact required history and
+  explicitly lists metadata-only private/historical observations. No actual saves/settings or
+  token markers were included. Optional authenticated auxiliary-archive publisher support passed
+  all21 root tests without network activity. See [proof tools](notes/release_proof_tools.md).
+- Snapshot tooling passed all25 root Windows fixtures and a real read-only7,188-entry plan.
+  An actual API test disproved nonblocking concurrent replacement on this host: held targets
+  make os.replace return WinError5 despite delete sharing. Concurrent copying therefore refuses.
+  Explicit quiescent mode requires an unchanged owned stop, exited real workers, and coordinator/
+  install/video output locks. See [required snapshot window](notes/content_snapshot_window.md).
+  Preserve the current movie; arrange a later graceful stop after authenticated publication,
+  then copy/verify and restart one coordinator. No real snapshot, new release or upload occurred.
+- San Diego canonical ledger/proof and independent old archives remain installed/preserved.
+  Other-city native comparisons, NPC walking/footplant and road scrape evidence remain open.
+  Runtime PBR is unchanged; full strict media/final audits and verified full backup still gate
+  new offline PBR generation. The sealed old release plan remains immutable as progress advances.
+
+## Earlier checkpoint — 2026-10-26 07:20 MDT
 
 - The two native-reviewed San Diego panels are now installed in the canonical HD pack through
   the tested r2 transaction path. The full mixed audit passes **7,081 accounted outputs**:
