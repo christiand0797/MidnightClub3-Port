@@ -5,7 +5,63 @@ a complete project backup, public GitHub source/development releases, and comple
 PBR implementation must wait until the media pass
 and a verified full backup. Existing PBR experiments are inherited; the renderer remains on its current path.
 
-## Latest checkpoint — 2026-10-25 17:49 MDT
+## Latest checkpoint — 2026-10-25 23:04 MDT
+
+- Source changes are public through `db7df67`: `9fd0900` adds exact-original movie reuse, `b2ec102` adds
+  authored vehicle-bound audits/extreme fixtures, and `db7df67` fixes capture-session collisions and adds
+  opt-in same-present photo evidence. Public v0.3.2 assets/tag remain unchanged. Canonical r9 EXE remains
+  SHA-256 `7bb7fcd1928156db88e33c78cd5a799ed9b04d4c9c19c9a9bbd6b00e2aa9d1ad`.
+- Coordinator **9824** and video child **18460** continue normally. Strict coverage is **33/106**, zero
+  failures, **85,804 frames / 73 movies** remaining; `reward/rgroupb.bik` is in progress. No game session,
+  new QA stop marker, actual canonical texture adoption or additional GPU worker was started. Preserve
+  current in-flight work and user stop requests. Do not pause this healthy queue solely to await QA capacity.
+- The live worker loaded the earlier `4693056a...` script. The current source adds byte-identical reuse;
+  editing it does not retrofit that child. A later safe paired restart activates the new path. All existing
+  picture recipes remain unchanged; no canonical alias was applied. Two original tutorial pairs have exact
+  full-Bink/header equality and can avoid 3,089 repeated inference frames. The independent copy requires
+  exact original/model/encoder/timing provenance, complete decode/PTS validation and destination anchors.
+  Root passed all **51 video tests**; independent reuse review passed all 13 new fixtures. See
+  `notes/identical_movie_reuse.md`. Current worker source SHA-256 is
+  `fb400b342157a512b679e1fc81485f54558d9112adb6d43663d111b18d19e965`.
+- The bounded original-resource audit covers 282 main/_g/_o variants, 94 families and 188 tunes. It found
+  no demonstrated ride implementation defect. Authored F355 .08 m and SLR .09 m clearance skins already pass
+  through unchanged; .05 m is the usual/default skin, not universal. Focused real-solver/AirRide/floor tests
+  now include mixed stock steps 6–8 and actual maximum radius 1.312333345 m. Root independently passed both
+  CTests and all 7 parser tests. Road contact/sparks/all-car native appearance remain unverified. See
+  `notes/vehicle_ride_bounds_audit.md`; production physics was unchanged.
+- Eight additional strict movies received actual CPU-only visual review: 24 matched-time pairs and 16 sheets,
+  zero sampling failures. This extends the historical 25 sampled clips to 33 distinct reviewed movies;
+  neither set certifies all frames or temporal stability. Sharper outlines coexist with synthetic tiny
+  grille/badge/sign details and smoothed grain. See `notes/video_visual_delta_20261025.md`. No media recipe or
+  output was changed by review. Recent uninterrupted eight-frame batches take about 3.2 seconds/frame;
+  the older ~64 GPU-hour estimate is stale and remaining work is still multiple days.
+- Found and fixed a real diagnostic bug: same-second F3 requests previously overwrote/mixed evidence.
+  New session directories/files are exclusive and record frame/present/wall/monotonic identifiers.
+  New opt-in photo capture caches original content identities, filters optimized shader texture access,
+  and saves the actual current composed backbuffer after DrawFrame, without Shrink. Four attempted frames
+  at most, 64 MiB each; disabled by default. Map failure is checked and readback restoration is covered by
+  CPU fixtures. These are diagnostic changes, not a new demonstrated NPC animation fix.
+- Root passed the 5 focused diagnostic/vehicle CTests; all 3 new diagnostic tests also pass independent builds.
+  Native isolated candidate **r10** linked successfully at
+  `.local/native-photo-candidate-20261025-r10/mc3.exe`, 23,643,648 bytes, SHA-256
+  `b08ddda04f871b726cf1060bbd8f344404c92ac6923ee7e9991b81da6fb571af`.
+  Its build manifest proves canonical outputs/build graph unchanged. Additional source/header receipt
+  `root-proof.json` has SHA-256 `d637a1f52c5771c104e377a42d5dd486478015608f868ba4b5098af04bfe13e9`.
+  This is a build-only candidate: fresh isolated QA assets/save/settings must be staged before launch.
+- No r10 native session or GPU readback validation occurred. Keep r9 installed/public until required native
+  checks pass. After a safely scheduled media handoff and sufficient QA capacity, stage a private r10 instance
+  and collect fresh BASE/candidate S sequences using `XBE_CAPTURE_TEXTURE_HASHES=4D145117D9DD0F63,A21582D8BE650E3F`,
+  `XBE_CAPTURE_TEXTURE_FRAMES=1,4,8,16`, and a nonempty unique `XBE_CAPTURE_DIR`. Inspect actual images and
+  comparable wipe phases; shader access alone does not prove visible contribution. Preserve the old raw-JPEG
+  baseline. Source/CPU tests cannot replace that native check. Details: `notes/loading_photo_capture_plan.md`.
+- Native UI has no owner. Private r7 S images remain staged candidates and its other 7,073 hardlinks must
+  stay untouched. Canonical textures/ledger remain unadopted. A new accepted r2 proposal under current helper
+  pins is still required. Full-body NPC walking/footplants remain open; source review found no basis for a
+  timer rewrite. `notes/npc_capture_evidence_gap.md` identifies full uploaded VB/index/CB and post-VS gaps.
+- Keep completing strict media, then final audits and a verified full-project backup before offline PBR.
+  Runtime PBR is unchanged. No new release or full-backup gate was issued during this diagnostic/source pass.
+
+## Earlier checkpoint — 2026-10-25 17:49 MDT
 
 - Maintenance changes are pushed as `f346b2de76a51d514b7521b79d7150b915df5bd1`. The public
   v0.3.2 runtime/release assets and exact source tag remain unchanged. No native C++ change was made today
