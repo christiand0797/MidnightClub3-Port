@@ -56,3 +56,11 @@ clean offline first-launch checks, seal exact source-to-EXE/input hashes, and pr
 release asset. The caller-supplied `SourceRevision` and mtime guard alone do not prove an EXE was
 built from a tag. The native-tested r11 EXE is the appropriate candidate; canonical r9 remains
 installed until the new release is ready.
+
+A new local plan selects that complete corrected-content path at
+`G:/MC3_Backups/release-work/corrected-content-0.3.3-dev.20261026-r1/release-plan.json`, SHA-256
+`57e707ceb01b32e40081a0a35d0f252f50347b3c38ec9b9f18fa55c28df5fb52`.
+It pins source `63af77d12f55e9496879a143b9a429cbf360d492`, the tested r11 candidate and actual
+review/install receipts, verifies the65 direct ledger dependencies and records all106 expected
+movie names. It explicitly marks the39/67 live cohort as unfrozen. It creates no release/archive
+and requires fresh final source/input proof if subsequent source changes precede publication.
