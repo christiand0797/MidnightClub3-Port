@@ -21,6 +21,7 @@
 
 #include "app/app.h"
 #include "app/ui_font.h"
+#include "app/qa_startup_gate.h"
 #include "core/input.h"
 #include "core/host_path.h"
 #include "core/log.h"
@@ -293,6 +294,28 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     std::string log = app::kGame.log;
     if (app::Instance() > 1) log += "-" + std::to_string(app::Instance());
     logx::Init(app::ExeDir() / "logs", log, relaunched);
+    try {
+        auto qa_config = app::qa_startup::FromEnvironment();
+        app::qa_startup::PrepareRelease(qa_config, hostpath::Native);
+        const auto qa_gate = app::qa_startup::Wait(qa_config, [&] {
+            LOGR("qa startup gate: waiting up to120s for a NEW release file %s; game initialization has not started",
+                 hostpath::Utf8(qa_config.release).c_str());
+            logx::Flush();
+        });
+        if (!qa_gate.Proceed()) {
+            LOGE("qa startup gate: exit2 before game initialization: %s", qa_gate.reason);
+            logx::Flush();
+            return 2;
+        }
+        if (qa_gate.outcome == app::qa_startup::Outcome::Released) {
+            LOGR("qa startup gate: released; normal game initialization follows (release file preserved)");
+            logx::Flush();
+        }
+    } catch (...) {
+        LOGE("qa startup gate: configuration error; exit2 before game initialization (release path preserved)");
+        logx::Flush();
+        return 2;
+    }
     app::Load();
     if (app::kGame.init) app::kGame.init();
     if (relaunched && !logx::kVerbose) LOGR("Relaunched: %s", IMAGE_XBE);
