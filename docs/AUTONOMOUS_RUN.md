@@ -5,7 +5,59 @@ a complete project backup, public GitHub source/development releases, and comple
 PBR implementation must wait until the media pass
 and a verified full backup. Existing PBR experiments are inherited; the renderer remains on its current path.
 
-## Latest checkpoint — 2026-10-26 16:28 MDT
+## Latest checkpoint — 2026-10-26 21:44 MDT
+
+- The immutable corrected bundle is built and accepted: 7,188 payload files, eight chunks,
+  14,124,573,292 bytes, manifest `1c8c72b7...`, archive `b84957a3...`, acceptance `92c2fdde...`.
+  All TSV path/size/SHA entries bind the frozen payload, with independent chunk/whole hashing
+  and native reader PASS. See [bundle evidence](notes/content_bundle_20261026.md).
+- Fresh R12 from exact source `c68d964...` completed with no reused objects/libraries/generated
+  code. EXE `a08f330c...`, checker `9f80fb07...`, final seal `5e7b5ac2...`; corrected independent
+  closure `59b86046...` authenticates all 1,595 consumed dependencies. All 133 generated files
+  match canonical bytes. Failed materialization/configuration and the original narrow closure
+  receipts remain preserved. See [R12 build seal](notes/runtime_clean_r12_20261026.md).
+- The fresh checker passed the actual bundle too. Runtime ZIP `300ea5f0...` is assembled with
+  the explicit sealed CRT/content descriptor. Independent private offline inputs are staged at
+  `G:\MC3_QA_r12_offline_r1`; 53 protected-file hashes stayed identical. Only the precise private
+  shortcut marker is preseeded. No R12 native game has launched or release/upload occurred.
+  See [offline preparation and reviewed protocol](notes/r12_offline_qa_preparation_20261026.md).
+- Human Black Ops III PID 7612 opened at 21:38 MDT. Native QA is deferred. Coordinator 13372 and
+  video 18468 retain Stokmech/encoder 8800 at 2,024/2,210; actual cooperative pause is acknowledged
+  and no NCNN remains. Preserve this human-game pause; do not clear/restart it. Discover actual
+  games/workers before later native work; use a new gate/context with the reviewed protocol.
+- Live strict coverage is 46/106 with zero failures, while the immutable release cohort remains
+  44 strict plus 62 historical outputs. All frozen 106 movies/7,081 PNGs already passed the full
+  audit; do not repeat it or replace frozen movies as live progress grows. Native/offline tests
+  still gate publication. All-106 strict media, final audits and verified full-project backup
+  remain pre-PBR requirements; runtime PBR is unchanged.
+- New CPU-only r6 review covers the two additional strict Satlcut/Svincint clips: six exact-PTS
+  pairs, all 3,410 packet timestamps/durations matching, both overview/detail sheets jointly
+  viewed, unchanged input hashes and no sampling failures. Bounded still coverage is now 46;
+  smoothed/reconstructed fine texture remains, without a temporal/realism-recovery claim. See
+  [r6 review](notes/video_visual_delta_20261026_r6.md).
+
+## Earlier checkpoint — 2026-10-26 16:41 MDT
+
+- Frozen validation completed with zero errors/warnings: all 7,081 RGBA PNGs passed fresh integrity
+  decoding and original/reviewed proof joins; all 106 movies / 105,272 frames fully decoded and
+  matched exact original frame timing. All 7,391 inventory files and recorded inputs rehashed
+  unchanged. Report `ad99118f...` is external in `validation-r1`; see
+  [actual frozen validation](notes/frozen_content_validation_20261026.md).
+- Provenance remains 44 strict movies, 5 marker-only and 57 unrecorded historical outputs. Decode
+  success does not make the latter 62 strict. The report keeps release readiness false until the
+  native archive, source/runtime and clean-install gates pass. New content-bundle construction
+  and a fresh isolated runtime build from sealed source `c68d964...` are now authorized/in progress;
+  no game launch or publication has occurred. Preserve their partial evidence and inspect actual
+  live jobs before starting any duplicate work.
+- Bounded still review now covers 44 strict clips: SqMuscle added three exact-PTS pairs and six
+  jointly viewed sheets with 1,497 matching packet timestamps/durations. Reconstructed patterned
+  texture and smoothed skin remain limitations; no full temporal or realism-recovery claim. See
+  [SqMuscle review](notes/video_visual_delta_20261026_r5.md).
+- Coordinator 13372/video 18468 continue Svincint with one GPU worker. Discover real PIDs before
+  scheduling. No owned maintenance pause is held. The final 106 strict movies, media audits and
+  all-file verified full-project backup still precede new offline PBR; runtime PBR is unchanged.
+
+## Earlier checkpoint — 2026-10-26 16:28 MDT
 
 - The corrected content cohort is now frozen externally at
   `G:\MC3_Backups\release-work\corrected-content-0.3.3-dev.20261026-r1\content-snapshot-r1`.
