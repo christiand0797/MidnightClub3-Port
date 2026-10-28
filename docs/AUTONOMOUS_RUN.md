@@ -2,10 +2,61 @@
 
 The user authorizes unattended game control, parallel implementation, downloads, a second texture/movie upscale,
 a complete project backup, public GitHub source/development releases, and complete playable content bundles.
-PBR implementation must wait until the media pass
-and a verified full backup. Existing PBR experiments are inherited; the renderer remains on its current path.
+The latest user request authorizes PBR code/material-system development in parallel as an opt-in path.
+New offline PBR asset generation still follows the media pass and a verified full backup. The renderer
+remains on its current path until a real PBR integration is implemented and validated.
 
-## Latest checkpoint — 2026-10-26 21:44 MDT
+## Latest checkpoint — 2026-10-28, feature integration
+
+- World/Career source controls are implemented with actual original population setters,
+  one-shot career money edits, token-bound UI commands and normal native save semantics.
+  CPU menu/economy/world tests pass, including 480p tabs and disabled/stale-career requests.
+  Native visible populations/wallet persistence are still separate gates.
+- Per-owned-car PC tuning metadata and source-backed config-copy lineage are integrated,
+  with distinct same-model cars, global fallback/master controls and conservative external
+  roster handling. Save-game bytes and formats remain unchanged. The runtime is not installed
+  until the complete feature candidate passes its own native checks.
+- Twelve focused integrated CPU checks pass: input mapping, timing, tuning/refresh,
+  per-car store/game broker, economy, population, PBR materials, gameplay menu, settings
+  and graphics menu. See [per-car behavior](notes/per_car_tuning.md). This does not yet
+  certify the new candidate's native rendering or installation.
+- PBR importer/CPU+HLSL BRDF tests now pass. Exact reviewed material bindings, channel/mip
+  policy and a CPU pack preflight tool are implemented; geometry/root/PSO/light integration
+  remains open. No visible PBR or completed renderer claim. See [PBR system](notes/pbr_system.md).
+- A new isolated feature build is under `G:/MC3_Features_20261028`; dependency tools/libraries
+  have built without changing the installed executable. Sealed R12 and frozen content remain
+  unchanged. New source/build evidence must not inherit R12 native acceptance.
+- The prior media processes disappeared without an exit receipt; cause remains unknown.
+  Fresh game/marker/worker checks allowed one coordinator 3572/video 15108 to resume the normal
+  workflow. All 3,339 old partial/temp/foreign-marker files were verified unchanged. Strict
+  movies are 50/106, zero failures; bounded still review remains 46. Discover actual PIDs.
+
+## Earlier checkpoint — 2026-10-27 16:16 MDT
+
+- The user's missing-save report was a profile-routing mismatch. The earlier Bel Air is
+  preserved in canonical `hdd7`; the desktop shortcut now selects `--instance 7` without
+  changing save functionality or overwriting any career. All 53 current personal files
+  have a newly verified independent backup. The later default career remains preserved.
+  See [save routing and proof](notes/save_profile_recovery_20261027.md).
+- R12 actually completed offline native installation and HD/3D startup, then exited normally.
+  Its same movie worker resumed afterward. The read-only post-install audit now verifies
+  all 7,188 installed files against the frozen cohort, exact runtime ZIP and V2 inventory;
+  report `75651e05...`. Explicit R12 input/F1 acceptance remains open. No release was uploaded.
+  See [actual offline results](notes/r12_offline_install_20261027.md).
+- After a host reboot, all old PIDs were dead. The incomplete Stokmech encoder/temporary
+  files remain preserved; current tools cannot resume that encoder. Fresh exclusion/marker
+  checks permitted one coordinator 13084/video 7684 and a new original-derived render.
+  Discover actual current identities before scheduling. Strict progress remains 46/106.
+- New user scope: working F1 traffic/pedestrian multipliers and an explicit career-money
+  editor, per-owned-car vehicle settings with an optional global fallback, and PBR system
+  development. Reverse engineering and implementation are in progress. Keep the original save
+  system; money must use a one-shot game-thread action, never an automatic startup balance
+  override. Preserve immutable R12/release artifacts and test new source separately.
+- Remaining media, native visual checks, final verified full backup and offline PBR gates
+  remain in force. Runtime PBR is unchanged. Do not repeat completed broad audits or mutate
+  frozen release cohorts as live progress grows.
+
+## Earlier checkpoint — 2026-10-26 21:44 MDT
 
 - The immutable corrected bundle is built and accepted: 7,188 payload files, eight chunks,
   14,124,573,292 bytes, manifest `1c8c72b7...`, archive `b84957a3...`, acceptance `92c2fdde...`.

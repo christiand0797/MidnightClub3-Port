@@ -87,6 +87,13 @@ std::vector<GraphicsField> GraphicsFields(Settings::Graphics& g) {
     };
 }
 
+std::vector<GraphicsField> WorldFields(Settings::World& w) {
+    return {
+        {"traffic_multiplier", &w.traffic_multiplier, nullptr, nullptr, 0, 4},
+        {"pedestrian_multiplier", &w.pedestrian_multiplier, nullptr, nullptr, 0, 4},
+    };
+}
+
 // config/mc3_enhancements.toml beside the exe: the settings app.h lists under it. An earlier session's version of the
 // file held many more keys that nothing read; those are ignored now and dropped when the file is next written.
 std::filesystem::path EnhancementsFile() { return ExeDir() / "config" / "mc3_enhancements.toml"; }
@@ -175,6 +182,11 @@ void Load() {
             if (f.u) *f.u = std::min<uint32_t>((*g)[f.key].value_or(*f.u), uint32_t(f.hi));
         }
     }
+    if (const toml::table* w = t["world"].as_table())
+        for (const GraphicsField& f : WorldFields(s.world)) {
+            float v = (*w)[f.key].value_or(*f.f);
+            if (std::isfinite(v)) *f.f = std::clamp(v, f.lo, f.hi);
+        }
     LoadEnhancements(s, t["graphics"].as_table());
     s.render_percent = std::clamp(s.render_percent, 25u, 400u);
     s.width = std::min(s.width, resolution::kMaxDimension);
@@ -214,6 +226,10 @@ toml::table Table() {
         if (f.b) v.insert(f.key, *f.b);
     }
     t.insert("tuning", std::move(v));
+    toml::table w;
+    for (const GraphicsField& f : WorldFields(const_cast<Settings&>(s).world))
+        w.insert(f.key, double(*f.f));
+    t.insert("world", std::move(w));
     return t;
 }
 
@@ -234,6 +250,7 @@ void Save() {
     std::filesystem::create_directories(EnhancementsFile().parent_path(), ec);
     std::ofstream ef(EnhancementsFile());
     ef << EnhancementsTable() << "\n";
+    if (kGame.save_aux) kGame.save_aux();
 }
 
 void LogSettings() {

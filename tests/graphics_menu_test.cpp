@@ -11,9 +11,15 @@
 #include "core/input.h"
 #include "core/log.h"
 
-namespace fixture { std::filesystem::path folder; int applies = 0; }
+namespace fixture {
+std::filesystem::path folder;
+int applies = 0, title_tabs = 0;
+bool title_dirty = false;
+bool TitleTabs() { ++title_tabs; return std::exchange(title_dirty, false); }
+}
 namespace app {
-const GameInfo kGame{.title = L"Graphics menu component test", .settings = "settings.toml"};
+const GameInfo kGame{.title = L"Graphics menu component test", .settings = "settings.toml",
+                    .settings_tabs = fixture::TitleTabs};
 std::filesystem::path ExeDir() { return fixture::folder; }
 void* Window() { return nullptr; }
 std::recursive_mutex& UiLock() { static std::recursive_mutex lock; return lock; }
@@ -106,6 +112,19 @@ int main() {
     s = app::Settings{};
     app::Load();
     assert(s.graphics.scene_width == 640 && s.graphics.scene_height == 480);
+    // Title tabs participate in the same save-on-close transaction, but never run while F1 is closed.
+    const int closed_calls = fixture::title_tabs;
+    Frame();
+    assert(fixture::title_tabs == closed_calls);
+    app::ToggleMenu();
+    s.world.traffic_multiplier = 2;
+    fixture::title_dirty = true;
+    Frame();
+    assert(fixture::title_tabs > closed_calls && !fixture::title_dirty);
+    app::ToggleMenu();
+    s = app::Settings{};
+    app::Load();
+    assert(s.world.traffic_multiplier == 2);
     ImGui::DestroyContext();
     assert(fs::equivalent(fixture::folder.parent_path(), temp));
     assert(fs::remove(fixture::folder / "settings.toml"));

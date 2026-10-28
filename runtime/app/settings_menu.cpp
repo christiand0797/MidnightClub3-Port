@@ -18,6 +18,7 @@
 #include <imgui.h>
 
 #include "app/app.h"
+#include "app/tuning_profiles.h"
 #include "core/input.h"
 #include "core/log.h"
 
@@ -458,54 +459,83 @@ void DrawSettingsMenu(float fps) {
         }
         if (ImGui::BeginTabItem("Vehicle", nullptr,
                                 g_vehicle_requested.exchange(false) ? ImGuiTabItemFlags_SetSelected : 0)) {
-            ImGui::TextWrapped("Live player-car tuning. Available in the garage with F2; applies to both garage "
-                               "previews and driving. These additional settings are saved with the PC settings.");
+            ImGui::TextWrapped("Choose a setup for this owned car or edit the global fallback. Per-car setups "
+                               "follow the car through garage and street changes and are stored in PC preferences.");
+            auto profile = tuning_profiles::Snapshot();
+            bool per_car = profile.profiles_enabled;
+            if (ImGui::Checkbox("Use per-car saved setups", &per_car)) {
+                g_dirty |= tuning_profiles::SetProfilesEnabled(per_car);
+                g_dirty |= tuning_profiles::SetGlobalEditing(!per_car);
+                profile = tuning_profiles::Snapshot();
+            }
+            bool global_editing = profile.global_editing;
+            if (ImGui::Checkbox("Edit global fallback", &global_editing)) {
+                g_dirty |= tuning_profiles::SetGlobalEditing(global_editing);
+                profile = tuning_profiles::Snapshot();
+            }
+            if (profile.ready) {
+                ImGui::Text("Selected car: %s (owned slot %u)", profile.model.c_str(), profile.slot + 1);
+                ImGui::TextUnformatted(profile.override_enabled && profile.profiles_enabled ? "This car uses its saved setup" : "This car uses the global fallback");
+                ImGui::BeginDisabled(profile.storage_read_only || !profile.profiles_enabled);
+                if (ImGui::Button("Copy global to this car")) g_dirty |= tuning_profiles::CreateOverride();
+                ImGui::SameLine();
+                if (ImGui::Button("Use global for this car")) g_dirty |= tuning_profiles::UseGlobal();
+                ImGui::EndDisabled();
+            } else {
+                ImGui::TextWrapped("Load a career car to edit its own setup. Global tuning remains available.");
+            }
+            if (!profile.status.empty()) ImGui::TextWrapped("%s", profile.status.c_str());
             Check("Extended garage choices", &s.tuning.garage_extended,
                   "More wheel, tire and ride-height steps in the game's garage menus. Reopen the garage menu\n"
                   "after changing this. Previously saved extended values remain readable when disabled.");
             ImGui::Separator();
+            auto& tuning = tuning_profiles::Editor();
+            const auto previous_tuning = tuning;
+            ImGui::BeginDisabled(!global_editing && (!profile.ready || profile.storage_read_only || !profile.profiles_enabled));
             ImGui::TextDisabled("Stance / front and rear");
-            Slider("Ride height front", &s.tuning.ride_front, -2.0f, 2.0f, "%+.3f m",
+            Slider("Ride height front", &tuning.ride_front, -2.0f, 2.0f, "%+.3f m",
                    "Added to your car's front suspension, on top of its garage setting: - lowers, + raises.");
-            Slider("Ride height rear", &s.tuning.ride_rear, -2.0f, 2.0f, "%+.3f m", nullptr);
-            Check("Allow wheels to tuck into the body", &s.tuning.wheel_tuck,
+            Slider("Ride height rear", &tuning.ride_rear, -2.0f, 2.0f, "%+.3f m", nullptr);
+            Check("Allow wheels to tuck into the body", &tuning.wheel_tuck,
                   "Keeps grounded tires at their contact position when lowered past the original range. "
                   "The fenders may intersect the tires.");
-            Slider("Camber front", &s.tuning.camber_front, -30, 20, "%+.1f deg",
+            Slider("Camber front", &tuning.camber_front, -30, 20, "%+.1f deg",
                    "Additional visual camber relative to the car's saved setup. Negative angles tuck the top in.");
-            Slider("Camber rear", &s.tuning.camber_rear, -30, 20, "%+.1f deg", nullptr);
-            Slider("Wheel offset front", &s.tuning.offset_front, -0.3f, 0.3f, "%+.3f m",
+            Slider("Camber rear", &tuning.camber_rear, -30, 20, "%+.1f deg", nullptr);
+            Slider("Wheel offset front", &tuning.offset_front, -0.3f, 0.3f, "%+.3f m",
                    "Additional offset on each side. Positive moves the wheel outward; negative tucks it inward.");
-            Slider("Wheel offset rear", &s.tuning.offset_rear, -0.3f, 0.3f, "%+.3f m", nullptr);
-            Check("Airbags follow selected ride height", &s.tuning.airbag_match_ride,
+            Slider("Wheel offset rear", &tuning.offset_rear, -0.3f, 0.3f, "%+.3f m", nullptr);
+            Check("Airbags follow selected ride height", &tuning.airbag_match_ride,
                   "Fully deflated matches the selected axle height H; fully inflated is H + 2 x abs(H). "
                   "A lowered -.20 m setup travels to +.20 m. Uses the installed airbag controls.");
             ImGui::Separator();
             ImGui::TextDisabled("Suspension");
-            Slider("Front spring stiffness", &s.tuning.spring_front, 0.25f, 3, "x%.2f", nullptr);
-            Slider("Rear spring stiffness", &s.tuning.spring_rear, 0.25f, 3, "x%.2f", nullptr);
-            Slider("Front damping", &s.tuning.damper_front, 0.25f, 3, "x%.2f", nullptr);
-            Slider("Rear damping", &s.tuning.damper_rear, 0.25f, 3, "x%.2f", nullptr);
+            Slider("Front spring stiffness", &tuning.spring_front, 0.25f, 3, "x%.2f", nullptr);
+            Slider("Rear spring stiffness", &tuning.spring_rear, 0.25f, 3, "x%.2f", nullptr);
+            Slider("Front damping", &tuning.damper_front, 0.25f, 3, "x%.2f", nullptr);
+            Slider("Rear damping", &tuning.damper_rear, 0.25f, 3, "x%.2f", nullptr);
             ImGui::Separator();
             ImGui::TextDisabled("Brakes, tires and engine");
-            Slider("Front brake force", &s.tuning.brake_front, 0.25f, 3, "x%.2f", nullptr);
-            Slider("Rear brake force", &s.tuning.brake_rear, 0.25f, 3, "x%.2f", nullptr);
-            Slider("Front tire grip", &s.tuning.grip_front, 0.5f, 2, "x%.2f", "Multiplies static and sliding tire friction.");
-            Slider("Rear tire grip", &s.tuning.grip_rear, 0.5f, 2, "x%.2f", nullptr);
-            Slider("Engine horsepower", &s.tuning.engine_power, 0.5f, 3, "x%.2f",
+            Slider("Front brake force", &tuning.brake_front, 0.25f, 3, "x%.2f", nullptr);
+            Slider("Rear brake force", &tuning.brake_rear, 0.25f, 3, "x%.2f", nullptr);
+            Slider("Front tire grip", &tuning.grip_front, 0.5f, 2, "x%.2f", "Multiplies static and sliding tire friction.");
+            Slider("Rear tire grip", &tuning.grip_rear, 0.5f, 2, "x%.2f", nullptr);
+            Slider("Engine horsepower", &tuning.engine_power, 0.5f, 3, "x%.2f",
                    "Multiplies the engine power after the car's purchased upgrades.");
-            Slider("Wheel and tire size limit", &s.tuning.wheel_limit, 1, 3, "x%.2f",
-                   "How large a wheel and tire each car takes in the garage, times its stock limit. Applies when a "
-                   "car loads.");
             if (ImGui::Button("Reset extra vehicle tuning")) {
                 const Settings defaults;
-                const bool extended = s.tuning.garage_extended;
-                s.tuning = defaults.tuning;
-                s.tuning.garage_extended = extended;
+                const bool extended = tuning.garage_extended;
+                tuning = defaults.tuning;
+                tuning.garage_extended = extended;
                 g_dirty = true;
             }
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Resets additional PC tuning; keeps purchased garage parts and extended choices.");
+            ImGui::EndDisabled();
+            if (!(tuning == previous_tuning)) g_dirty |= tuning_profiles::CommitEditor();
+            ImGui::Separator();
+            Slider("Garage wheel/tire limit (global)", &s.tuning.wheel_limit, 1, 3, "x%.2f",
+                   "Garage fit limits are model data shared by all cars. Actual purchased sizes stay in each car's save.");
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Input")) {
@@ -528,6 +558,7 @@ void DrawSettingsMenu(float fps) {
                               "other changes apply live and save on close.");
             ImGui::EndTabItem();
         }
+        if (kGame.settings_tabs && kGame.settings_tabs()) g_dirty = true;
         ImGui::EndTabBar();
     }
     ImGui::PopItemWidth();

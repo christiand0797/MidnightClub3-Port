@@ -1,4 +1,11 @@
 #include "app/app.h"
+#include "app/tuning_profiles.h"
+
+namespace mc3 { bool DrawGameplaySettingsTabs(); }
+namespace {
+void LoadCarPreferences(const void*) { app::tuning_profiles::Load(); }
+void SaveCarPreferences() { app::tuning_profiles::Save(); }
+}
 
 // what the runtime asks of the game; strings must be set, hooks may stay null
 const app::GameInfo app::kGame = {
@@ -11,7 +18,7 @@ const app::GameInfo app::kGame = {
     .missing = L"Put the game in the assets folder: its disc image (.iso), or default.xbe with its folders beside it.",
     .images = {{"default.xbe", "mc3"}},   // each recompiled xbe and its exe, for title launches
     .options = {},                        // game settings kept in the settings file
-    .load = nullptr,                     // the backend's default shader constants include float4 ext
+    .load = LoadCarPreferences,
     .save = nullptr,                      // writes more into it
     .init = nullptr,                      // after the settings load, before the window and boot
     .loaded = nullptr,                    // image in memory, before its entry point runs
@@ -20,4 +27,6 @@ const app::GameInfo app::kGame = {
     .ui = nullptr,                        // ImGui drawing each frame
     .pad = nullptr,                       // changes a polled pad
     .rumble = nullptr,                    // changes a rumble before it is set
+    .settings_tabs = mc3::DrawGameplaySettingsTabs,
+    .save_aux = SaveCarPreferences,
 };

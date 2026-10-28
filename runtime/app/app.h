@@ -68,7 +68,14 @@ struct Settings {
         float engine_power = 1;                  // engine horsepower multiplier
         bool airbag_match_ride = true;           // bag endpoints follow the selected per-axle ride height
         bool wheel_tuck = true;                  // permit body intersection without the cosmetic wheel-down fit
+        bool operator==(const Tuning&) const = default;
     } tuning;
+
+    // Population preferences live in the PC settings. Career money remains game-owned save data.
+    struct World {
+        float traffic_multiplier = 1.0f;
+        float pedestrian_multiplier = 1.0f;
+    } world;
 
     // config/mc3_enhancements.toml beside the exe (settings.cpp), changed live from the settings menu
     bool force_1080p = false;       // [render] the output is 1920x1080 whatever width/height say (app::Output)
@@ -156,6 +163,9 @@ struct GameInfo {
     void (*ui)(double fps);        // each frame inside the ImGui frame, UiLock held
     void (*pad)(int port, input::Pad& pad);  // a polled pad before the game gets it
     void (*rumble)(int port, uint16_t& left, uint16_t& right);
+    // Called inside the F1 tab bar. Returns true when persistent title settings changed.
+    bool (*settings_tabs)();
+    void (*save_aux)();  // title-owned PC preferences; called only by Save, never logging
 };
 extern const GameInfo kGame;
 

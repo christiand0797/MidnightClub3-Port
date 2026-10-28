@@ -23,6 +23,16 @@ set(SDL_CAMERA OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(SDL3 GIT_REPOSITORY https://github.com/libsdl-org/SDL.git GIT_TAG release-3.4.16 GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(zydis tomlplusplus imgui SDL3)
 
+if(WIN32)
+    add_executable(Check-PbrMaterials EXCLUDE_FROM_ALL
+        ${XBE_SDK_DIR}/tools/materials/check_pbr_materials.cpp
+        ${XBE_SDK_DIR}/runtime/gpu/pbr_material.cpp)
+    target_include_directories(Check-PbrMaterials PRIVATE ${XBE_SDK_DIR}/runtime)
+    target_compile_features(Check-PbrMaterials PRIVATE cxx_std_20)
+    target_compile_definitions(Check-PbrMaterials PRIVATE UNICODE _UNICODE)
+    target_link_libraries(Check-PbrMaterials PRIVATE tomlplusplus::tomlplusplus bcrypt windowscodecs ole32 uuid)
+endif()
+
 # x86 to C++ recompiler
 file(GLOB XBE_RECOMP_SOURCES CONFIGURE_DEPENDS ${XBE_SDK_DIR}/tools/recomp/*.cpp)
 add_executable(xbe_recomp ${XBE_RECOMP_SOURCES})

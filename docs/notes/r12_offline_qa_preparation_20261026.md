@@ -1,7 +1,10 @@
 # R12 offline package and private test preparation
 
-The R12 runtime ZIP is assembled and independently staged with all eight corrected-content parts.
-No R12 game has been launched. Native installation/play checks are deferred while the user's
+This is the historical preparation record. The subsequent actual installation and parity
+results are in [R12 offline installation](r12_offline_install_20261027.md).
+
+The R12 runtime ZIP was assembled and independently staged with all eight corrected-content parts.
+At this preparation checkpoint no R12 game had been launched. Native checks were deferred while the user's
 Black Ops III process is active; the coordinator has retained its existing movie worker/encoder
 and acknowledged its own cooperative pause.
 

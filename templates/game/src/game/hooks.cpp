@@ -14,6 +14,8 @@
 #include "app/app.h"
 #include "core/log.h"
 #include "xdk/hle.h"
+#include "world_tuning.h"
+#include "tuning_profiles.h"
 
 using kernel::G;
 using kernel::R32;
@@ -74,6 +76,7 @@ X86_FUNC(sub_0020BB00) {
 }
 
 void ApplyVehicleTuning();  // tuning.cpp
+void ApplyEconomyCommands();  // economy.cpp: queued, one-shot current-career actions
 // replay.cpp installs this: records the fixed step every replay frame used and forces it again on playback
 // (a pointer, so the timing test links hooks.cpp alone)
 bool (*g_replay_fixed_step)(uint32_t base_bits) = nullptr;
@@ -132,7 +135,10 @@ X86_FUNC(sub_0020B6F0) {
     __imp__sub_0020B6F0(ctx, base);
     g_lod_scale = app::Get().graphics.lod;
     g_fov_scale = app::Get().graphics.fov_scale;
+    mc3::car_tuning::ObserveFrame();
     ApplyVehicleTuning();
+    ApplyEconomyCommands();
+    mc3::world::Apply(ctx, base);
 
     g_real += measured;
     g_game += F32(kFrameTime);

@@ -34,6 +34,7 @@
 #include "kernel/memory.h"
 #include "xdk/hle.h"
 #include "garage.h"
+#include "tuning_profiles.h"
 
 using kernel::R32;
 using kernel::W32;
@@ -52,11 +53,10 @@ constexpr uint32_t kWheelSuspensionLimit = 0x4C, kWheelTravelExtent = 0x44;
 constexpr float kFreeLowering = 0.15f;
 constexpr uint32_t kModelTireDiameterFront = 0x14, kModelTireDiameterRear = 0x18, kModelTireExtentFront = 0x1C;
 
-app::Settings::Tuning SettingsSnapshot() {
+mc3::car_tuning::Bank SettingsSnapshot() {
     // ImGui edits the settings on the render thread. Take one consistent copy before the tuning lock; never
     // hold g_lock while waiting for UiLock, and never let a slider race a physics read of the same float.
-    std::lock_guard ui(app::UiLock());
-    return app::Get().tuning;
+    return mc3::car_tuning::CaptureBank();
 }
 
 float F32(uint32_t va) {
@@ -90,6 +90,15 @@ struct CarTuning {
     bool initialized = false;
 };
 std::unordered_map<uint32_t, CarTuning> g_player_cars;
+// Caller holds g_lock; the immutable bank was captured before taking it.
+const app::Settings::Tuning& SimSettings(const mc3::car_tuning::Bank& bank, uint32_t sim) {
+    uint32_t cfg = 0;
+    if (sim) for (const auto& [car, current] : g_player_cars) if (current.sim == sim) {
+        if (cfg && cfg != current.cfg) return bank.global;
+        cfg = current.cfg;
+    }
+    return bank.ForCfg(cfg);  // owner0 (shared model fit limits) always uses the global fallback.
+}
 struct BoundPayload {
     uint32_t bytes, bound, vertices, polygons, vertex_count, polygon_count;
     bool operator==(const BoundPayload&) const = default;
@@ -504,11 +513,12 @@ X86_FUNC(sub_000A65D0) {
     if (!std::isfinite(limit) || !std::isfinite(radius) || radius <= 0 ||
         (caller == 0xF74D5 && limit < 0)) return;
     bool report = false;
-    const bool allow_tuck = SettingsSnapshot().wheel_tuck;
+    const auto bank = SettingsSnapshot();
     {
         std::lock_guard<std::mutex> lock(g_lock);
         auto offset = g_tuned.find(tune + kWheelSuspensionOffset);
-        if (!allow_tuck || offset == g_tuned.end() || !g_player_sims.count(offset->second.owner) ||
+        if (offset == g_tuned.end() || !SimSettings(bank, offset->second.owner).wheel_tuck ||
+            !g_player_sims.count(offset->second.owner) ||
             F32(offset->first) >= 0) return;
         static unsigned reported = 0;
         report = reported++ < 8;
@@ -567,8 +577,9 @@ void TuningCarCfgApplied(uint32_t sim) {
     Pending fields[6];
     if (!SimFields(sim, fields)) return;
     TravelFields(fields, fields + 2);
-    const app::Settings::Tuning s = SettingsSnapshot();
+    const auto bank = SettingsSnapshot();
     std::lock_guard<std::mutex> lock(g_lock);
+    const auto& s = SimSettings(bank, sim);
     // offsets first: the travel limits follow their wheel's offset
     for (const Pending& p : fields) {
         // ApplyCarCfg unconditionally wrote both offsets. Even if a new garage step happens to equal the value
@@ -629,16 +640,16 @@ X86_FUNC(sub_0032F840) {
 
 // once a frame (the time manager hook): every tracked value set from the current settings
 void ApplyVehicleTuning() {
-    const app::Settings::Tuning s = SettingsSnapshot();
+    const auto bank = SettingsSnapshot();
     std::lock_guard<std::mutex> lock(g_lock);
     for (auto it = g_tuned.begin(); it != g_tuned.end();) {
-        if (!Apply(it->first, it->second, s))
+        if (!Apply(it->first, it->second, SimSettings(bank, it->second.owner)))
             it = g_tuned.erase(it);  // the block was freed or reloaded: the visitor tracks it again if it comes back
         else
             ++it;
     }
     for (auto& [car, c] : g_player_cars)
-        if (g_player_sims.count(c.sim)) ApplyRender(car, c, s);
+        if (g_player_sims.count(c.sim)) ApplyRender(car, c, bank.ForCfg(c.cfg));
 }
 
 // The original component's per-frame update already has the complete "CarCfg dirty" refresh path. Request that
@@ -649,13 +660,13 @@ X86_EXTERN_FUNC(__imp__sub_000FFD90);
 X86_FUNC(sub_000FFD90) {
     const uint32_t car = ctx.ecx;
     GarageRefreshPlayerCar(car);
-    const auto settings = SettingsSnapshot();
+    const auto bank = SettingsSnapshot();
     {
         std::lock_guard<std::mutex> lock(g_lock);
         auto it = g_player_cars.find(car);
         if (it != g_player_cars.end() && g_player_sims.count(it->second.sim)) {
             auto& c = it->second;
-            const auto key = SettingsKey(settings);
+            const auto key = SettingsKey(bank.ForCfg(c.cfg));
             if ((!c.initialized || key != c.settings) && Committed(car + 0x64, 4) && R32(car + 0x64) == c.cfg &&
                 Committed(c.cfg + 8, 4)) {
                 W32(c.cfg + 8, R32(c.cfg + 8) | 0x81u);
@@ -674,11 +685,11 @@ X86_FUNC(sub_000F32A0) {
                                 ((R32(ctx.esp + 8) & 0xFFu) || (Committed(cfg + 8, 4) && (R32(cfg + 8) & 5u)));
     __imp__sub_000F32A0(ctx, base);
     GarageNormalizeProfileMeshes(render, cfg);
-    const auto settings = SettingsSnapshot();
+    const auto bank = SettingsSnapshot();
     std::lock_guard<std::mutex> lock(g_lock);
     for (auto& [car, c] : g_player_cars)
         if (g_player_sims.count(c.sim) && Committed(car + 0x68, 4) && R32(car + 0x68) == render)
-            ApplyRender(car, c, settings, rebuilt_wheels);
+            ApplyRender(car, c, bank.ForCfg(c.cfg), rebuilt_wheels);
 }
 
 // Purchased performance upgrades interpolate base/mods physics in this routine. Re-record only the fields that
@@ -689,8 +700,9 @@ X86_FUNC(sub_00103C50) {
     __imp__sub_00103C50(ctx, base);
     if (!Committed(car + 0x50, 4)) return;
     const uint32_t sim = R32(car + 0x50);
-    const auto settings = SettingsSnapshot();
+    const auto bank = SettingsSnapshot();
     std::lock_guard<std::mutex> lock(g_lock);
+    const auto& settings = SimSettings(bank, sim);
     for (const Pending& p : ParameterFields(sim)) {
         g_tuned.erase(p.va);
         if (Tuned* t = Track(p))
@@ -706,13 +718,15 @@ X86_FUNC(sub_00103C50) {
 X86_EXTERN_FUNC(__imp__sub_001284F0);
 X86_FUNC(sub_001284F0) {
     const uint32_t control = ctx.ecx, stack = ctx.esp;
-    if (SettingsSnapshot().airbag_match_ride && Committed(control + 8, 4) && Committed(stack + 4, 20)) {
+    const auto bank = SettingsSnapshot();
+    if (Committed(control + 8, 4) && Committed(stack + 4, 20)) {
         const uint32_t car = R32(control + 8), target = R32(stack + 4);
         bool owned = false;
         {
             std::lock_guard<std::mutex> lock(g_lock);
             const auto it = g_player_cars.find(car);
-            owned = it != g_player_cars.end() && g_player_sims.count(it->second.sim) &&
+            owned = it != g_player_cars.end() && bank.ForCfg(it->second.cfg).airbag_match_ride &&
+                    g_player_sims.count(it->second.sim) &&
                     target >= control + 0x20 && target <= control + 0x2C && ((target - control) & 3) == 0;
         }
         const float baseline = F32(stack + 0x14);

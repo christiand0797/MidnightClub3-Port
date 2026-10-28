@@ -10,6 +10,9 @@ namespace kernel { uint8_t* g_base = nullptr; }
 namespace app { Settings& Get() { static Settings s; return s; } }
 namespace logx { void Write(Level, const char*, ...) {} }
 void ApplyVehicleTuning() {}
+void ApplyEconomyCommands() {}
+namespace mc3::world { void Apply(X86Context&, uint8_t*) {} }
+namespace mc3::car_tuning { void ObserveFrame() {} }
 float g_lod_scale = 1, g_fov_scale = 1;
 // Keep frame times deterministic while running the production hook.
 uint64_t g_test_ticks = 73333333300ull;
