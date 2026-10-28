@@ -4,8 +4,10 @@
 // 0x2B93C0 recomputes road+0x28 from authored path lengths. Pedestrian
 // 0x222770 multiplies each region's authored +0x24, preserving its signed-byte
 // cap and the original [0,127] target clamp. We call these original writers.
-// The mission-name table 0x4B37D0 identifies mode 0 as "roam". Other modes,
-// including controlled ambients in missions, are deliberately left unchanged.
+// The mission-name table 0x4B37D0 names modes0/1 "roam"/"find_hook".
+// Ordinary post-garage career streets were observed in state2/mode1; original
+// player dispatch also checks this pair at0x1D024B..0x1D0261. Keep other modes,
+// including hookman_cruise and controlled mission ambients, unchanged.
 #include "world_tuning.h"
 
 #include <algorithm>
@@ -27,7 +29,8 @@ X86_EXTERN_FUNC(__imp__sub_002C89F0);
 namespace {
 using kernel::R32;
 using kernel::W32;
-constexpr uint32_t kMission = 0x53F2E0, kTraffic = 0x5587E0, kPedestrian = 0x53891C;
+constexpr uint32_t kGameState = 0x53F2D4, kMission = 0x53F2E0;
+constexpr uint32_t kTraffic = 0x5587E0, kPedestrian = 0x53891C;
 constexpr uint32_t kRoadStride = 0x34, kMaxRoads = 4096, kMaxRegions = 4096;
 constexpr uint32_t kHumanControllerVtable = 0x47684C;
 
@@ -78,9 +81,13 @@ bool HumanPlayer() {
     return false;
 }
 bool Active() {
-    if (!Committed(kMission, 4)) return false;
+    // A surviving mission/player pair in a garage or transition is insufficient.
+    // The original career/player dispatch and native street capture use state2.
+    if (!Committed(kGameState, 4) || R32(kGameState) != 2 || !Committed(kMission, 4)) return false;
     const uint32_t mission = R32(kMission);
-    return Committed(mission, 0x1C) && R32(mission + 0x18) == 0 && HumanPlayer();
+    if (!Committed(mission, 0x1C)) return false;
+    const uint32_t mode = R32(mission + 0x18);
+    return (mode == 0 || mode == 1) && HumanPlayer();
 }
 TrafficIdentity Traffic() {
     if (!Committed(kTraffic, 4)) return {};

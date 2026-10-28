@@ -4,7 +4,7 @@
 struct X86Context;
 
 namespace mc3::world {
-// Population controls affect ordinary free-roam spawners. Scripted modes and the
+// Population controls affect career state2's roam/find_hook spawners. Other modes and the
 // original pools/region caps retain authority; a multiplier is not an actor count.
 inline constexpr float kMaxMultiplier = 4.0f;
 struct Snapshot {

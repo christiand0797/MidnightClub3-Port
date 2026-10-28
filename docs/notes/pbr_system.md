@@ -38,6 +38,10 @@ import alone does not prove a native material assignment or visual quality.
 
 ## Renderer integration still required
 
+[The source-backed geometry bridge investigation](pbr_geometry_bridge_20261028.md) identifies
+the first bounded fixed-function scope, actual morph/skinning snapshot points and missing
+post-extension capture evidence. These are implementation inputs, not renderer acceptance.
+
 The existing translated vertex output carries clip/screen position, colors, UVs and fog. It
 does not yet carry independently established world position, geometric normal and tangent
 basis for every supported surface. The existing root signature also has only the original

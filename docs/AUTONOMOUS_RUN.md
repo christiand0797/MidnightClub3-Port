@@ -6,7 +6,34 @@ The latest user request authorizes PBR code/material-system development in paral
 New offline PBR asset generation still follows the media pass and a verified full backup. The renderer
 remains on its current path until a real PBR integration is implemented and validated.
 
-## Latest checkpoint — 2026-10-28, bounded feature validation
+## Latest checkpoint — 2026-10-28, actual feature controls
+
+- Public `94fc467` includes the input latch and GPU diagnostics. The separate feature build
+  `c724425f...` compiled successfully from that exact source, with unchanged consumed source
+  inputs. It has not replaced the installed executable or become a published release.
+- Native R3 now navigates the original profile/main/garage menus with short keyboard taps.
+  The current copied 4% San Diego career loads the expected 1957 Bel Air. F1 observes a
+  one-shot $90 → $1,000,090 change, still present after the original save-and-exit flow;
+  saved-file interpretation and the garage's cached wallet display need separate checks.
+- Native per-car switching retained Bel Air front camber -5.1°, Golf +2.0°, then Bel Air
+  -5.1° again. Global master disable exposed the zero fallback, and re-enable restored the
+  Bel Air override. Sidecar entries remained distinct. Full parameter visuals and native
+  process-restart acceptance are still open.
+- Actual street validation found the population gate too narrow: normal career cruising
+  uses state 2 / `find_hook` mode 1. The exact read-only player/mission observation supports
+  a small 0/1-mode correction; its regression fails before the fix and passes afterward.
+  Story/race modes and invalid ownership remain excluded. Fresh native activation is pending.
+- R3 was left idle in F1 by a quota interruption. On resumption root verified the owned
+  session idle, closed it normally, and observed the same coordinator/video/encoder resume.
+  All 53 current canonical personal files remain byte-identical to their current backup.
+  Result `9dd07222...` includes independent log/private-after copies and actual Sky captures.
+  See [native evidence](notes/feature_native_20261028.md). No new release/install claim.
+- PBR geometry research identifies a bounded fixed-function bridge and the actual car morph/
+  skinning register snapshot points. Lighting and a real material render path remain open;
+  see [geometry evidence](notes/pbr_geometry_bridge_20261028.md). Original-derived PBR assets
+  still follow complete strict media and the verified full-project backup.
+
+## Earlier checkpoint — 2026-10-28, bounded feature validation
 
 - Public source `12c4d93` and the isolated feature EXE `bc90298e...` built successfully,
   including the PBR pack preflight tool. Its synthetic CLI fixtures passed. No new executable

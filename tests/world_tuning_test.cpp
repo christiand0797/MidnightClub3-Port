@@ -56,6 +56,7 @@ X86_EXTERN_FUNC(FixturePopulationAvailableAmbient);
 
 int main() {
     committed.fill(true);
+    Dword(0x53F2D4,2); // Original career/player dispatch state, also observed on native streets.
     Dword(0x53F2E0,kMission);Dword(kMission+0x18,0);
     Dword(0x5587E0,kTraffic);Word(kTraffic+0x28,1);Dword(kTraffic+0x2C,kRoads);Dword(kTraffic+0x3C,kPaths);
     guest[kRoads+4]=1;Dword(kRoads+0x2C,kNodes);Word(kNodes,0);Word(kPaths+8,1000);
@@ -82,6 +83,63 @@ int main() {
     // force even when the density multiplier passes the original slider's1.
     assert(guest[kRegions+1]==10&&guest[kRegions+4]==127);
     Apply();assert(Near(Float(kRoads+0x20),0.04f)); // Never compound2x on each frame.
+
+    // Ordinary career streets after leaving the garage use find_hook (mode1),
+    // not the mode0 name "roam". This matches the bounded native R3 capture:
+    // state2, mode1, typed human controller, reciprocal car links and AI flag0.
+    Dword(kMission+0x18,1);Apply();
+    assert(mc3::world::GetSnapshot().free_roam_player);
+    assert(Near(Float(kRoads+0x20),0.04f)&&guest[kRegions+4]==127);
+    Apply();assert(Near(Float(kRoads+0x20),0.04f));
+    // The actual original setter hooks must accept mode1 too, not just replay
+    // previously observed mode0 baselines when a menu value changes.
+    Call(sub_002B9670,kRoads,0.03f);Call(sub_00222770,kPeds,0.1f);
+    assert(Near(Float(kRoads+0x20),0.06f)&&guest[kRegions+4]==60);
+    app::Get().world={4,4};Apply();
+    assert(Near(Float(kRoads+0x20),0.12f)&&guest[kRegions+4]==80);
+    // Unproven hookman_cruise (mode2), follow and every race/story mode retain
+    // their authored densities. Returning to the proven street mode reapplies
+    // from the native baseline, with no compounded multiplier.
+    for (uint32_t mode=2;mode<23;++mode) {
+        Dword(kMission+0x18,mode);Apply();
+        assert(!mc3::world::GetSnapshot().free_roam_player);
+        assert(Near(Float(kRoads+0x20),0.03f)&&guest[kRegions+4]==20);
+        Dword(kMission+0x18,1);Apply();
+        assert(mc3::world::GetSnapshot().free_roam_player);
+        assert(Near(Float(kRoads+0x20),0.12f)&&guest[kRegions+4]==80);
+    }
+    Dword(kMission+0x18,0xFFFFFFFF);Apply();
+    assert(!mc3::world::GetSnapshot().free_roam_player&&Near(Float(kRoads+0x20),0.03f));
+    // A lingering mission/player pointer in garage/title/other states must not
+    // give a preview scene population authority, for either allowed mode.
+    for (uint32_t mode : {0u,1u}) {
+        Dword(kMission+0x18,mode);
+        for (uint32_t state : {0u,1u,3u,4u,5u,6u,0xFFFFFFFFu}) {
+            Dword(0x53F2D4,state);Apply();
+            assert(!mc3::world::GetSnapshot().free_roam_player);
+            assert(Near(Float(kRoads+0x20),0.03f)&&guest[kRegions+4]==20);
+        }
+        Dword(0x53F2D4,2);Apply();
+        assert(mc3::world::GetSnapshot().free_roam_player);
+        assert(Near(Float(kRoads+0x20),0.12f)&&guest[kRegions+4]==80);
+    }
+    // Mode1 does not relax concrete player ownership or memory validity.
+    guest[kCar+0x5E]=1;Apply();
+    assert(!mc3::world::GetSnapshot().free_roam_player&&Near(Float(kRoads+0x20),0.03f));
+    guest[kCar+0x5E]=0;Dword(kCar+4,0);Apply();
+    assert(!mc3::world::GetSnapshot().free_roam_player);
+    Dword(kCar+4,kController);Dword(kController,0);Apply();
+    assert(!mc3::world::GetSnapshot().free_roam_player);
+    Dword(kController,0x47684C);Dword(kController+0x50,kCar+4);Apply();
+    assert(!mc3::world::GetSnapshot().free_roam_player);
+    Dword(kController+0x50,kCar);Dword(0x53F2E0,0);Apply();
+    assert(!mc3::world::GetSnapshot().free_roam_player);
+    Dword(0x53F2E0,kMission);committed[kMission/mem::kPage]=false;Apply();
+    assert(!mc3::world::GetSnapshot().free_roam_player);
+    committed[kMission/mem::kPage]=true;
+    app::Get().world={2,3};Dword(kMission+0x18,0);Apply();
+    Call(sub_002B9670,kRoads,0.02f);Call(sub_00222770,kPeds,0.5f);
+
     app::Get().world={0,0};Apply();
     assert(Float(kRoads+0x20)==0&&Float(kRoads+0x28)==0&&guest[kRegions+1]==0&&guest[kRegions+4]==0);
     app::Get().world={1,1};Apply();
@@ -147,5 +205,5 @@ int main() {
     FixturePopulationAvailableAmbient(allocation,guest.data());assert(allocation.eax==0x22000);
     assert(kernel::G<uint16_t>(pool+4)==2&&kernel::G<uint16_t>(pool+6)==2&&kernel::R32(pool)==available);
     assert(kernel::R32(available)==0x21000&&kernel::R32(available+4)==0x22000);
-    std::cout<<"world population: retail writers, live restore, zero/caps, ownership, topology and stack preservation passed\n";
+    std::cout<<"world population: native state2 roam/find_hook guard, scripted-mode restore, retail writers, zero/caps, ownership, topology and stack preservation passed\n";
 }
