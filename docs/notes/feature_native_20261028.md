@@ -127,3 +127,53 @@ It does not change cash again, invoke refund/spending logic, trigger saving or c
 format. Focused fixtures execute the original formatter/Flash wrapper/value-writer instructions.
 The integrated 17 CPU checks, including garage/profile/tire hook contracts and PBR geometry,
 pass. New native immediate-HUD and corrected population acceptance are pending.
+
+## R4: private restart and remaining presentation/population gates
+
+Exact source `e7ed92d5f385cce7b91d8f064404af5690b68aa0` built as
+`58bdbff5eefbf4a4ee143cba76b9ec6d1d67b44401e33a050c4e412297465449`
+(24,122,880 bytes), build receipt
+`55414928f8fa306d33de32da9ac7a582a2209bd23eb780c7e8384ed9a2961140`.
+The fresh R4 context deliberately inherited only independently sealed R3 **test** saves,
+preferences and PC tuning metadata. It did not load the modified test career over real saves.
+A new actual cooperative acknowledgment and opt-in startup gate preceded GPU initialization.
+
+- A new process loaded the private saved $1,000,090 balance in both F1 and the original garage
+  display. Bel Air owned-slot-2 front camber -5.1° also restored without a roster-reset status.
+  This closes those specific process-restart observations, not every car/setting visual.
+- One Add $10,000 action changed the actual balance to $1,010,090. The original garage label
+  remained $1,000,090 after closing F1 and opening the garage-exit confirmation. A bounded
+  exact-owned-process read found the persistent text buffer already `$1010090.00` and valid
+  typed wrappers/movie pointers. That buffer can also be formatted by the normal original
+  update; it does not prove that all four narrow refresh calls completed. Immediate HUD
+  acceptance remains failed and installation remains held.
+- The original SavingScreen and garage exit completed. The frozen structural parser then
+  confirmed $1,010,090 in the independently sealed private-after save, without changing its
+  bytes. The parser still covers only the original career prefix through Money; the tail
+  and trailing signature remain outside its scope. Disk proof SHA-256:
+  `b99c11d704cff8eca1cb1e500ccecfba152577a5a3d09ada8f473290a46a5263`.
+- In actual career free roam, World now shows active traffic 2x/pedestrians 2x and a ready
+  pedestrian manager. Traffic roads tracked remains **0**. This proves the corrected
+  eligibility gate activates; it does not establish traffic setter coverage, a visible
+  twofold population ratio or all population behavior.
+- HD startup, actual title/garage/street and short keyboard menu navigation worked with
+  GPU debug off. No startup stall occurred in this run; R1's intermittent fence cause remains
+  unresolved. The owned window exited normally at 795.660 seconds, and the same worker and
+  encoder resumed Suschamp from frame 5,192 onward. All 53 current canonical personal files
+  remained byte-identical, including the real shortcut. No installation or release occurred.
+
+R4 controls are in `feature-native-qa-20261028-r4` under the external release-work base.
+`native-result-r4/result.json` SHA-256:
+`6ea0186fb942ef34a1ce2b2f990477ad350e44ec511d620e25858590def80ef8`.
+It authenticates independent log/private-after copies, original Sky captures, exact read-only
+probes, current personal-file preservation and same-worker resume. Old helpers and results
+remain frozen; another native run requires a fresh reviewed context.
+
+The next presentation observer wraps the normal original `0x152420` once and requires its
+entry `this` to remain the current `[0x50F12C]` singleton. Optional `0x1519D0` retains only
+its existing navigation lease. The presentation code keeps all career/type/movie/scratch
+guards and adds bounded completion/deferral logs, so a native run can distinguish hook
+execution from a merely updated string buffer. Four affected fixtures and the integrated
+17-check `ctest-r9.log` pass. Traffic's separate original cap interaction has a failing-before/
+passing-after retail fixture; see [cap policy and evidence](world_traffic_native_cap_20261028.md).
+These source results do not replace the pending native HUD/density evidence.

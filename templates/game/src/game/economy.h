@@ -27,7 +27,7 @@ const char* StatusText(Status status);
 // Called once per original game update. This is the only place an explicit queued balance is applied.
 void ApplyCommands();
 
-// Only the original live garage-update hook calls this, on its game thread. Refreshes the two
+// Only the original live top-level garage-update hook calls this, on its game thread. Refreshes the two
 // existing Flash wallets once after an applied edit; never changes money or requests a save.
 bool RefreshGarageWallet(X86Context& context, uint8_t* base, uint32_t garage);
 

@@ -51,8 +51,12 @@ X86_FUNC(__imp__sub_002C89F0) { Dword(ctx.ecx+0x50,kernel::R32(ctx.esp+4));ctx.e
 X86_EXTERN_FUNC(sub_002B9670);
 X86_EXTERN_FUNC(sub_00222770);
 X86_EXTERN_FUNC(sub_002C89F0);
+X86_EXTERN_FUNC(sub_002B9690);
+X86_EXTERN_FUNC(__imp__sub_002B9690);
 X86_EXTERN_FUNC(FixturePopulationTrafficRequest);
 X86_EXTERN_FUNC(FixturePopulationAvailableAmbient);
+X86_EXTERN_FUNC(FixturePopulationTrafficCapAll);
+extern "C" unsigned FixturePopulationCapCalls();
 
 int main() {
     committed.fill(true);
@@ -205,5 +209,77 @@ int main() {
     FixturePopulationAvailableAmbient(allocation,guest.data());assert(allocation.eax==0x22000);
     assert(kernel::G<uint16_t>(pool+4)==2&&kernel::G<uint16_t>(pool+6)==2&&kernel::R32(pool)==available);
     assert(kernel::R32(available)==0x21000&&kernel::R32(available+4)==0x22000);
+
+    // Actual native setup calls the observed density setter, then caps every
+    // road through 0x2B8610 -> 0x2B9690. The stock cap defaults to30*0.01=.3;
+    // applying2x before that unobserved native writer used to lose all tracking.
+    Dword(kMission+0x18,1);Dword(0x4B4CFC,30);Float(0x4499F0,0.01f);Float(0x44935C,0.001f);
+    app::Get().world={2,1};Call(sub_002B9670,kRoads,0.3f);
+    assert(Near(Float(kRoads+0x20),0.6f));
+    X86Context cap_all{};cap_all.ecx=kTraffic;cap_all.esp=kStack+64;
+    const unsigned cap_before=FixturePopulationCapCalls();
+    FixturePopulationTrafficCapAll(cap_all,guest.data());
+    assert(cap_all.esp==kStack+68&&FixturePopulationCapCalls()==cap_before+1);
+    Apply();
+    assert(mc3::world::GetSnapshot().traffic_roads_ready==1&&Near(Float(kRoads+0x20),0.6f));
+    Apply();assert(Near(Float(kRoads+0x20),0.6f));
+
+    // Compare the full returned CPU context and real caller stack with one
+    // actual retail cap on the unscaled baseline. Host replays use copied CPU
+    // state and restore their borrowed stack bytes; the cap argument is exact.
+    auto cap=[&](float limit,float baseline,uint32_t object=kRoads) {
+        X86Context actual;std::memset(&actual,0x35,sizeof(actual));actual.ecx=object;actual.esp=kStack+64;
+        Dword(actual.esp,0x12345678);Float(actual.esp+4,limit);
+        const auto before=guest;
+        Float(object+0x20,baseline);
+        X86Context expected=actual;
+        __imp__sub_002B9690(expected,guest.data());
+        std::array<uint8_t,256> stack;std::memcpy(stack.data(),guest.data()+kStack-128,stack.size());
+        std::copy(before.begin(),before.end(),guest.begin());
+        const auto count=FixturePopulationCapCalls();
+        sub_002B9690(actual,guest.data());
+        assert(FixturePopulationCapCalls()==count+1);
+        assert(!std::memcmp(&actual,&expected,sizeof(actual)));
+        assert(!std::memcmp(stack.data(),guest.data()+kStack-128,stack.size()));
+        assert(Near(Float(kStack+68),limit));
+    };
+    for (float multiplier : {0.0f,1.0f,2.0f,4.0f}) {
+        app::Get().world={multiplier,1};Call(sub_002B9670,kRoads,0.8f);
+        cap(0.3f,0.8f);Apply();
+        assert(mc3::world::GetSnapshot().traffic_roads_ready==1);
+        assert(Near(Float(kRoads+0x20),0.3f*multiplier));
+        // Raising the cap never raises the underlying original density.
+        cap(0.9f,0.3f);Apply();assert(Near(Float(kRoads+0x20),0.3f*multiplier));
+        // Preserve the original strict0.001 reduction threshold, not one
+        // accidentally multiplied by the user's density setting.
+        cap(0.2995f,0.3f);Apply();assert(Near(Float(kRoads+0x20),0.3f*multiplier));
+        cap(0.298f,0.3f);Apply();assert(Near(Float(kRoads+0x20),0.298f*multiplier));
+        cap(0.1f,0.298f);Apply();assert(Near(Float(kRoads+0x20),0.1f*multiplier));
+    }
+    // An original authored zero stays zero even when the cap increases.
+    app::Get().world={4,1};Call(sub_002B9670,kRoads,0);cap(0.3f,0);Apply();
+    assert(Float(kRoads+0x20)==0&&Float(kRoads+0x28)==0);
+    // Inactive modes and AI ownership restore the original capped baseline.
+    for (uint32_t mode : {1u,2u,7u}) {
+        Dword(kMission+0x18,mode);guest[kCar+0x5E]=mode==1;
+        Call(sub_002B9670,kRoads,0.8f);cap(0.3f,0.8f);Apply();
+        assert(!mc3::world::GetSnapshot().free_roam_player&&Near(Float(kRoads+0x20),0.3f));
+    }
+    guest[kCar+0x5E]=0;Dword(kMission+0x18,1);
+    // Unobserved/outside-array roads and recycled native writes have no
+    // authority to create or reinterpret a multiplier baseline.
+    Float(other+0x20,0.8f);cap(0.3f,0.8f,other);Apply();
+    assert(Near(Float(other+0x20),0.3f));
+    Call(sub_002B9670,kRoads,0.3f);Float(kRoads+0x20,0.5f);cap(0.3f,0.5f);Apply();
+    assert(mc3::world::GetSnapshot().traffic_roads_ready==0&&Near(Float(kRoads+0x20),0.3f));
+    Call(sub_002B9670,kRoads,0.3f);Dword(kRoads+0x2C,kNodes+8);Word(kNodes+8,0);
+    cap(0.3f,1.2f);Apply();
+    assert(mc3::world::GetSnapshot().traffic_roads_ready==0&&Near(Float(kRoads+0x20),0.3f));
+    // Missing replay scratch is distinct from the committed real native stack:
+    // entry+64 and its retail pushes remain in the next page. Call native once,
+    // drop tracking, and never synthesize a new baseline from the result.
+    Call(sub_002B9670,kRoads,0.3f);committed[(kStack-128)/mem::kPage]=false;
+    cap(0.3f,1.2f);committed[(kStack-128)/mem::kPage]=true;Apply();
+    assert(mc3::world::GetSnapshot().traffic_roads_ready==0&&Near(Float(kRoads+0x20),0.3f));
     std::cout<<"world population: native state2 roam/find_hook guard, scripted-mode restore, retail writers, zero/caps, ownership, topology and stack preservation passed\n";
 }

@@ -23,6 +23,7 @@
 #include "xdk/hle.h"
 
 X86_EXTERN_FUNC(__imp__sub_002B9670);
+X86_EXTERN_FUNC(__imp__sub_002B9690);
 X86_EXTERN_FUNC(__imp__sub_00222770);
 X86_EXTERN_FUNC(__imp__sub_002C89F0);
 
@@ -112,6 +113,10 @@ bool RoadReadable(const TrafficIdentity& traffic, uint32_t road) {
     }
     return true;
 }
+bool ObservedRoad(uint32_t road, const Road& tracked) {
+    return RoadReadable(g_traffic, road) && R32(road + 0x2C) == tracked.nodes &&
+           kernel::G<uint8_t>(road + 4) == tracked.count && Bits(F32(road + 0x20)) == Bits(tracked.written);
+}
 Pedestrians PedestrianIdentity() {
     if (!Committed(kPedestrian, 4)) return {};
     const uint32_t wrapper = R32(kPedestrian);
@@ -161,8 +166,7 @@ void Apply(X86Context& ctx, uint8_t* base) {
     const float pedestrian_multiplier = active ? Multiplier(settings.pedestrian_multiplier) : 1;
     for (auto it = g_roads.begin(); it != g_roads.end();) {
         const uint32_t road = it->first; auto& tracked = it->second;
-        if (!RoadReadable(g_traffic, road) || R32(road + 0x2C) != tracked.nodes ||
-            kernel::G<uint8_t>(road + 4) != tracked.count || Bits(F32(road + 0x20)) != Bits(tracked.written)) {
+        if (!ObservedRoad(road, tracked)) {
             // A native write or changed topology wins; wait for an actual setter
             // observation, rather than invent a new baseline from recycled memory.
             it = g_roads.erase(it); continue;
@@ -194,6 +198,40 @@ X86_FUNC(sub_002B9670) {
     W32(argument, Bits(wanted));
     __imp__sub_002B9670(ctx, base);
     W32(argument, original_bits);
+}
+// Original setup0x1CB290 ends with0x2B8610, which applies the game's density
+// ceiling through0x2B9690 AFTER the setter above. The cap compares current-limit
+// with its original0.001 threshold. Let it operate on an observed native
+// baseline, then multiply that capped baseline; do not cap our scaled value and
+// mistake the legitimate native reduction for an unrelated/recycled-road write.
+// This override may exceed the numeric density ceiling, not the original pools.
+X86_FUNC(sub_002B9690) {
+    const auto settings = Settings();
+    std::lock_guard lock(g_lock);
+    UpdateIdentities();
+    const uint32_t road = ctx.ecx;
+    auto it = g_roads.find(road);
+    if (!Committed(ctx.esp, 8) || it == g_roads.end() || !ObservedRoad(road, it->second) ||
+        !Density(F32(ctx.esp + 4))) {
+        if (it != g_roads.end()) g_roads.erase(it);
+        __imp__sub_002B9690(ctx, base); return;
+    }
+    auto& tracked = it->second;
+    if (Bits(tracked.original) != Bits(tracked.written) &&
+        !Replay(ctx, base, __imp__sub_002B9670, road, tracked.original)) {
+        // No scratch means no staging writes: preserve the one actual native
+        // cap call and stop claiming authority over its resulting density.
+        g_roads.erase(it);
+        __imp__sub_002B9690(ctx, base); return;
+    }
+    __imp__sub_002B9690(ctx, base);  // Exactly once, unchanged argument and real caller context.
+    tracked.original = tracked.written = F32(road + 0x20);
+    const float multiplier = Active() ? Multiplier(settings.traffic_multiplier) : 1;
+    const float wanted = Scaled(tracked.original, multiplier);
+    if (Bits(wanted) != Bits(tracked.written) && Replay(ctx, base, __imp__sub_002B9670, road, wanted))
+        tracked.written = wanted;
+    // A failed final replay leaves the valid native density AND target intact;
+    // Apply can retry later without inventing or compounding a baseline.
 }
 X86_FUNC(sub_00222770) {
     const auto settings = Settings();

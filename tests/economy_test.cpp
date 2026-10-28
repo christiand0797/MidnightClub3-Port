@@ -21,6 +21,7 @@ constexpr uint32_t garage = 0x100000, movie0 = 0x120000, movie1 = 0x121000;
 constexpr uint32_t vm0 = 0x130000, vm1 = 0x131000, scratch_top = 0x90000, stack_bytes = 0x10000;
 bool scratch_live = false, fail_stack = false, bad_stack_page = false;
 unsigned stack_allocations = 0, stack_frees = 0;
+unsigned completed_logs = 0, deferred_logs = 0;
 struct Call { uint32_t address, self; std::vector<uint32_t> arguments; };
 std::vector<Call> calls;
 std::function<void(uint32_t)> during_call;
@@ -43,7 +44,10 @@ void FreeStack(uint32_t top) {
     std::memset(kernel::g_base + top - fixture::stack_bytes, 0xDD, fixture::stack_bytes);
 }
 }
-namespace logx { void Write(Level, const char*, ...) {} }
+namespace logx { void Write(Level, const char* format, ...) {
+    if (std::strstr(format, "wallet Flash setters completed")) ++fixture::completed_logs;
+    if (std::strstr(format, "wallet refresh deferred")) ++fixture::deferred_logs;
+} }
 
 #ifdef MC3_TEST_ORIGINAL_WALLET_HUD
 void EconomyOriginalHudCall(X86Context& ctx, uint8_t* base, uint32_t address);
@@ -128,6 +132,7 @@ void Setup(uint32_t money = 30000) {
     std::fill(fixture::memory.begin(), fixture::memory.end(), 0);
     fixture::missing.clear();
     fixture::fail_stack = fixture::bad_stack_page = false;
+    fixture::completed_logs = fixture::deferred_logs = 0;
     fixture::calls.clear(); fixture::during_call = {};
     kernel::W32(0x557F0C, fixture::manager);
     kernel::W32(fixture::manager, 0x473B98);
@@ -154,6 +159,7 @@ void Unready() {
 
 void WalletObjects() {
     using namespace fixture;
+    kernel::W32(0x50F12C, garage);
     kernel::W32(garage, 0x45B860);
     kernel::W32(garage + 0x14, movie0); kernel::W32(garage + 0x18, movie1);
     kernel::W32(movie0, 0x4579F0); kernel::W32(movie1, 0x4579F0);
@@ -179,6 +185,7 @@ void WalletTests() {
     assert(std::memcmp(&ctx, &original, sizeof(ctx)) == 0);
     assert(std::equal(before.begin() + 0x10000, before.begin() + 0x20000, memory.begin() + 0x10000));
     assert(Cash() == 1000090 && calls.size() == 5 && !scratch_live);
+    assert(completed_logs == 1 && deferred_logs == 0);
     assert(stack_allocations == initial_allocs + 1 && stack_frees == initial_frees + 1);
     assert(calls[0].address == 0x20CF50 && calls[0].arguments == std::vector<uint32_t>({garage + 0x116B, 0x82, 0x45987C, 1000090}));
     for (unsigned i = 0; i < 2; ++i) {
@@ -192,6 +199,7 @@ void WalletTests() {
     }
     assert(std::strcmp(reinterpret_cast<char*>(kernel::g_base + garage + 0x116B), "$1000090.00") == 0);
     assert(!RefreshGarageWallet(ctx, kernel::g_base, garage) && calls.size() == 5); // One shot.
+    assert(completed_logs == 1 && deferred_logs == 0);
     // No balance/dirty/save/spending changes occur during presentation refresh.
     for (size_t at = 0; at < memory.size(); ++at) if (memory[at] != before[at]) {
         const bool buffer = at >= garage + 0x116B && at < garage + 0x116B + 0x82;
@@ -202,6 +210,12 @@ void WalletTests() {
     auto pending = [&] { Setup(90); WalletObjects(); assert(QueueMoney(1000090)); ApplyEconomyCommands(); };
     auto refused = [&] { const auto all = memory; assert(!RefreshGarageWallet(ctx, kernel::g_base, garage)); assert(calls.empty() && memory == all && !scratch_live); };
     pending(); kernel::W32(garage, 0x123456); refused();
+    pending(); kernel::W32(0x50F12C, garage + 4); refused();
+    const auto reported = deferred_logs;
+    refused(); assert(deferred_logs == reported); // Same rejected revision/reason never logs every frame.
+    kernel::W32(0x50F12C, garage); assert(RefreshGarageWallet(ctx, kernel::g_base, garage));
+    assert(completed_logs == 1);
+    pending(); missing.insert(0x50F000); refused();
     pending(); kernel::W32(movie0, 0x123456); refused();
     pending(); kernel::W32(movie1 + 8, 0); refused();
     pending(); kernel::W32(garage + 0x18, movie0); refused();

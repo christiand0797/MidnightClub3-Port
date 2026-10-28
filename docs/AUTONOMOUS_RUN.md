@@ -8,6 +8,24 @@ remains on its current path until a real PBR integration is implemented and vali
 
 ## Latest checkpoint — 2026-10-28, actual feature controls
 
+- Public `e7ed92d` and isolated EXE `58bdbff5...` include the 17-check integration,
+  original wallet presentation attempt and inactive PBR geometry helpers. Private native R4
+  reloaded the test career's saved $1,000,090 and Bel Air camber -5.1 in a new process.
+  Its subsequent $10,000 edit saved $1,010,090 through the original save flow, confirmed by
+  the structural read-only parser. The original garage label stayed stale; no HUD-fix claim.
+- Actual free-roam World now reports active traffic/pedestrian 2x targets and a ready
+  pedestrian manager. Traffic roads tracked is still zero, so traffic setter coverage and
+  visible density effects need further evidence. Root closed R4 normally at 795.660 seconds;
+  the same movie worker/encoder resumed. All 53 current personal files stayed unchanged.
+  Result `6ea0186f...` and disk proof `b99c11d7...` preserve independent private-after files,
+  the log, original Sky observations and exact read-only probes. No canonical install/release.
+- The next tested source observes the normal top-level garage update rather than an optional
+  submenu branch, verifies the current garage singleton and logs bounded refresh completion/
+  deferral evidence. A separate original-instruction regression reproduces the later traffic
+  cap discarding scaled-road tracking; its fix applies the multiplier to the native capped
+  baseline without changing actor pools or ownership guards. All 17 integrated checks pass
+  in `ctest-r9.log`. Fresh build/native evidence remains required for these changes.
+
 - `c9573bc` is pushed, and its isolated `9af224b0...` build includes the source-backed
   career state-2/mode-0-or-1 population fix. The next combined candidate also includes the
   narrow original-wallet refresh and the inactive PBR geometry math module. All 17 integrated

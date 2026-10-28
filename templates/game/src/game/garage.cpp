@@ -1021,9 +1021,16 @@ X86_FUNC(sub_001465E0) {
 // tuning discoverable without consuming any of Flash's scarce symbols or changing its saved part categories.
 X86_EXTERN_FUNC(__imp__sub_001519D0);
 X86_FUNC(sub_001519D0) {
-    const uint32_t garage = ctx.ecx;
     app::GarageTuningActive();
     __imp__sub_001519D0(ctx, base);
+}
+
+// The original ordinary garage frame always calls this top-level update (0x1EC1D). Its submenu
+// helper above is skipped by several normal branches; observe the original once, never replay it.
+X86_EXTERN_FUNC(__imp__sub_00152420);
+X86_FUNC(sub_00152420) {
+    const uint32_t garage = ctx.ecx;
+    __imp__sub_00152420(ctx, base);
     mc3::economy::RefreshGarageWallet(ctx, base, garage);
 }
 
