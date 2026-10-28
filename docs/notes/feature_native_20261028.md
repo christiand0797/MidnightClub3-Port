@@ -105,3 +105,25 @@ career remains private and must never replace the user's career.
 It seals the independent session log, private-after saves/settings/sidecar, original Sky JPEG
 observations, exact read-only world probe and same-worker resume. Installation and release
 publication remain pending the remaining native gates.
+
+## Money persistence and presentation follow-up
+
+A read-only structural walk of the original save schema confirms **1,000,090** in R3's private
+`Player 1.mc3Remix`. It walks the raw XJ97 version-1 career prefix and original aligned field
+order rather than searching for the expected cash value. The selected model is `vp_belair_57`;
+the source file SHA-256 stayed `b45c8ef33cde8b715c38e04db774359c53d5071551faef8877155c4c17246ba3`
+before/after. Twenty-two positive/malformed/decoy parser checks passed. Career tail and console
+signature validation are outside this read-only proof.
+
+Receipt `economy-disk-proof-r1/disk-result-r1.json` under the R3 control directory has SHA-256
+`3959e62415b81b358efc1d19a1ec05500346fb650ba618f64034cd968e3f6fa7`.
+This closes the saved-cash observation for R3; its original garage label still needs refresh.
+
+The presentation patch observes the actual original garage regular-update `this`, verifies
+the typed garage/current career and movie wrappers, formats into the original persistent
+garage-owned buffer, and uses only the original `Fortune`/`updatemoney` setters. A separate
+guest scratch stack and full context copy preserve the original update's registers and stack.
+It does not change cash again, invoke refund/spending logic, trigger saving or change a save
+format. Focused fixtures execute the original formatter/Flash wrapper/value-writer instructions.
+The integrated 17 CPU checks, including garage/profile/tire hook contracts and PBR geometry,
+pass. New native immediate-HUD and corrected population acceptance are pending.

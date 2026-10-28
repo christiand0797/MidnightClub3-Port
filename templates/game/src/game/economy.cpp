@@ -8,6 +8,9 @@
 //  changes mark these at 0x1431A9/0x1431F5. Use the same dirty semantics, not host-side save edits.
 #include "economy.h"
 
+#include <array>
+#include <cstdio>
+#include <cstring>
 #include <limits>
 #include <mutex>
 
@@ -20,22 +23,30 @@ namespace {
 constexpr uint32_t kManager = 0x557F0C, kManagerVtable = 0x473B98, kDataVtable = 0x474288;
 constexpr uint32_t kGameState = 0x53F2D4, kOwnedCount = 0x53F80C, kOwnedSelected = 0x53F80D;
 constexpr uint32_t kDirty = 0x557648, kCash = 0xACC, kCity = 0x50;
+constexpr uint32_t kGarageVtable = 0x45B860, kMovieVtable = 0x4579F0;
+constexpr uint32_t kWalletBuffer = 0x116B, kWalletBytes = 0x82;
+constexpr uint32_t kWalletFormat = 0x45987C, kFortuneName = 0x45A1C0, kUpdateMoneyName = 0x45A1B4;
+constexpr uint32_t kFormat = 0x20CF50, kSetString = 0x1395E0, kSetInteger = 0x139520;
+constexpr uint32_t kScratchBytes = 0x10000;
 
 struct Career { uint32_t manager = 0, data = 0, city = 0; };
 struct Command { bool pending = false; Career career; uint32_t target = 0; uint64_t epoch = 0; };
+struct WalletRefresh { bool pending = false; Career career; uint64_t epoch = 0, revision = 0; };
 std::mutex g_lock;
 Snapshot g_snapshot;
 Career g_observed;
 Command g_command;
+WalletRefresh g_wallet;
 uint64_t g_epoch = 0;
 
-bool Committed(uint32_t va, uint32_t bytes) {
+bool CommittedSpan(uint32_t va, uint32_t bytes, uint64_t high) {
     const uint64_t end = uint64_t(va) + bytes;
-    if (!kernel::g_base || !bytes || va < 0x10000 || end > 0x84000000ull) return false;
+    if (!kernel::g_base || !bytes || va < 0x10000 || end > high) return false;
     for (uint64_t page = va & ~(uint64_t(mem::kPage) - 1); page < end; page += mem::kPage)
         if (!mem::IsCommitted(uint32_t(page))) return false;
     return true;
 }
+bool Committed(uint32_t va, uint32_t bytes) { return CommittedSpan(va, bytes, 0x84000000ull); }
 bool Object(uint32_t va, uint32_t size, uint32_t vtable) {
     return (va & 3) == 0 && Committed(va, size) && kernel::R32(va) == vtable;
 }
@@ -67,12 +78,45 @@ void Invalidate() {
     std::lock_guard lock(g_lock);
     ++g_epoch;
     g_command = {};
+    g_wallet = {};
     g_observed = {};
     g_snapshot.ready = false;
     g_snapshot.pending = false;
     g_snapshot.status = Status::CareerChanged;
     g_snapshot.career_token = g_epoch;
 }
+
+struct Movies {
+    std::array<uint32_t, 2> wrappers{}, vms{};
+    bool operator==(const Movies&) const = default;
+};
+
+bool WalletContext(const WalletRefresh& wanted, uint32_t garage, Movies& movies, uint32_t& money) {
+    Career career;
+    if (!Current(career, money) || kernel::R32(kGameState) != 5 || !Same(career, wanted.career) ||
+        !Object(garage, kWalletBuffer + kWalletBytes, kGarageVtable)) return false;
+    // Both wrappers are allocated as 0x6C-byte sub_00139D50 objects by the exact garage constructor
+    // at 0x150EA9/0x150EC5. Its constructor writes kMovieVtable; +8 is the active original VM.
+    for (size_t i = 0; i < movies.wrappers.size(); ++i) {
+        movies.wrappers[i] = kernel::R32(garage + 0x14 + uint32_t(i) * 4);
+        if (!Object(movies.wrappers[i], 0x6C, kMovieVtable)) return false;
+        movies.vms[i] = kernel::R32(movies.wrappers[i] + 8);
+        if ((movies.vms[i] & 3) || !Committed(movies.vms[i], 0x48)) return false;
+    }
+    if (movies.wrappers[0] == movies.wrappers[1]) return false;
+    std::lock_guard lock(g_lock);
+    return g_wallet.pending && g_wallet.epoch == wanted.epoch && g_wallet.revision == wanted.revision &&
+           g_epoch == wanted.epoch && Same(g_wallet.career, wanted.career);
+}
+
+bool OriginalText(uint32_t address, const char* expected, uint32_t bytes) {
+    return Committed(address, bytes) && std::memcmp(kernel::g_base + address, expected, bytes) == 0;
+}
+
+struct ScratchStack {
+    uint32_t top = mem::AllocStack(kScratchBytes);
+    ~ScratchStack() { if (top) mem::FreeStack(top); }
+};
 }  // namespace
 
 Snapshot ReadSnapshot() {
@@ -118,7 +162,10 @@ void ApplyCommands() {
     // A ready-to-ready switch can happen entirely between two UI frames. Give
     // it a new token before checking pending commands, even if no unloaded frame
     // was visible to the menu. Reset/load hooks cover same-allocation reuse.
-    if (ready != g_snapshot.ready || (ready && !Same(g_observed, current))) ++g_epoch;
+    if (ready != g_snapshot.ready || (ready && !Same(g_observed, current))) {
+        ++g_epoch;
+        g_wallet = {};
+    }
     if (!ready) {
         if (g_command.pending) status = Status::CareerChanged;
         else if (status != Status::CareerChanged) status = Status::Unavailable;
@@ -133,6 +180,7 @@ void ApplyCommands() {
                     kernel::G<uint8_t>(current.manager + 0x20) = 1;
                     money = g_command.target;
                     ++g_snapshot.revision;
+                    g_wallet = {true, current, g_epoch, g_snapshot.revision};
                 }
                 status = Status::Applied;
             } else {
@@ -149,6 +197,54 @@ void ApplyCommands() {
     g_snapshot.money = ready ? money : 0;
     g_snapshot.status = status;
     g_snapshot.career_token = g_epoch;
+}
+
+bool RefreshGarageWallet(X86Context& context, uint8_t* base, uint32_t garage) {
+    // This observes only the live this supplied by sub_001519D0. No retained garage pointer or
+    // destructor-time vtable scan can authorize a later object. Never hold a host lock in guest code.
+    if (!base || base != kernel::g_base) return false;
+    WalletRefresh wanted;
+    {
+        std::lock_guard lock(g_lock);
+        wanted = g_wallet;
+    }
+    if (!wanted.pending) return false;
+    Movies movies;
+    uint32_t money = 0;
+    if (!WalletContext(wanted, garage, movies, money) ||
+        !OriginalText(kWalletFormat, "$%d.00", 7) || !OriginalText(kFortuneName, "Fortune", 8) ||
+        !OriginalText(kUpdateMoneyName, "updatemoney", 12)) return false;
+    ScratchStack scratch;
+    // A dedicated runtime-owned guest stack preserves every caller register/flag/FPU/SIMD value
+    // and every byte of its real guest stack. Only the persistent garage string is retained by Flash.
+    if (scratch.top < kScratchBytes + 0x10000 || (scratch.top & 0xFFFF) ||
+        !CommittedSpan(scratch.top - kScratchBytes, kScratchBytes, 0x100000000ull) ||
+        (context.esp >= scratch.top - kScratchBytes && context.esp < scratch.top)) return false;
+    X86Context call = context;
+    call.esp = scratch.top;
+    const uint32_t buffer = garage + kWalletBuffer;
+    const auto formatted = kernel::CallGuest(call, kFormat, {buffer, kWalletBytes, kWalletFormat, money});
+    char expected[32];
+    const int bytes = std::snprintf(expected, sizeof(expected), "$%u.00", money);
+    if (formatted != buffer || bytes < 0 || bytes >= int(sizeof(expected)) ||
+        std::memcmp(base + buffer, expected, size_t(bytes) + 1) != 0) return false;
+    // The original narrow setters store Fortune and set its updatemoney flag. Replaying a broad
+    // preview/refund update here would change unrelated garage state or spending and is forbidden.
+    for (size_t i = 0; i < movies.wrappers.size(); ++i) {
+        for (const bool text : {true, false}) {
+            Movies still;
+            uint32_t current_money = 0;
+            if (!WalletContext(wanted, garage, still, current_money) || still != movies || current_money != money)
+                return false;
+            call.ecx = movies.wrappers[i];
+            if (text) kernel::CallGuest(call, kSetString, {kFortuneName, buffer});
+            else kernel::CallGuest(call, kSetInteger, {kUpdateMoneyName, 1});
+        }
+    }
+    std::lock_guard lock(g_lock);
+    if (g_wallet.pending && g_wallet.epoch == wanted.epoch && g_wallet.revision == wanted.revision &&
+        g_epoch == wanted.epoch && Same(g_wallet.career, wanted.career)) g_wallet = {};
+    return true;
 }
 
 }  // namespace mc3::economy

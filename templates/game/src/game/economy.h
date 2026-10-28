@@ -1,6 +1,8 @@
 #pragma once
 #include <cstdint>
 
+struct X86Context;
+
 namespace mc3::economy {
 
 // The retail field is a signed 32-bit integer. Leave headroom for normal race rewards/purchases.
@@ -24,6 +26,10 @@ const char* StatusText(Status status);
 
 // Called once per original game update. This is the only place an explicit queued balance is applied.
 void ApplyCommands();
+
+// Only the original live garage-update hook calls this, on its game thread. Refreshes the two
+// existing Flash wallets once after an applied edit; never changes money or requests a save.
+bool RefreshGarageWallet(X86Context& context, uint8_t* base, uint32_t garage);
 
 }  // namespace mc3::economy
 

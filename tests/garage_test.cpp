@@ -31,6 +31,7 @@ unsigned bind_calls = 0;
 bool sparse_guest = false;
 #endif
 unsigned stock_ride_calls = 0, stock_available_calls = 0, cfg_applied_calls = 0;
+unsigned original_garage_updates = 0, wallet_observations = 0;
 unsigned member_calls = 0;
 constexpr uint32_t globals[] = {0x5014D0, 0x5014D8, 0x5014D4, 0x501410, 0x501420, 0x50142C};
 constexpr uint32_t string_table = 0x507E08;
@@ -131,6 +132,13 @@ X86Context Call(Hook hook, uint32_t self = 0, std::initializer_list<uint32_t> ar
 }
 }
 namespace app { Settings& Get() { static Settings settings; return settings; } }
+namespace mc3::economy { bool RefreshGarageWallet(X86Context& context, uint8_t* base, uint32_t garage) {
+    assert(base == fixture::memory.data() && garage == fixture::garage);
+    assert(fixture::original_garage_updates == 1 && context.ecx == 0xABCD && context.eax == 123);
+    assert(context.esp == fixture::stack + 4);
+    ++fixture::wallet_observations;
+    return false;
+} }
 namespace logx { void Write(Level, const char*, ...) {} }
 namespace mem { bool IsCommitted(uint32_t va) {
 #ifdef _WIN32
@@ -248,7 +256,9 @@ X86_EXTERN_FUNC(FixtureGarageSetProfile);
 #endif
 X86_FUNC(__imp__sub_00145DC0) { ++fixture::stock_available_calls; ctx.eax = 0; ctx.esp += 12; }
 X86_FUNC(__imp__sub_001465E0) { ctx.esp += 8; }
-X86_FUNC(__imp__sub_001519D0) { ctx.esp += 4; }
+X86_FUNC(__imp__sub_001519D0) {
+    ++fixture::original_garage_updates; ctx.ecx = 0xABCD; ctx.eax = 123; ctx.esp += 4;
+}
 X86_FUNC(__imp__sub_00121970) { ctx.ecx = 0; ctx.esp += 12; }
 X86_FUNC(__imp__sub_002CBDE0) { ctx.ecx = 0; ctx.esp += 4; }
 X86_FUNC(__imp__sub_001FAE10) { ctx.ecx = 0; ctx.esp += 4; }
@@ -265,10 +275,14 @@ X86_EXTERN_FUNC(FixtureGarageLeaveForSave);
 DECLARE(00270C10); DECLARE(00270BE0); DECLARE(00272FC0); DECLARE(00270C00); DECLARE(00145DC0);
 DECLARE(001465E0); DECLARE(00121970); DECLARE(002CBDE0); DECLARE(001FAE10); DECLARE(000FFBA0);
 DECLARE(00270B40); DECLARE(00270B60); DECLARE(00270BC0); DECLARE(00272FE0);
+DECLARE(001519D0);
 void GarageRefreshPlayerCar(uint32_t car);
 
 int main() {
     using namespace fixture; using kernel::W32;
+    const auto updated = Call(sub_001519D0, garage);
+    assert(original_garage_updates == 1 && wallet_observations == 1);
+    assert(updated.ecx == 0xABCD && updated.eax == 123 && updated.esp == stack + 4);
     W32(0x557F04, db);
     for (int i = 0; i < 15; ++i) {
         auto key = i < 9 ? "rh_" + std::to_string(i * 100) : "rh+" + std::to_string((15 - i) * 100);

@@ -46,6 +46,7 @@
 #include "kernel/memory.h"
 #include "xdk/hle.h"
 #include "garage.h"
+#include "economy.h"
 
 using kernel::CallGuest;
 using kernel::G;
@@ -1020,8 +1021,10 @@ X86_FUNC(sub_001465E0) {
 // tuning discoverable without consuming any of Flash's scarce symbols or changing its saved part categories.
 X86_EXTERN_FUNC(__imp__sub_001519D0);
 X86_FUNC(sub_001519D0) {
+    const uint32_t garage = ctx.ecx;
     app::GarageTuningActive();
     __imp__sub_001519D0(ctx, base);
+    mc3::economy::RefreshGarageWallet(ctx, base, garage);
 }
 
 // vehSim::ApplyCarCfg(CarCfg*, model), thiscall, ret 8: the garage ride height has just replaced SuspensionOffset

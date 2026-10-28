@@ -8,6 +8,20 @@ remains on its current path until a real PBR integration is implemented and vali
 
 ## Latest checkpoint — 2026-10-28, actual feature controls
 
+- `c9573bc` is pushed, and its isolated `9af224b0...` build includes the source-backed
+  career state-2/mode-0-or-1 population fix. The next combined candidate also includes the
+  narrow original-wallet refresh and the inactive PBR geometry math module. All 17 integrated
+  CPU checks pass; fresh combined-candidate native validation still gates installation.
+- A structural original-format parse independently confirms R3's **$1,000,090** saved balance
+  in the private Bel Air career, with unchanged input bytes and 22 parser checks. Receipt
+  `3959e624...` closes the private saved-cash observation; its stale Flash label is addressed
+  by a separate presentation-only patch, with no save/cash writer changes.
+- Bounded still review now covers 50 strict movies, including four newly completed clips.
+  Three matched-time pairs per clip preserve source/model/output hashes and original timing;
+  fine reconstructed details and smoothing remain limitations. See [r7](notes/video_visual_delta_20261028_r7.md).
+  Current live strict coverage is 51/106, zero failed; Suschamp is in progress. Discover actual
+  worker identities before scheduling, rather than using a historical PID as authority.
+
 - Public `94fc467` includes the input latch and GPU diagnostics. The separate feature build
   `c724425f...` compiled successfully from that exact source, with unchanged consumed source
   inputs. It has not replaced the installed executable or become a published release.

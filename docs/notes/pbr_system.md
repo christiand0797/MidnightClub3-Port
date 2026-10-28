@@ -38,6 +38,12 @@ import alone does not prove a native material assignment or visual quality.
 
 ## Renderer integration still required
 
+The [geometry math module](pbr_geometry_math_20261028.md) now implements row-vector
+model/view composition, inverse-transpose normals, explicit face orientation and guarded
+cotangent frames, with CPU/HLSL helpers and reflected shader packing tests. It remains
+separate from actual draw capture and shader/material activation. Legacy shader sources,
+root signatures and rendering defaults are unchanged.
+
 [The source-backed geometry bridge investigation](pbr_geometry_bridge_20261028.md) identifies
 the first bounded fixed-function scope, actual morph/skinning snapshot points and missing
 post-extension capture evidence. These are implementation inputs, not renderer acceptance.

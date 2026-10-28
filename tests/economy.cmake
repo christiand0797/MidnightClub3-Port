@@ -10,6 +10,12 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../templates/game/generated/game/x86_recomp
     target_sources(economy_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/economy_original_fixture.cpp")
     target_compile_definitions(economy_test PRIVATE MC3_TEST_ORIGINAL_SAVE_NEEDED=1)
 endif()
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../templates/game/generated/game/x86_recomp.35.cpp" AND
+   EXISTS "${CMAKE_CURRENT_LIST_DIR}/../templates/game/generated/game/x86_recomp.9.cpp" AND
+   EXISTS "${CMAKE_CURRENT_LIST_DIR}/../templates/game/generated/game/x86_recomp.59.cpp")
+    target_sources(economy_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/economy_hud_original_fixture.cpp")
+    target_compile_definitions(economy_test PRIVATE MC3_TEST_ORIGINAL_WALLET_HUD=1)
+endif()
 if(MSVC)
     target_compile_options(economy_test PRIVATE /O2 /UNDEBUG)
 else()
