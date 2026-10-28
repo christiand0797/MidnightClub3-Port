@@ -1,6 +1,7 @@
 // SDL controllers, foreground keyboard fallback, and optional deterministic controller scripts.
 #include "core/input.h"
 #include "core/input_mapping.h"
+#include "core/keyboard_latch.h"
 
 #include <algorithm>
 #include <chrono>
@@ -40,6 +41,7 @@ bool g_script_enabled = false;
 Pad g_raw[4];             // each port as last polled, before the menu blanks it
 bool g_menu_combo = false;  // Back + Y held at the last poll
 GarageNavigation g_garage_navigation;
+KeyboardEdgeLatch g_keyboard_edges;
 std::vector<PadScriptPress> g_script;
 std::optional<std::chrono::steady_clock::time_point> g_script_start;
 
@@ -143,29 +145,52 @@ Pad LivePad() {
     return ScriptPad(g_live, elapsed_ms);
 }
 
-Pad PollKeyboard() {
+Pad PollKeyboard(bool consume_edges) {
     HWND window = static_cast<HWND>(app::Window());
     const bool foreground = window && window == GetForegroundWindow();
-    if (!foreground) return KeyboardPad({}, false);
     auto down = [](int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; };
     KeyboardState keys;
-    keys.enter = down(VK_RETURN);
-    keys.space = down(VK_SPACE);
-    keys.escape = down(VK_ESCAPE);
-    keys.backspace = down(VK_BACK);
-    keys.up = down(VK_UP);
-    keys.down = down(VK_DOWN);
-    keys.left = down(VK_LEFT);
-    keys.right = down(VK_RIGHT);
-    keys.w = down('W');
-    keys.s = down('S');
-    keys.a = down('A');
-    keys.d = down('D');
-    keys.q = down('Q');
-    keys.e = down('E');
-    keys.x = down('X');
-    keys.y = down('Y');
-    return KeyboardPad(keys, true);
+    if (foreground) {
+        keys.enter = down(VK_RETURN);
+        keys.space = down(VK_SPACE);
+        keys.escape = down(VK_ESCAPE);
+        keys.backspace = down(VK_BACK);
+        keys.up = down(VK_UP);
+        keys.down = down(VK_DOWN);
+        keys.left = down(VK_LEFT);
+        keys.right = down(VK_RIGHT);
+        keys.w = down('W');
+        keys.s = down('S');
+        keys.a = down('A');
+        keys.d = down('D');
+        keys.q = down('Q');
+        keys.e = down('E');
+        keys.x = down('X');
+        keys.y = down('Y');
+    }
+    return KeyboardPad(g_keyboard_edges.Sample(keys, foreground, app::MenuOpen(), consume_edges), foreground);
+}
+
+std::optional<KeyboardKey> MappedKey(uintptr_t key) {
+    switch (key) {
+        case VK_RETURN: return KeyboardKey::Enter;
+        case VK_SPACE: return KeyboardKey::Space;
+        case VK_ESCAPE: return KeyboardKey::Escape;
+        case VK_BACK: return KeyboardKey::Backspace;
+        case VK_UP: return KeyboardKey::Up;
+        case VK_DOWN: return KeyboardKey::Down;
+        case VK_LEFT: return KeyboardKey::Left;
+        case VK_RIGHT: return KeyboardKey::Right;
+        case 'W': return KeyboardKey::W;
+        case 'S': return KeyboardKey::S;
+        case 'A': return KeyboardKey::A;
+        case 'D': return KeyboardKey::D;
+        case 'Q': return KeyboardKey::Q;
+        case 'E': return KeyboardKey::E;
+        case 'X': return KeyboardKey::X;
+        case 'Y': return KeyboardKey::Y;
+        default: return {};
+    }
 }
 
 void AddPad(SDL_JoystickID id) {
@@ -226,6 +251,28 @@ void UpdatePads() {
 
 }  // namespace
 
+void KeyboardWindowMessage(void* window, uint32_t message, uintptr_t wparam, intptr_t lparam) {
+    const bool focus_lost = message == WM_KILLFOCUS || message == WM_DESTROY ||
+                            (message == WM_ACTIVATE && LOWORD(wparam) == WA_INACTIVE) ||
+                            (message == WM_ACTIVATEAPP && !wparam);
+    const bool key_down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
+    const bool key_up = message == WM_KEYUP || message == WM_SYSKEYUP;
+    if (!focus_lost && !key_down && !key_up) return;
+    std::lock_guard lock(g_lock);
+    if (focus_lost) { g_keyboard_edges.Reset(); return; }
+    const auto key = MappedKey(wparam);
+    if (!key) return;
+    const auto hwnd = static_cast<HWND>(window);
+    const bool foreground = hwnd && hwnd == GetForegroundWindow();
+    const bool repeat = (uint64_t(lparam) & (1ull << 30)) != 0;
+    g_keyboard_edges.Event(*key, key_down, repeat, foreground, app::MenuOpen());
+}
+
+void KeyboardMenuChanged(bool menu_open) {
+    std::lock_guard lock(g_lock);
+    g_keyboard_edges.MenuChanged(menu_open);
+}
+
 void Init() {
     {
         std::lock_guard lock(g_lock);
@@ -257,7 +304,7 @@ void Init() {
     }
 }
 
-Pad Poll(int port) {
+Pad Poll(int port, bool consume_keyboard_edges) {
     Pad p;
     {
         std::lock_guard lock(g_lock);
@@ -290,7 +337,7 @@ Pad Poll(int port) {
         }
         // Keyboard remains usable while a controller is paired. Neutral keys preserve its analog sticks/triggers.
         if (port == 0) {
-            p = MergeKeyboard(p, PollKeyboard());
+            p = MergeKeyboard(p, PollKeyboard(consume_keyboard_edges));
             if (g_script_enabled) {
                 const auto now = std::chrono::steady_clock::now();
                 if (!g_script_start) g_script_start = now;

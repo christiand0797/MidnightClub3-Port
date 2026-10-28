@@ -1,4 +1,5 @@
 #include "core/input_mapping.h"
+#include "core/keyboard_latch.h"
 
 #include <algorithm>
 #include <cassert>
@@ -7,6 +8,106 @@ namespace {
 bool SamePad(const input::Pad& a, const input::Pad& b) {
     return a.connected == b.connected && a.buttons == b.buttons && std::equal(a.analog, a.analog + 8, b.analog) &&
            a.lx == b.lx && a.ly == b.ly && a.rx == b.rx && a.ry == b.ry;
+}
+
+void KeyboardEdgeChecks() {
+    using input::KeyboardEdgeLatch;
+    using input::KeyboardKey;
+    KeyboardEdgeLatch edges;
+    auto tap = [&](KeyboardKey key, bool menu = false) {
+        edges.Event(key, true, false, true, menu);
+        edges.Event(key, false, false, true, menu);
+    };
+    auto read = [&](input::KeyboardState held = {}, bool foreground = true, bool menu = false,
+                    bool consume = true) {
+        return input::KeyboardPad(edges.Sample(held, foreground, menu, consume), foreground);
+    };
+
+    // Both transitions completed before the guest poll: Start/A still arrive once.
+    tap(KeyboardKey::Enter); tap(KeyboardKey::Space);
+    auto short_press = read();
+    assert(short_press.buttons == 16 && short_press.analog[0] == 255);
+    auto released = read();
+    assert(released.buttons == 0 && released.analog[0] == 0);
+
+    // Connection discovery polls physical state but cannot steal a pending tap.
+    tap(KeyboardKey::Enter);
+    for (int i = 0; i < 4; ++i) assert(read({}, true, false, false).buttons == 0);
+    assert(read().buttons == 16 && read().buttons == 0);
+
+    // A held physical control stays held on every poll. Autorepeat is not a new queued action.
+    input::KeyboardState held; held.space = true;
+    edges.Event(KeyboardKey::Space, true, false, true, false);
+    assert(read(held).analog[0] == 255 && read(held).analog[0] == 255);
+    edges.Event(KeyboardKey::Space, true, true, true, false);
+    assert(read(held).analog[0] == 255);
+    edges.Event(KeyboardKey::Space, false, false, true, false);
+    assert(read().analog[0] == 0 && read().analog[0] == 0);
+    edges.Event(KeyboardKey::Space, true, true, true, false);
+    assert(read().analog[0] == 0);  // A repeat alone never creates a new down edge.
+    edges.Event(KeyboardKey::Space, false, false, true, false);
+    tap(KeyboardKey::Space);
+    assert(read().analog[0] == 255 && read().analog[0] == 0);
+
+    // Focus loss discards pending edges. Background events cannot be replayed on return.
+    tap(KeyboardKey::Enter);
+    assert(read({}, false).buttons == 0 && read().buttons == 0);
+    edges.Event(KeyboardKey::Enter, true, false, false, false);
+    edges.Event(KeyboardKey::Enter, false, false, false, false);
+    assert(read().buttons == 0);
+    tap(KeyboardKey::Enter); edges.Reset();
+    assert(read().buttons == 0);
+
+    // ImGui receives window events directly; F1 taps are not queued for either an open or just-closed game poll.
+    tap(KeyboardKey::Space, true);
+    assert(read({}, true, true).analog[0] == 0);
+    assert(read({}, true, true).analog[0] == 0 && read().analog[0] == 0);
+    tap(KeyboardKey::Enter, true);
+    assert(read().buttons == 0);
+    tap(KeyboardKey::Space, false);
+    assert(read({}, true, true).analog[0] == 0);  // Opening F1 also drops old game-context edges.
+    held = {}; held.enter = true;
+    assert(read(held, true, true).buttons == 16 && read(held).buttons == 16);
+
+    // F1 opens and closes while a loading game does not poll and no mapped key is pressed.
+    // Merely comparing the final menu bool cannot detect this complete UI round trip.
+    tap(KeyboardKey::Space);
+    edges.MenuChanged(true);
+    edges.MenuChanged(false);
+    assert(read().analog[0] == 0);
+    tap(KeyboardKey::Enter);
+    assert(read().buttons == 16 && read().buttons == 0);  // A new post-close tap still arrives.
+
+    // Publication is deliberately after notification. A message in the short gap observes
+    // the old menu state; it cannot leak a UI edge across either transition.
+    edges.MenuChanged(true);
+    tap(KeyboardKey::Space, false);  // Still the old closed state before the open bool is published.
+    assert(read({}, true, true).analog[0] == 0);
+    edges.MenuChanged(false);
+    tap(KeyboardKey::Enter, true);  // Still the old open state before close is published.
+    assert(read().buttons == 0);
+    held = {}; held.space = true;
+    edges.Event(KeyboardKey::Space, true, false, true, false);
+    edges.MenuChanged(true); edges.MenuChanged(false);
+    assert(read(held).analog[0] == 255 && read(held).analog[0] == 255);
+    edges.Event(KeyboardKey::Space, true, true, true, false);
+    edges.Event(KeyboardKey::Space, false, false, true, false);
+    assert(read().analog[0] == 0);  // Repeat/down bookkeeping does not manufacture a new tap.
+
+    // Edge addition preserves simultaneous controller input, including partial triggers and right stick.
+    input::Pad physical; physical.connected = true; physical.buttons = 32;
+    physical.analog[6] = 93; physical.analog[7] = 187; physical.rx = -17000; physical.ry = 12000;
+    tap(KeyboardKey::Enter); tap(KeyboardKey::Space); tap(KeyboardKey::Right);
+    const auto merged = input::MergeKeyboard(physical, read());
+    assert(merged.buttons == (32 | 16 | 8) && merged.analog[0] == 255);
+    assert(merged.analog[6] == 93 && merged.analog[7] == 187 && merged.rx == -17000 && merged.ry == 12000);
+    assert(SamePad(input::MergeKeyboard(physical, read({}, false)), physical));
+
+    // Direction cadence still receives a short keyboard tap immediately and observes its release.
+    input::GarageNavigation navigation;
+    tap(KeyboardKey::Right);
+    assert((navigation.Apply(read(), true, true, 0).buttons & 15) == 8);
+    assert((navigation.Apply(read(), true, true, 16).buttons & 15) == 0);
 }
 
 void GarageNavigationChecks() {
@@ -186,4 +287,5 @@ int main() {
     assert(unchanged.buttons == 63 && unchanged.analog[0] == 255 && unchanged.analog[7] == 255);
     assert(unchanged.ly == -32767 && unchanged.lx == 32767);
     GarageNavigationChecks();
+    KeyboardEdgeChecks();
 }

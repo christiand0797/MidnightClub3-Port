@@ -12,8 +12,12 @@ struct Pad {
 };
 
 void Init();  // window thread, before boot
-// the controller on that port, then GameInfo::pad
-Pad Poll(int port);
+// the controller on that port, then GameInfo::pad. Connection-only scans must not consume pending keyboard taps.
+Pad Poll(int port, bool consume_keyboard_edges = true);
+// Window thread, before ImGui's handler: mapped key transitions/focus loss only. Never suppresses a message.
+void KeyboardWindowMessage(void* window, uint32_t message, uintptr_t wparam, intptr_t lparam);
+// Caller holds UiLock and notifies before publishing the new menu state. Drops queued edges, never held input.
+void KeyboardMenuChanged(bool menu_open);
 // the port as the player holds it, also while the settings menu has the game reading neutral pads
 Pad RawPad(int port);
 void Rumble(int port, uint16_t left, uint16_t right);

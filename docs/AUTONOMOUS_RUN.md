@@ -6,7 +6,27 @@ The latest user request authorizes PBR code/material-system development in paral
 New offline PBR asset generation still follows the media pass and a verified full backup. The renderer
 remains on its current path until a real PBR integration is implemented and validated.
 
-## Latest checkpoint — 2026-10-28, feature integration
+## Latest checkpoint — 2026-10-28, bounded feature validation
+
+- Public source `12c4d93` and the isolated feature EXE `bc90298e...` built successfully,
+  including the PBR pack preflight tool. Its synthetic CLI fixtures passed. No new executable
+  has replaced the installed build, and no new release was published.
+- Two private native runs used independent current Bel Air/settings copies. The first hit the
+  earlier GPU completion-fence stall during HD startup; the second, explicitly activated run
+  rendered HD video, the 3D title world and F1 Display/Career controls without a fence warning.
+  This comparison does not establish a focus-related cause or resolve the intermittent stall.
+  Both owned windows exited normally; the same media worker resumed and all 53 current
+  canonical personal files remained unchanged. See [bounded evidence](notes/feature_native_20261028.md).
+- Short keyboard taps could miss guest state reads. Additive window-event latching now retains
+  foreground gameplay taps until a real state read, while connection discovery cannot consume
+  them. Physical keyboard/controller held input remains enabled; focus loss and F1 UI events
+  cannot queue stale gameplay taps. Thirteen focused integrated CPU checks pass.
+- Opt-in D3D12 diagnostics add bounded driver messages, startup Present results and descriptor
+  counts, DRED failure information and missing allocator/list/Present HRESULT checks. They do
+  not change fence/descriptor/upload lifetime policy or claim to fix the stall. This updated
+  code still needs its own build and bounded native acceptance before installation.
+
+## Earlier checkpoint — 2026-10-28, feature integration
 
 - World/Career source controls are implemented with actual original population setters,
   one-shot career money edits, token-bound UI commands and normal native save semantics.

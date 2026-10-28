@@ -15,6 +15,7 @@ namespace fixture {
 std::filesystem::path folder;
 int applies = 0, title_tabs = 0;
 bool title_dirty = false;
+std::vector<bool> keyboard_menu_contexts;
 bool TitleTabs() { ++title_tabs; return std::exchange(title_dirty, false); }
 }
 namespace app {
@@ -25,7 +26,13 @@ void* Window() { return nullptr; }
 std::recursive_mutex& UiLock() { static std::recursive_mutex lock; return lock; }
 void ApplyDisplay() { fixture::applies++; }
 }
-namespace input { Pad RawPad(int) { return {}; } }
+namespace input {
+Pad RawPad(int) { return {}; }
+void KeyboardMenuChanged(bool open) {
+    assert(app::MenuOpen() != open);  // Notification must precede publishing the new state.
+    fixture::keyboard_menu_contexts.push_back(open);
+}
+}
 namespace logx { void Write(Level, const char*, ...) {} }
 
 // Exercise the real UI and its transaction/recovery functions, without a game or GPU.
@@ -125,6 +132,14 @@ int main() {
     s = app::Settings{};
     app::Load();
     assert(s.world.traffic_multiplier == 2);
+    const auto transitions = fixture::keyboard_menu_contexts.size();
+    app::OpenVehicleMenu();
+    assert(app::MenuOpen() && fixture::keyboard_menu_contexts.size() == transitions + 1);
+    app::OpenVehicleMenu();
+    assert(fixture::keyboard_menu_contexts.size() == transitions + 1);  // Already-open F2 is not a transition.
+    app::ToggleMenu();
+    assert(!app::MenuOpen() && fixture::keyboard_menu_contexts.size() == transitions + 2);
+    assert((fixture::keyboard_menu_contexts == std::vector<bool>{true, false, true, false, true, false, true, false}));
     ImGui::DestroyContext();
     assert(fs::equivalent(fixture::folder.parent_path(), temp));
     assert(fs::remove(fixture::folder / "settings.toml"));

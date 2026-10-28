@@ -34,6 +34,7 @@
 #include "core/log.h"
 #include "core/host_path.h"
 #include "gpu/backend.h"
+#include "gpu/d3d12_diagnostics.h"
 #include "gpu/ext.h"
 #include "gpu/shaders.h"
 #include "gpu/skinning_capture.h"
@@ -611,6 +612,8 @@ private:
     void Begin();
     void Submit(bool wait);
     void WaitFence(uint64_t value);
+    void DrainDebugMessages(const char* operation);
+    void ReportDebugDred(const char* operation);
     void SetFullViewport(uint32_t w, uint32_t h);
     void SetBlitTarget(D3D12_CPU_DESCRIPTOR_HANDLE rtv, uint32_t w, uint32_t h);
     void Blit(ID3D12Resource* src, DXGI_FORMAT fmt, const float uvrect[4], bool gamma, bool alpha, uint32_t taps = 1,
@@ -795,6 +798,10 @@ private:
 
     ComPtr<IDXGIFactory4> factory_;
     ComPtr<ID3D12Device> dev_;
+    ComPtr<ID3D12InfoQueue> debug_info_;
+    bool debug_gpu_ = false, debug_dred_reported_ = false;
+    diagnostics::Budget debug_budget_;
+    uint64_t debug_discarded_ = 0;
     ComPtr<ID3D12CommandQueue> queue_;
     ComPtr<IDXGISwapChain3> swap_;
     ComPtr<ID3D12Resource> bb_[kFrames];
@@ -930,9 +937,24 @@ bool D3D12Backend::Init(uint32_t width, uint32_t height) {
 }
 
 bool D3D12Backend::CreateDevice() {
-    if (GetEnvironmentVariableW(L"XBE_D3D12_DEBUG", nullptr, 0)) {
+    debug_gpu_ = GetEnvironmentVariableW(L"XBE_D3D12_DEBUG", nullptr, 0) != 0;
+    if (debug_gpu_) {
         ComPtr<ID3D12Debug> dbg;
-        if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&dbg)))) dbg->EnableDebugLayer();
+        const HRESULT debug_result = D3D12GetDebugInterface(IID_PPV_ARGS(&dbg));
+        if (SUCCEEDED(debug_result)) dbg->EnableDebugLayer();
+        LOGR("d3d12 debug: debug layer %s (0x%08lX)", SUCCEEDED(debug_result) ? "enabled" : "unavailable",
+             static_cast<unsigned long>(debug_result));
+        // DRED enablement must precede device creation. No GPU validation, queue wait or render policy is changed.
+        ComPtr<ID3D12DeviceRemovedExtendedDataSettings> dred;
+        const HRESULT dred_result = D3D12GetDebugInterface(IID_PPV_ARGS(&dred));
+        if (SUCCEEDED(dred_result)) {
+            dred->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+            dred->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+            ComPtr<ID3D12DeviceRemovedExtendedDataSettings1> context;
+            if (SUCCEEDED(dred.As(&context))) context->SetBreadcrumbContextEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+        }
+        LOGR("d3d12 debug: DRED breadcrumbs/page faults %s (0x%08lX)", SUCCEEDED(dred_result) ? "requested" : "unavailable",
+             static_cast<unsigned long>(dred_result));
     }
     if (FAILED(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory_)))) return false;
     // dedicated GPU first on hybrid laptops
@@ -949,9 +971,25 @@ bool D3D12Backend::CreateDevice() {
     DXGI_ADAPTER_DESC1 ad{};
     if (adapter) adapter->GetDesc1(&ad);
     LOGR("D3D12 adapter: %ls", adapter ? ad.Description : L"default");
+    if (debug_gpu_) {
+        const HRESULT info_result = dev_.As(&debug_info_);
+        LOGR("d3d12 debug: InfoQueue %s (0x%08lX)", SUCCEEDED(info_result) ? "available" : "unavailable",
+             static_cast<unsigned long>(info_result));
+        if (debug_info_) {
+            const HRESULT limit = debug_info_->SetMessageCountLimit(diagnostics::Budget::kStoredMessages);
+            D3D12_MESSAGE_SEVERITY denied[] = {D3D12_MESSAGE_SEVERITY_INFO, D3D12_MESSAGE_SEVERITY_MESSAGE};
+            D3D12_INFO_QUEUE_FILTER filter{};
+            filter.DenyList.NumSeverities = UINT(std::size(denied));
+            filter.DenyList.pSeverityList = denied;
+            const HRESULT filtered = debug_info_->AddStorageFilterEntries(&filter);
+            LOGR("d3d12 debug: bounded warning/error queue limit 0x%08lX filter 0x%08lX",
+                 static_cast<unsigned long>(limit), static_cast<unsigned long>(filtered));
+        }
+    }
     D3D12_COMMAND_QUEUE_DESC qd{};
     qd.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
     dev_->CreateCommandQueue(&qd, IID_PPV_ARGS(&queue_));
+    if (debug_gpu_ && queue_) queue_->SetName(L"MC3 direct queue");
     ComPtr<IDXGIFactory5> f5;
     BOOL tear = FALSE;
     if (SUCCEEDED(factory_.As(&f5))) f5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tear, sizeof(tear));
@@ -981,6 +1019,68 @@ bool D3D12Backend::CreateSwapChain(HWND hwnd) {
     factory_->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
     sc1.As(&swap_);
     return true;
+}
+
+void D3D12Backend::DrainDebugMessages(const char* operation) {
+    if (!debug_gpu_ || !debug_info_) return;
+    const uint64_t available = debug_info_->GetNumStoredMessagesAllowedByRetrievalFilter();
+    const uint64_t scan = diagnostics::Budget::ScanCount(available);
+    for (uint64_t index = 0; index < scan; ++index) {
+        SIZE_T bytes = 0;
+        if (FAILED(debug_info_->GetMessage(index, nullptr, &bytes)) ||
+            !diagnostics::Budget::MessageSize(bytes, sizeof(D3D12_MESSAGE))) continue;
+        std::vector<uint8_t> storage(bytes);
+        auto* message = reinterpret_cast<D3D12_MESSAGE*>(storage.data());
+        if (FAILED(debug_info_->GetMessage(index, message, &bytes)) ||
+            !debug_budget_.Message(uint32_t(message->Severity))) continue;
+        // The returned description belongs to this bounded buffer. Do not trust an oversized length.
+        const uintptr_t begin = reinterpret_cast<uintptr_t>(storage.data());
+        const uintptr_t end = begin + storage.size();
+        const uintptr_t description = reinterpret_cast<uintptr_t>(message->pDescription);
+        if (description < begin || description >= end) continue;
+        const size_t length = diagnostics::Budget::DescriptionSize(message->DescriptionByteLength, end - description);
+        std::string text(message->pDescription, length);
+        for (char& c : text) if (c == '\r' || c == '\n' || c == '\0') c = ' ';
+        LOGR("d3d12 debug: %s severity %u id %u: %s", operation, unsigned(message->Severity),
+             unsigned(message->ID), text.c_str());
+    }
+    const uint64_t discarded = debug_info_->GetNumMessagesDiscardedByMessageCountLimit();
+    if ((discarded != debug_discarded_ || available > scan) && debug_budget_.Message(2))
+        LOGR("d3d12 debug: bounded queue omitted %llu stored messages, driver discarded %llu total",
+             static_cast<unsigned long long>(available - scan), static_cast<unsigned long long>(discarded));
+    debug_discarded_ = discarded;
+    debug_info_->ClearStoredMessages();
+    if (available || discarded) logx::Flush();
+}
+
+void D3D12Backend::ReportDebugDred(const char* operation) {
+    if (!debug_gpu_ || debug_dred_reported_) return;
+    debug_dred_reported_ = true;
+    ComPtr<ID3D12DeviceRemovedExtendedData1> dred;
+    const HRESULT query = dev_.As(&dred);
+    if (FAILED(query)) {
+        LOGR("d3d12 debug: %s DRED interface unavailable (0x%08lX)", operation, static_cast<unsigned long>(query));
+        return;
+    }
+    D3D12_DRED_AUTO_BREADCRUMBS_OUTPUT1 breadcrumbs{};
+    D3D12_DRED_PAGE_FAULT_OUTPUT1 fault{};
+    const HRESULT breadcrumb_result = dred->GetAutoBreadcrumbsOutput1(&breadcrumbs);
+    const HRESULT fault_result = dred->GetPageFaultAllocationOutput1(&fault);
+    LOGR("d3d12 debug: %s DRED breadcrumbs 0x%08lX page fault 0x%08lX VA 0x%llX", operation,
+         static_cast<unsigned long>(breadcrumb_result), static_cast<unsigned long>(fault_result),
+         static_cast<unsigned long long>(fault.PageFaultVA));
+    const auto* node = SUCCEEDED(breadcrumb_result) ? breadcrumbs.pHeadAutoBreadcrumbNode : nullptr;
+    for (unsigned i = 0; node && i < 8; ++i, node = node->pNext) {
+        const uint32_t done = node->pLastBreadcrumbValue ? *node->pLastBreadcrumbValue : 0;
+        uint32_t last = ~0u, next = ~0u;
+        if (node->pCommandHistory && done <= node->BreadcrumbCount) {
+            if (done) last = uint32_t(node->pCommandHistory[done - 1]);
+            if (done < node->BreadcrumbCount) next = uint32_t(node->pCommandHistory[done]);
+        }
+        LOGR("d3d12 debug: breadcrumb node %u completed %u/%u last op %u next op %u", i, done,
+             node->BreadcrumbCount, last, next);
+    }
+    logx::Flush();
 }
 
 uint32_t D3D12Backend::CreateHeap(D3D12_DESCRIPTOR_HEAP_TYPE t, uint32_t n, bool visible,
@@ -1078,12 +1178,15 @@ void D3D12Backend::Begin() {
 }
 
 void D3D12Backend::Submit(bool wait) {
-    CheckGpu(dev_.Get(), cl_->Close(), "closing the command list");
+    const HRESULT close = cl_->Close();
+    if (FAILED(close)) { DrainDebugMessages("command-list close failure"); ReportDebugDred("command-list close failure"); }
+    CheckGpu(dev_.Get(), close, "closing the command list");
     ID3D12CommandList* lists[] = {cl_.Get()};
     queue_->ExecuteCommandLists(1, lists);
     CheckGpu(dev_.Get(), queue_->Signal(fence_.Get(), ++fence_value_), "signalling the submission fence");
     Frame& f = CurrentFrame();
     f.fence = fence_value_;
+    if (debug_gpu_ && debug_budget_.Submission()) DrainDebugMessages("initial submission");
     static unsigned reports = 0;
     if (reports++ < 8)
         LOGR("d3d12: submitted frame %llu slot %llu fence %llu, completed %llu, upload %llu bytes%s",
@@ -1092,11 +1195,11 @@ void D3D12Backend::Submit(bool wait) {
              static_cast<unsigned long long>(f.used), wait ? ", synchronous" : "");
     if (wait) {
         WaitFence(fence_value_);
-        f.alloc->Reset();
+        CheckGpu(dev_.Get(), f.alloc->Reset(), "resetting the synchronous frame allocator");
         f.garbage.clear();
         f.used = 0;
         f.srv = 0;
-        cl_->Reset(f.alloc.Get(), nullptr);
+        CheckGpu(dev_.Get(), cl_->Reset(f.alloc.Get(), nullptr), "resetting the synchronous command list");
         Begin();
     }
 }
@@ -1110,12 +1213,24 @@ void D3D12Backend::WaitFence(uint64_t value) {
         const DWORD result = WaitForSingleObject(event_, 1000);
         const DWORD wait_error = result == WAIT_FAILED ? GetLastError() : ERROR_SUCCESS;
         const uint64_t completed = fence_->GetCompletedValue();
-        if (completed == UINT64_MAX)
+        if (completed == UINT64_MAX) {
+            DrainDebugMessages("removed device during fence wait");
+            ReportDebugDred("removed device during fence wait");
             CheckGpu(dev_.Get(), DXGI_ERROR_DEVICE_REMOVED, "waiting for GPU completion");
+        }
         if (completed >= value) return;  // Only actual completion permits allocator/upload-ring reuse.
-        CheckGpu(dev_.Get(), dev_->GetDeviceRemovedReason(), "waiting for GPU completion");
+        const HRESULT removed = dev_->GetDeviceRemovedReason();
+        if (FAILED(removed)) { DrainDebugMessages("device removal during fence wait"); ReportDebugDred("device removal during fence wait"); }
+        CheckGpu(dev_.Get(), removed, "waiting for GPU completion");
         if (result == WAIT_FAILED)
             CheckGpu(dev_.Get(), HRESULT_FROM_WIN32(wait_error), "waiting for the submission fence event");
+        if (debug_gpu_ && debug_budget_.Pending()) {
+            LOGR("d3d12 debug: pending frame %llu slot %llu SRVs %u/%u samplers %u/%u",
+                 static_cast<unsigned long long>(frame_), static_cast<unsigned long long>(frame_ % kFrames),
+                 CurrentFrame().srv, kSrvCount / kFrames, smp_used_, kSamplerCount);
+            DrainDebugMessages("pending GPU fence");
+            logx::Flush();
+        }
         if (reports++ < 8) {
             LOGR("d3d12: fence still pending after 1 s: frame %llu target %llu completed %llu last signal %llu "
                  "slots [%llu,%llu,%llu], upload %llu bytes, event result 0x%08lX",
@@ -3703,18 +3818,21 @@ void D3D12Backend::ReleaseOldTextures() {
 void D3D12Backend::ResetFrame() {
     Frame& f = CurrentFrame();
     const uint64_t completed = fence_->GetCompletedValue();
-    if (completed == UINT64_MAX)
+    if (completed == UINT64_MAX) {
+        DrainDebugMessages("removed device during frame reset");
+        ReportDebugDred("removed device during frame reset");
         CheckGpu(dev_.Get(), DXGI_ERROR_DEVICE_REMOVED, "resetting the frame allocator");
+    }
     if (f.fence && completed < f.fence) {
         auto perf_wait = PerfClock::now();
         WaitFence(f.fence);
         g_perf.wait += PerfMs(perf_wait);
     }
-    f.alloc->Reset();
+    CheckGpu(dev_.Get(), f.alloc->Reset(), "resetting the frame allocator");
     f.garbage.clear();
     f.used = 0;
     f.srv = 0;
-    cl_->Reset(f.alloc.Get(), nullptr);
+    CheckGpu(dev_.Get(), cl_->Reset(f.alloc.Get(), nullptr), "resetting the command list");
     Begin();
 }
 
@@ -3789,8 +3907,21 @@ void D3D12Backend::Present(const Surface& front) {
     DeliverReports();
     bool vsync = app::Get().vsync;
     auto perf_swap = PerfClock::now();
-    swap_->Present(vsync ? 1 : 0, !vsync && tearing_ ? DXGI_PRESENT_ALLOW_TEARING : 0);
-    g_perf.swap += PerfMs(perf_swap);
+    const HRESULT presented = swap_->Present(vsync ? 1 : 0, !vsync && tearing_ ? DXGI_PRESENT_ALLOW_TEARING : 0);
+    const double present_ms = PerfMs(perf_swap);
+    g_perf.swap += present_ms;
+    if (debug_gpu_ && debug_budget_.Present()) {
+        LOGR("d3d12 debug: Present frame %llu backbuffer %u result 0x%08lX elapsed %.3f ms fence %llu/%llu "
+             "slot %llu SRVs %u samplers %u",
+             static_cast<unsigned long long>(frame_), bi, static_cast<unsigned long>(presented), present_ms,
+             static_cast<unsigned long long>(fence_->GetCompletedValue()), static_cast<unsigned long long>(fence_value_),
+             static_cast<unsigned long long>(frame_ % kFrames), CurrentFrame().srv, smp_used_);
+        DrainDebugMessages("initial Present");
+        logx::Flush();
+    }
+    if (FAILED(presented)) { DrainDebugMessages("Present failure"); ReportDebugDred("Present failure"); }
+    // Positive DXGI status values, including DXGI_STATUS_OCCLUDED, remain successful statuses.
+    CheckGpu(dev_.Get(), presented, "presenting the swap chain");
 
     presents_++;
     presents_seen_.store(presents_);

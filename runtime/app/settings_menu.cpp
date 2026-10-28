@@ -32,6 +32,14 @@ std::atomic<uint64_t> g_garage_hint_until{0};
 std::atomic<uint64_t> g_garage_navigation_until{0};
 bool g_dirty = false;
 
+// All menu writers hold UiLock. Invalidate queued game taps before publishing the change,
+// following the UI -> input lock order used by RawPad. A tap after close must not be cleared later.
+void SetMenuOpen(bool open) {
+    if (g_open.load(std::memory_order_relaxed) == open) return;
+    input::KeyboardMenuChanged(open);
+    g_open.store(open, std::memory_order_relaxed);
+}
+
 const char* kModeNames[] = {"Fullscreen", "Borderless window", "Window"};
 
 struct DisplaySelection {
@@ -359,7 +367,8 @@ bool MenuOpen() { return g_open.load(std::memory_order_relaxed); }
 
 void ToggleMenu() {
     std::lock_guard lock(UiLock());
-    bool was = g_open.exchange(!g_open.load());
+    const bool was = g_open.load(std::memory_order_relaxed);
+    SetMenuOpen(!was);
     if (was) RevertDisplay();
     else g_draft_valid = false;
     if (was && g_dirty) {
@@ -372,7 +381,7 @@ void ToggleMenu() {
 void OpenVehicleMenu() {
     std::lock_guard lock(UiLock());
     g_vehicle_requested = true;
-    g_open = true;
+    SetMenuOpen(true);
 }
 
 void GarageTuningActive() {
@@ -403,7 +412,7 @@ void ReportGraphicsFailure(const char* reason) {
     g_draft = Selection(Get());
     g_draft_valid = true;
     g_display_requested = true;
-    g_open = true;
+    SetMenuOpen(true);
     LOGR("settings: graphics recovery: %s", reason);
 }
 
