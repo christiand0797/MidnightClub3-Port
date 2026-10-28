@@ -33,5 +33,9 @@ CPU tests cover two identical-model cars with different setups, switching back, 
 per-configuration copies, constructor reuse, original compaction, last-car removal,
 parts-change → normal serialization → reload, global master disable/re-enable, invalid
 values and read-only malformed/external data. Tests execute the original profile-image
-copy and slot-compaction instructions. They do not substitute for fresh native car-switch
-and save/restart acceptance of the new executable.
+copy and slot-compaction instructions. Bounded native checks also retained Bel Air -5.1°,
+Golf +2.0°, then Bel Air -5.1° when switching back; disabling/re-enabling the master exposed
+and restored the fallback/override. A subsequent process restored the Bel Air setup from
+the saved sidecar. The installed runtime includes the same profile implementation.
+These observations do not certify every parameter on every car or physical-controller use;
+see [exact build and native evidence](feature_native_20261028.md).

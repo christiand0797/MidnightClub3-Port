@@ -36,8 +36,9 @@ the desktop shortcut and automatically started the HD intro. See the
 its own network-permission prompt, which the user handles.
 
 GitHub's automatic **Source code** ZIP is for development. Use the named portable
-release asset to play. The current additional media pass and the all-car tuning
-validation are ongoing; [PBR conversion](docs/PBR_PLAN.md) is future work.
+release asset to play. The additional media pass and all-car tuning validation
+are ongoing. [PBR materials and geometry foundations](docs/notes/pbr_system.md)
+are implemented in development; rendering integration remains unfinished.
 
 ## Development
 
@@ -47,6 +48,12 @@ regression checks and reverse-engineering notes. Start with
 and [the continuation ledger](docs/AUTONOMOUS_RUN.md). Build with `Build-MC3.ps1`
 and launch locally with `Launch-MC3.ps1`; the development executable is
 `templates/game/out/native/mc3.exe`.
+
+The tested local development build adds **F1 → World** traffic/pedestrian targets,
+**F1 → Career** one-shot money editing and **F1 → Vehicle** per-owned-car setups
+with global fallback. These additions are not in the older downloadable release.
+See [the development controls guide](docs/DEVELOPMENT_CONTROLS.md) for saving and
+[native validation](docs/notes/feature_native_20261028.md) for tested behavior.
 
 The Git source tree excludes original game data, generated code, model weights
 and build outputs. Complete private project snapshots are published separately.
