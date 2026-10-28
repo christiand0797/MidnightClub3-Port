@@ -1,5 +1,29 @@
 # Feature candidate native checks — 2026-10-28
 
+## Current local installation
+
+The canonical desktop-shortcut target now contains the tested R5 executable
+`d3879439428a58d1eb06937cda3476462f70fdf8ddbd0825820c66a462258258`
+(24,126,976 bytes), built from exact source
+`1b414bc7fd9a84a80b0f0c7eac53134adf28ec84`. It includes the World/Career controls,
+per-owned-car tuning with global fallback/master, keyboard tap handling and inactive PBR
+foundations. The integrated 17 CPU checks pass in `ctest-r9.log`.
+
+The reviewed one-shot transaction installed only this EXE, ten sealed CRT files and the
+unchanged tested `Check-PbrMaterials.exe`. Before replacement it independently copied and
+verified the old EXE `7bb7fcd1928156db88e33c78cd5a799ed9b04d4c9c19c9a9bbd6b00e2aa9d1ad`.
+It rechecked no active game, the exact source/build/native evidence, coordinator video phase
+and all 53 personal-file hashes. Runtime publication used same-volume temporary files and
+installed the EXE last. The real shortcut, saves, preferences, PC tuning metadata and media
+assets were not copied from QA or changed. No canonical game launch or public release occurred.
+
+External install evidence is in `feature-local-install-20261028-r1`; `complete.json` SHA-256:
+`07c58cae9fe2a69ad95d3e2a82dc7dc7966ffbbdc663412a22ff5a966bd29c91`.
+This is a tested local development installation, not a new immutable release or a complete
+R12-style dependency-closure seal. Full PBR rendering remains unfinished and disabled.
+
+## Earlier candidate
+
 Source `12c4d938ad3db6796ab6cb788957c7a079eac2ff` built in the separate
 `G:/MC3_Features_20261028` directory. EXE SHA-256:
 `bc90298ec890376001e4da44c12c6c8e3403e15511ad12f7f2e7d799faa7f5b2`.
@@ -177,3 +201,46 @@ execution from a merely updated string buffer. Four affected fixtures and the in
 17-check `ctest-r9.log` pass. Traffic's separate original cap interaction has a failing-before/
 passing-after retail fixture; see [cap policy and evidence](world_traffic_native_cap_20261028.md).
 These source results do not replace the pending native HUD/density evidence.
+
+## R5: wallet and population checks
+
+The R5 build receipt is
+`656e072608bd51f6dc02362349aa7ae2857ca9c6dbde1b3ca8ba0df142cfde6b`;
+all consumed source inputs stayed unchanged. A fresh reviewed private tree inherited only
+the independently sealed R4 test state. Its new actual cooperative pause acknowledgment and
+opt-in pre-init gate retained the same movie worker before GPU initialization, with no NCNN
+process remaining at release. Old helpers, results and frozen content stayed unchanged.
+
+- HD startup and actual title/garage/street rendered. Short keyboard menu taps and F1
+  open/close worked. No startup fence stall occurred in this run; its intermittent cause
+  remains unresolved.
+- The private saved balance reloaded as $1,010,090. One Add $10,000 action made F1 and the
+  original garage label show **$1,020,090**. After F1 closed, the original label remained
+  correct. A single completion line at 171.626 seconds records both narrow setter pairs.
+  Root observed the update during the live check; the captures do not measure latency.
+- The original SavingScreen and garage exit completed. The frozen structural parser
+  confirms **1,020,090** in the independently sealed private-after save without changing
+  its bytes. Save SHA-256:
+  `b9c1806b1187f11b22e5946ed19250799ddc65dacbb5b50d38d3c8229ce0cbe5`.
+  Receipt `economy-disk-proof-r5.json` SHA-256:
+  `cbfa10f36ebe7f8e999ac7de01a4cb7ef35e6234642747624864dd840bcfa973`.
+  The parser's career-prefix/tail/signature limits remain unchanged.
+- World retains **382** tracked roads in actual state-2/mode-1 free roam. Three identical
+  native road addresses/topologies show density 0.04 at 1x and 0.08 at 2x; corresponding
+  target pairs are 6.86/13.72, 2.076/4.152 and 1.5/3.0. The game's current cap integer is
+  4, with factor 0.01; its numeric capped baseline is multiplied as documented.
+- The pedestrian manager has 1,178 regions. Bounded reads on its first 16 regions retain
+  identical authored weights and caps and show target changes consistent with the original
+  rounding/clamp policy: examples include 3 to 6, 1 to 2 and 5 to 10. Small rounded targets
+  can stay 1. These are target observations, not an exact visible-actor ratio or all-region
+  visual audit. Original actor pools remain authoritative.
+- The owned window closed normally at **313.813 seconds, Exit 0**. The same coordinator,
+  video worker and encoder resumed Suschamp from frame 5,432 onward. All **53** current
+  canonical personal-file hashes remain unchanged. QA's millionaire career and tuning
+  preferences remain private. Physical-controller and full parameter visuals remain open.
+
+Independent review accepted these bounded evidence joins, including the actual Sky JPEGs,
+log, exact source/EXE, startup acknowledgment, typed read-only probes and preserved files.
+R5 controls live in `feature-native-qa-20261028-r5` under the external release-work base.
+`native-result-r5/result.json` SHA-256:
+`fbd0c52ebeb5e7eb58bfdc7fd639e3c0ba4dda9833136ec80df9ed14492ab90d`.

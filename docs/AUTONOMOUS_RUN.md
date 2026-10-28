@@ -6,7 +6,33 @@ The latest user request authorizes PBR code/material-system development in paral
 New offline PBR asset generation still follows the media pass and a verified full backup. The renderer
 remains on its current path until a real PBR integration is implemented and validated.
 
-## Latest checkpoint — 2026-10-28, actual feature controls
+## Latest checkpoint — 2026-10-28, installed feature controls
+
+- Tested source `1b414bc7fd9a84a80b0f0c7eac53134adf28ec84` is pushed. Its exact
+  `d3879439428a58d1eb06937cda3476462f70fdf8ddbd0825820c66a462258258` EXE
+  (24,126,976 bytes) is now installed at the canonical desktop-shortcut target, together
+  with ten sealed CRT files and the existing tested PBR pack checker. All 17 integrated
+  CPU checks pass. The old `7bb7fcd1...` EXE has an independent verified backup before
+  replacement. Install receipt `07c58cae...` is in external
+  `feature-local-install-20261028-r1/complete.json`. No new public release was published.
+- Private native R5 validates the original garage label changing with the one-shot F1
+  balance edit, $1,010,090 to $1,020,090, followed by the original save-and-exit flow.
+  The frozen structural parser independently confirms $1,020,090 on disk. Runtime cash,
+  dirty flags and the original save writer retain their prior semantics.
+- World now retains all 382 roads. Bounded reads on three identical roads prove 1x/2x
+  density and target changes; 16 identical pedestrian regions respond with the original
+  rounding/cap rules. This does not promise exact visible actor counts. R5 exited normally
+  at 313.813 seconds; the same coordinator/video/encoder resumed. All 53 current personal
+  files and the real `--instance 7` shortcut stayed byte-identical. QA's edited career,
+  preferences and PC tuning sidecar were never installed. Native result `fbd0c52e...`,
+  structural disk proof `cbfa10f3...`; see [native evidence](notes/feature_native_20261028.md).
+- PBR materials/BRDF/geometry helpers remain foundations with default rendering unchanged.
+  Physical-controller acceptance, broad parameter visuals, other-city loading comparisons,
+  NPC footplants/road scraping and the intermittent HD-fence cause remain open. The live
+  media worker continues Suschamp; discover actual state before scheduling. No native QA
+  window remains open. Never rerun any already-used one-shot helper.
+
+## Earlier checkpoint — 2026-10-28, actual feature controls
 
 - Public `e7ed92d` and isolated EXE `58bdbff5...` include the 17-check integration,
   original wallet presentation attempt and inactive PBR geometry helpers. Private native R4
