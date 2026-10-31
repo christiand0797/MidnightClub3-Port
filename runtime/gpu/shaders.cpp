@@ -59,6 +59,9 @@ const char* kCommonTail = R"(    float4 spread[4];
     float4x4 bwvp[4];
     float4x4 bwv[4];
     float4x4 bwvn[4];
+    float4 carpaint;
+    float4 pbr;
+    float4 pbr2;
 };
 )";
 
@@ -734,7 +737,9 @@ std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode,
     auto v = [&](int r, const char* def) {
         return (regs >> r) & 1 ? F("i.v%d", r) : r == 0 ? std::string(def) : F("vattr[%d]", r);
     };
-    bool lit = !pretransformed && (f.light & 1);
+    // only vertices that carry a normal (register 2) are lit: geometry drawn without one while D3DRS_LIGHTING is
+    // still on from a lit draw keeps its vertex diffuse colour unlit, per D3D8
+    bool lit = !pretransformed && (f.light & 1) && ((regs >> 2) & 1);
     if (pretransformed) {
         s += "    float4 rhw = " + v(0, "float4(0,0,0,1)") + ";\n";
         s += "    float w = rhw.w == 0 ? 1 : 1 / rhw.w;\n";
@@ -863,11 +868,20 @@ std::string PixelHlsl(const PixelKey& k) {
         const char* type = t.shadow ? "Texture2D<float>" : t.kind == kTex3D ? "Texture3D" : t.kind == kTexCube ? "TextureCube" : "Texture2D";
         s += F("%s tex%d : register(t%d);\n%s smp%d : register(s%d);\n", type, i, i, t.shadow ? "SamplerComparisonState" : "SamplerState", i, i);
     }
+    if (k.pbr) s += "Texture2D pbr_nrm : register(t4);\nTexture2D pbr_orm : register(t5);\n";
     s += F("float4 main(VOut i, bool front : SV_IsFrontFace) : SV_Target {\n");
     s += "    float4 tc0 = i.tc0, tc1 = i.tc1, tc2 = i.tc2, tc3 = i.tc3;\n";
     s += k.two_sided ? "    float4 v0 = front ? i.d0 : i.b0, v1 = front ? i.d1 : i.b1;\n" : "    float4 v0 = i.d0, v1 = i.d1;\n";
     s += "    if (misc.w == 0) v1 = float4(0, 0, 0, 1);\n";
     s += "    float4 fogin = float4(fogcolor.rgb, saturate(i.fogamt));\n";
+    if (k.pbr) {
+        s += "    if (pbr2.x > 0) {\n"
+             "        float h0 = pbr_orm.Sample(smp0, tc0.xy).a - 0.5;\n"
+             "        float2 duv_dx = ddx(tc0.xy), duv_dy = ddy(tc0.xy);\n"
+             "        float2 v_scr = normalize((i.pos.xy / max(surf.xy, 1) - 0.5) + 1e-6);\n"
+             "        tc0.xy -= (duv_dx * v_scr.x + duv_dy * v_scr.y) * (h0 * pbr2.x * 16.0);\n"
+             "    }\n";
+    }
     std::string body;
     if (k.programmable) {
         for (int i = 0; i < 4; i++) {
@@ -937,6 +951,38 @@ std::string PixelHlsl(const PixelKey& k) {
     }
     // the console's signed blends read colours as signed bytes; the draw runs as an add of the positive part and a
     // reverse subtract of the negative one, this picks the part
+    if (k.pbr && !k.car_paint) {
+        body += "{\n"
+                "    float3 pn = pbr_nrm.Sample(smp0, tc0.xy).rgb * 2 - 1;\n"
+                "    pn.xy *= pbr.x;\n"
+                "    pn = normalize(float3(pn.xy, max(pn.z, 1e-3)));\n"
+                "    float4 orm = pbr_orm.Sample(smp0, tc0.xy);\n"
+                "    float ao = saturate(1 + (orm.r - 1) * pbr.y);\n"
+                "    float rough = clamp(pbr.z < 0 ? (-pbr.z - 1) : orm.g * pbr.z, 0.04, 1);\n"
+                "    float metal = saturate(pbr.w < 0 ? (-pbr.w - 1) : orm.b * pbr.w);\n"
+                "    float2 dux = ddx(tc0.xy), duy = ddy(tc0.xy);\n"
+                "    float2 grad = float2(pn.x * dux.x + pn.y * duy.x, pn.x * dux.y + pn.y * duy.y);\n"
+                "    float glen = max(length(dux) + length(duy), 1e-5);\n"
+                "    float2 n_scr = clamp(grad / glen, -1, 1);\n"
+                "    float3 L_ts = normalize(float3(0.35, 0.45, 0.82));\n"
+                "    float nl = saturate(dot(pn, L_ts));\n"
+                "    float relief = clamp(1 + (nl - 0.82) * 0.85 * saturate(pbr.x) + (n_scr.x * 0.12 - n_scr.y * 0.15) * saturate(pbr.x), 0.55, 1.45);\n"
+                "    float3 V_ts = normalize(float3(-(i.pos.xy / max(surf.xy, 1) - 0.5) * 0.5, 1));\n"
+                "    float3 H_ts = normalize(L_ts + V_ts);\n"
+                "    float nh = saturate(dot(pn, H_ts)), nv = saturate(dot(pn, V_ts)) + 1e-4, vh = saturate(dot(V_ts, H_ts));\n"
+                "    float a2 = rough * rough * rough * rough;\n"
+                "    float d = nh * nh * (a2 - 1) + 1;\n"
+                "    float D = a2 / (3.14159265 * d * d + 1e-6);\n"
+                "    float3 F0 = lerp(float3(0.04, 0.04, 0.04), max(outc.rgb, 0.04), metal);\n"
+                "    float3 F = F0 + (1 - F0) * pow(1 - vh, 5);\n"
+                "    float k_g = rough * rough * 0.5;\n"
+                "    float G = nl / (4 * (nl * (1 - k_g) + k_g) * (nv * (1 - k_g) + k_g) + 1e-5);\n"
+                "    float luma = dot(v0.rgb, float3(0.299, 0.587, 0.114));\n"
+                "    float3 spec = D * F * G * max(v0.rgb, float3(luma, luma, luma) * 0.5 + 0.15) * saturate(pbr.x);\n"
+                "    float3 lit = outc.rgb * pbr2.yzw * (relief * ao) * (1 - metal * 0.25) + spec * 0.35;\n"
+                "    outc.rgb = lerp(outc.rgb, lit, fogin.a);\n"
+                "}\n";
+    }
     body += "alphatest(outc.a);\n"
             "if (sblend.x != 0) {\n"
             "    float4 sb = round(saturate(outc) * 255);\n"
@@ -947,10 +993,12 @@ std::string PixelHlsl(const PixelKey& k) {
             "outc.a *= 1 + sblend.y;\n"
             "outc *= 1 + sblend.z;\n"
             // a source-alpha blended draw made brighter (D3D12Backend::ScaleTextureEffect): alpha up to 1 first, the
-            // rest of the factor into the colour, so colour times alpha grows by 1 + sblend.w
+            // rest of the factor into the colour, so colour times alpha grows by 1 + sblend.w. The colour grows only
+            // until its brightest channel reaches 1: past that the others would catch up and a coloured neon go white
             "if (sblend.w != 0) {\n"
             "    float sa = outc.a * (1 + sblend.w), na = saturate(sa);\n"
-            "    outc.rgb *= na > 0 ? sa / na : 0;\n"
+            "    float peak = max(max(outc.r, outc.g), outc.b);\n"
+            "    outc.rgb *= na > 0 ? min(sa / na, peak > 0 ? 1 / peak : 1) : 0;\n"
             "    outc.a = na;\n"
             "}\n" + Hooks().Output() + "return outc;\n}\n";
     s += body;

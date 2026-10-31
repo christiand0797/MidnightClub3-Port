@@ -10,6 +10,8 @@
 namespace fixture {
 std::vector<uint8_t> memory(0x1000000);
 uint32_t next_system = 0x20000;
+uint32_t original_light_result = 0, original_enable_result = 0;
+unsigned original_set_calls = 0, original_enable_calls = 0;
 constexpr uint32_t stack = 0x10000, scratch = 0x600000;
 struct Backend final : gpu::Backend {
     gpu::State last;
@@ -45,11 +47,24 @@ void Commands(const std::vector<uint32_t>& words) {
 }
 namespace kernel { uint8_t* g_base = fixture::memory.data(); }
 namespace logx { void Write(Level, const char*, ...) {} }
+extern "C" void __imp__sub_00411FB0(X86Context& ctx, uint8_t* base) {
+    assert(base==fixture::memory.data());++fixture::original_set_calls;
+    kernel::Return(ctx,fixture::original_light_result,2);
+}
+extern "C" void __imp__sub_00412270(X86Context& ctx, uint8_t* base) {
+    assert(base==fixture::memory.data());++fixture::original_enable_calls;
+    // Verify the real wrapper established nesting BEFORE the original could synthesize a default.
+    assert(d3d::g_state.pbr_light_proof.Snapshot(d3d::g_state.light_enable).pending_enable_depth==1);
+    kernel::Return(ctx,fixture::original_enable_result,2);
+}
 namespace mem {
+bool IsCommitted(uint32_t va) { return va < fixture::memory.size(); }
 uint32_t AllocSystem(uint32_t n, uint32_t align) {
     auto& at = fixture::next_system; at = (at + align - 1) & ~(align - 1); auto result = at; at += n; return result;
 }
 uint32_t AllocContiguous(uint32_t n, uint32_t, uint32_t, uint32_t) { assert(n <= 0x400000); return 0x800000; }
+std::vector<uint32_t> freed;
+void FreeSystem(uint32_t va) { freed.push_back(va); }
 uint32_t PhysicalFromVirtual(uint32_t va) { return va; }
 uint32_t VirtualFromPhysical(uint32_t pa) { return pa; }
 }
@@ -106,4 +121,60 @@ int main() {
     assert(observer->draws==3&&observer->last.tire_fit.target_ratio==.975f);
     d3d::State().tire_fit={};d3d::FlushPendingCommands();
     assert(observer->draws==3&&d3d::g_walk==d3d::Dev(d3d::kDevPush));
+
+    // Pixel shaders are XDK objects (D3DDevice_CreatePixelShader 0x415A90): reference count 1, owned, definition
+    // pointer at +8 to its copy at +0xC. SetPixelShader keeps CDevice_PixelShader current, because the XDK's
+    // state-block capture copies that field (adding a reference): D3DX records every pass's inline PixelShader that
+    // way, and with the field left 0 each replay set no shader (car paint lost its vinyl and reflection).
+    constexpr uint32_t def = 0x31000, out = 0x32000;
+    for (uint32_t i = 0; i < 0xF0; i += 4) kernel::W32(def + i, 0xC0DE0000 + i);
+    Call(sub_00415A90, {def, out});
+    const uint32_t shader = kernel::R32(out);
+    assert(kernel::R32(shader) == 1 && kernel::R32(shader + 4) == 1 && kernel::R32(shader + 8) == shader + 0xC);
+    assert(std::memcmp(memory.data() + shader + 0xC, memory.data() + def, 0xF0) == 0);
+    Call(sub_00415B00, {shader});
+    assert(d3d::Dev(XDK_CDevice_PixelShader) == shader && d3d::State().ps && d3d::State().ps->handle == shader);
+    assert(d3d::State().ps->def[5] == 0xC0DE0014);
+    kernel::W32(shader, kernel::R32(shader) + 1);  // a captured state block's reference (0x416A63 inc [eax])
+    Call(sub_00415AE0, {shader});                  // the owner's release: the state block still holds it
+    assert(kernel::R32(shader) == 1 && d3d::g_ps.count(shader) && mem::freed.empty());
+    Call(sub_00415B00, {0});
+    assert(d3d::Dev(XDK_CDevice_PixelShader) == 0 && !d3d::State().ps);
+    Call(sub_00415B00, {shader});                  // the state block's replay
+    assert(d3d::State().ps && d3d::State().ps->handle == shader);
+    Call(sub_00415AE0, {shader});                  // its last reference
+    assert(!d3d::g_ps.count(shader) && mem::freed == std::vector<uint32_t>{shader});
+
+    // Exercise the actual strong wrappers, original-outcome handoff and ABI, not only the pure tracker.
+    // These controlled original-boundary doubles deliberately fail/succeed; the separate source review
+    // and table test bind the original XDK record layout. They do not claim native light acceptance.
+    d3d::g_state.light_enable=0;d3d::g_state.pbr_light_proof.DeviceReset();
+    constexpr uint32_t light=0x710000,table=0x720000;
+    std::memset(memory.data()+light,0,26*4);kernel::W32(light,3);kernel::W32(light+4,Bits(1));
+    original_light_result=0x8007000e;
+    Call(sub_00411FB0,{0,light});assert(original_set_calls==1);
+    assert(!d3d::g_state.pbr_light_proof.Snapshot(0,true).light_writes_after_success);
+    assert(d3d::g_state.lights[0][1]==Bits(1)); // Legacy pre-original shadow behavior preserved after failure.
+    original_light_result=0;Call(sub_00411FB0,{0,light});
+    original_enable_result=0;Call(sub_00412270,{0,1});assert(original_enable_calls==1);
+    const auto proof=d3d::g_state.pbr_light_proof.Snapshot(1);
+    assert(proof.light_writes_after_success&&proof.light_index_coverage&&proof.stateblock_valid);
+    kernel::W32(d3d::kDevicePtr,d3d::kDevice);
+    kernel::W32(d3d::kDevice+0x7A4,table);kernel::W32(d3d::kDevice+0x7A8,16);
+    for(unsigned i=0;i<8;++i)kernel::W32(d3d::kDevice+0x7AC+i*4,i?0:table);
+    kernel::W32(d3d::kDevice+0x7CC,1);
+    std::memcpy(memory.data()+table,d3d::g_state.lights[0].data(),26*4);
+    kernel::W32(table+0x68,1);kernel::W32(table+0x8C,0);
+    std::memcpy(memory.data()+d3d::kDevice+0xF00,d3d::g_state.material.data(),17*4);
+    for(const auto [original,host]:{std::pair{0u,2u},std::pair{1u,3u},std::pair{6u,256u}})
+        std::memcpy(memory.data()+d3d::kDevice+0xC60+original*64,d3d::g_state.transforms[host].data(),64);
+    assert(!gpu::pbr::observation::GuestProofRequested());
+    gpu::pbr::observation::RequestGuestProof(true);
+    ObservePbrActiveLights();assert(d3d::g_state.pbr_active_light_records_verified);
+    kernel::W32(table+4,Bits(.5f));ObservePbrActiveLights();assert(!d3d::g_state.pbr_active_light_records_verified);
+    kernel::W32(table+4,Bits(1));kernel::W32(d3d::kDevice+0xF00,kernel::R32(d3d::kDevice+0xF00)^1);
+    ObservePbrActiveLights();assert(!d3d::g_state.pbr_active_light_records_verified);
+    original_enable_result=0x8007000e;Call(sub_00412270,{0,0});
+    assert(!d3d::g_state.pbr_light_proof.Snapshot(d3d::g_state.light_enable,true).light_writes_after_success);
+    gpu::pbr::observation::RequestGuestProof(false);
 }

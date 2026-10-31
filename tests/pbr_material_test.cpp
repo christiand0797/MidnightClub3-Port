@@ -111,6 +111,26 @@ int main(){
     text=f.record;Replace(text,"stage=0","stage=4");Rejected(f,text);
     text=f.record;Replace(text,"baseline_alpha_sha256='"+AlphaDigest(f.color)+"'","baseline_alpha_sha256='"+std::string(64,'0')+"'");Rejected(f,text);
     Rejected(f,f.record+f.record);Rejected(f,"unknown=1\n"+f.record);
+    // A city material: texture alone ("any" shaders and UV set) with the game's own albedo, no albedo file.
+    {
+        std::string city="[[materials]]\ntexture='0123456789ABCDEF'\nvertex_shader='any'\npixel_shader='any'\nstage=0\n"
+            "uv_set='any'\nsurface='world'\ncutout=false\nnormal_convention='opengl'\nreview_sha256='"+std::string(64,'a')+
+            "'\nbaseline_alpha_sha256='"+std::string(64,'b')+"'\nalbedo='game'\n";
+        for(auto [name,file]:{std::pair{"normal","normal.png"},std::pair{"orm","orm.png"}})
+            city+="[materials."+std::string(name)+"]\nfile='"+file+"'\nsha256='"+Sha256(Read(f.root/file))+"'\ncolor_space='linear'\n";
+        auto cities=LoadReviewedManifest(f.root,f.Policy(city));
+        if(cities.status!=LoadStatus::Ready)for(auto& error:cities.errors)std::cerr<<error<<'\n';
+        assert(cities.status==LoadStatus::Ready&&cities.materials.size()==1);
+        const auto& m=cities.materials.front();
+        assert(m.game_albedo&&m.albedo.levels.empty()&&m.assignment.vertex_shader==kAnyShader&&m.assignment.pixel_shader==kAnyShader&&
+               m.assignment.uv_set==kAnyUv&&cities.by_texture.at(0x0123456789ABCDEFull)==std::vector<uint32_t>{0});
+        auto any=draw;any.assignment=m.assignment;any.color_width=999;any.current_alpha_sha256=std::string(64,'0');
+        assert(Select(cities,any).material==&m); // nothing to match against: the game's own texture is the albedo
+        auto other=city;Replace(other,"vertex_shader='any'","vertex_shader='anything'");Rejected(f,other);
+        other=city;Replace(other,"albedo='game'","albedo='mine'");Rejected(f,other);
+        Rejected(f,city+city); // duplicates still collide through the texture index
+    }
+    assert(library.by_texture.at(0x0123456789ABCDEFull)==std::vector<uint32_t>{0});
     auto budget=f.Policy();budget.max_decoded_bytes=20;assert(LoadReviewedManifest(f.root,budget).status==LoadStatus::Rejected);
     budget=f.Policy();budget.max_dimension=1;assert(LoadReviewedManifest(f.root,budget).status==LoadStatus::Rejected);
     policy=f.Policy();Write(f.root/"albedo.png","corrupt");assert(LoadReviewedManifest(f.root,policy).status==LoadStatus::Rejected);

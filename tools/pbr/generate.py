@@ -66,18 +66,34 @@ def download_models():
     print("models ok:", P.DEEPBUMP.exists(), P.PBRify.available())
 
 
-def load_manifest():
-    if MANIFEST.exists():
-        return json.load(open(MANIFEST, encoding="utf-8"))
+def load_manifest(path=MANIFEST):
+    if path.exists():
+        return json.load(open(path, encoding="utf-8"))
     return {"version": P.MAPS_VERSION, "normal_convention": "opengl_y_up", "textures": {}}
 
 
-def save_manifest(m):
+def save_manifest(m, path=MANIFEST):
     P.PBR.mkdir(parents=True, exist_ok=True)
-    tmp = MANIFEST.with_suffix(".part")
+    tmp = path.with_suffix(".part")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(m, f, indent=1, sort_keys=True)
-    tmp.replace(MANIFEST)
+    tmp.replace(path)
+
+
+def shard_manifest(k):
+    """--shard K/N runs keep their own manifest (manifest.shardK.json) so parallel runs never overwrite each other;
+    --merge folds them into manifest.json."""
+    return P.PBR / f"manifest.shard{k}.json"
+
+
+def merge_shards():
+    man = load_manifest()
+    shards = sorted(P.PBR.glob("manifest.shard*.json"))
+    for path in shards:
+        man["textures"].update(load_manifest(path)["textures"])
+    man["materials"] = P.material_dict()
+    save_manifest(man)
+    print(f"merged {len(shards)} shard manifests: {len(man['textures'])} textures in {MANIFEST}")
 
 
 def jobs_from_args(args, index):
@@ -125,7 +141,18 @@ def main():
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--threads", type=int, default=6, help="CPU threads for the PBRify networks")
     ap.add_argument("--download-models", action="store_true")
+    ap.add_argument("--shard", help="K/N: only every Nth job starting at K (0-based), with its own manifest")
+    ap.add_argument("--merge", action="store_true", help="fold the shard manifests into manifest.json and exit")
     args = ap.parse_args()
+    if args.merge:
+        merge_shards()
+        return
+    shard = None
+    if args.shard:
+        k, n = (int(v) for v in args.shard.split("/"))
+        if not 0 <= k < n:
+            ap.error("--shard K/N needs 0 <= K < N")
+        shard = (k, n)
 
     if args.download_models:
         download_models()
@@ -133,6 +160,8 @@ def main():
             return
     index = P.load_index()
     jobs = jobs_from_args(args, index)
+    if shard:
+        jobs = jobs[shard[0]::shard[1]]
     if not jobs:
         ap.error("nothing to do: give --set, --hash or --classes")
 
@@ -151,13 +180,15 @@ def main():
         else:
             print("PBRify unavailable (tools/pbr/models/pbrify/*.pth, torch or spandrel missing)")
 
-    man = load_manifest()
+    out_path = shard_manifest(shard[0]) if shard else MANIFEST
+    man = load_manifest(out_path)
+    done_before = load_manifest()["textures"] if shard else {}  # textures an earlier unsharded run finished
     settings = {"method": method, "max_size": args.max_size, "input": args.input, "work_scale": args.work_scale,
                 "version": P.MAPS_VERSION}
     t_all = time.time()
     done = 0
     for i, (h, cls) in enumerate(jobs):
-        prev = man["textures"].get(h)
+        prev = man["textures"].get(h) or done_before.get(h)
         if prev and not args.force and prev.get("settings") == settings and prev.get("class") == cls and \
                 all((P.PBR / f"{h}_{k}.png").exists() for k in prev.get("maps", [])):
             continue
@@ -168,7 +199,12 @@ def main():
         t = time.time()
         rgba, src, scale = P.load_working(h, e, args.input, args.work_scale, args.max_size)
         H, W = rgba.shape[:2]
-        res = P.generate(rgba, cls, scale, models, method)
+        try:
+            res = P.generate(rgba, cls, scale, models, method)
+        except MemoryError:
+            import gc
+            gc.collect()
+            res = P.generate(rgba, cls, scale, models, "hybrid")
         overridden = P.apply_overrides(h, res)
         if overridden:
             res.info["overrides"] = overridden
@@ -182,9 +218,9 @@ def main():
         print(f"[{i + 1}/{len(jobs)}] {h} {cls:14s} {src:7s} {W}x{H} maps={','.join(maps)} "
               f"r={res.info['rough_mean']:.2f} {time.time() - t:.1f}s", flush=True)
         if done % 10 == 0:
-            save_manifest(man)
+            save_manifest(man, out_path)
     man["materials"] = P.material_dict()
-    save_manifest(man)
+    save_manifest(man, out_path)
     print(f"{done} textures in {time.time() - t_all:.0f}s -> {P.PBR}")
 
 

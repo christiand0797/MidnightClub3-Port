@@ -73,6 +73,9 @@ int main() {
     for (auto& thread : threads) thread.join();
     std::set<fs::path> unique;
     for (const auto& item : parallel) { assert(!item.error && unique.insert(item.path).second); }
+    // F4 works without XBE_CAPTURE_DIR: frames go to the executable's captures folder; a configured path wins.
+    assert(gpu::CaptureBase(fs::path()) == fs::path("captures"));
+    assert(gpu::CaptureBase(fs::path("D:/evidence")) == fs::path("D:/evidence"));
     // Remove only this fixture's verified absolute child directory under the CTest working directory.
     assert(fs::weakly_canonical(root).parent_path() == parent);
     assert(root.filename().string().starts_with("capture-directory-fixture-"));

@@ -2,6 +2,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <cassert>
+#include <cstring>
 #include <filesystem>
 #include <mutex>
 #include <imgui.h>
@@ -14,6 +15,7 @@
 namespace fixture {
 std::filesystem::path folder;
 int applies = 0, title_tabs = 0;
+int pbr_tabs = 0;
 bool title_dirty = false;
 std::vector<bool> keyboard_menu_contexts;
 bool TitleTabs() { ++title_tabs; return std::exchange(title_dirty, false); }
@@ -25,6 +27,7 @@ std::filesystem::path ExeDir() { return fixture::folder; }
 void* Window() { return nullptr; }
 std::recursive_mutex& UiLock() { static std::recursive_mutex lock; return lock; }
 void ApplyDisplay() { fixture::applies++; }
+bool DrawPbrSettings(Settings&) { ++fixture::pbr_tabs;return false; }
 }
 namespace input {
 Pad RawPad(int) { return {}; }
@@ -44,6 +47,13 @@ void Frame(float w = 640, float h = 480) {
     ImGui::NewFrame();
     app::DrawSettingsMenu(60);
     ImGui::Render();
+}
+bool SelectTab(const char* name) {
+    for(int i=0;i<GImGui->TabBars.GetMapSize();++i)if(auto* bar=GImGui->TabBars.TryGetMapData(i))
+        for(auto& tab:bar->Tabs)if(std::strcmp(ImGui::TabBarGetTabName(bar,&tab),name)==0) {
+            bar->NextSelectedTabId=tab.ID;return true;
+        }
+    return false;
 }
 void Preview(app::Mode scene) {
     auto& s = app::Get();
@@ -87,6 +97,10 @@ int main() {
             assert(scrollable_contents);
         }
     }
+    // The actual scrollable F1 tab bar exposes PBR at 480p without enabling it or saving on view.
+    Frame();assert(SelectTab("PBR"));Frame();Frame();
+    assert(fixture::pbr_tabs>0&&!s.pbr.enabled&&!fs::exists(fixture::folder / "settings.toml"));
+    assert(SelectTab("Display"));Frame();
     // Previewing a mode does not persist it, and cancelling restores only display settings.
     Preview({15360, 8640});
     s.graphics.brightness = .2f;
@@ -140,6 +154,22 @@ int main() {
     app::ToggleMenu();
     assert(!app::MenuOpen() && fixture::keyboard_menu_contexts.size() == transitions + 2);
     assert((fixture::keyboard_menu_contexts == std::vector<bool>{true, false, true, false, true, false, true, false}));
+    // The Capture tab draws without a captures folder and creates none; its delayed request waits and cancels.
+    auto capture_tab = [&] {
+        ImGui::NewFrame();
+        ImGui::Begin("capture tab");
+        app::Capture(s);
+        ImGui::End();
+        ImGui::Render();
+    };
+    capture_tab();
+    assert(!fs::exists(fixture::folder / "captures") && !gpu::capture::g_delayed.Pending());
+    gpu::capture::g_delayed.Request(gpu::capture::Now(), 3);
+    s.capture.automatic = true;
+    capture_tab();
+    assert(gpu::capture::g_delayed.Pending() && !gpu::capture::g_delayed.Take(gpu::capture::Now(), false));
+    gpu::capture::g_delayed.Cancel();
+    assert(!fs::exists(fixture::folder / "captures"));
     ImGui::DestroyContext();
     assert(fs::equivalent(fixture::folder.parent_path(), temp));
     assert(fs::remove(fixture::folder / "settings.toml"));

@@ -81,3 +81,28 @@ long races would have been cut short at the end (secondary).
   live); a late frame during playback slows the replay slightly instead of skipping (needed for exactness).
 - The step record lives in host memory only; MC3 has no replay saving (the "replay" string at 0x476A6C is a camera
   name, "replay_chase1"), so nothing else needs it.
+
+## 2026-10-29: still ended at frame 30; now plays on (Claude session)
+
+Native check (Tokyo Arcade cruise, about 20 s recorded): every frame's step was recorded and forced (`steps known for
+N of N`), yet the first position check (frame 30) failed and the game ended the replay. A per-frame trace of the
+player position (`replay.cpp`, logged once per replay as `replay: frame K first differs from the recording`) showed:
+
+- some sessions differed from frame 0 by about 2 ULPs in x, others matched for 360+ frames and then drifted by
+  1e-6..2e-5; the recording itself started from different values across sessions. The step, frame time (now set to
+  one field at every stream open, `CanonicalStart`) and pad input match, so the remaining source is timing-dependent
+  (most likely world streaming on other threads racing the simulation). Making it bit-exact is a larger project.
+- So when a playback check fails, `sub_0002DAC0` clears recorder +0x14 and the replay plays on (logged once:
+  `playback drifted ... playing on`); the stream stays in step because the check still consumes its positions.
+  Result: a 1244-frame replay played to the end (`replay: played to the end (1244 frames)`), drift starting at 2e-6.
+- Note the "view a replay?" prompt defaults to No.
+
+### Later the same night: the car is kept on its recorded path
+
+Playing on still let the player car slowly wander from what was driven. `replay.cpp` now stores the player car
+transform at the end of every recorded frame (the Matrix34 holding the checked position; `TransformSpan` tells a
+3x4 from a 4x4 by unit rotation rows and logs which, `3x4` in MC3) and writes it back at the same point while playing,
+before the game's check. Result: a 1600-frame Tokyo replay with 22 late frames played to the end with no drift flag;
+the trace still reports the underlying float drift (frame 475, 3e-6) that each frame's correction removes. Memory is
+68 bytes a frame (about 2.4 MB for ten minutes). The play-on fallback remains for a frame the transform could not be
+read.

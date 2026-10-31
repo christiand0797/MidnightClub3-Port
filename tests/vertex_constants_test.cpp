@@ -55,6 +55,7 @@ void Capture(uint32_t reg) {
 namespace kernel { uint8_t* g_base=fixture::memory.data(); }
 namespace logx { void Write(Level,const char*,...) {} }
 namespace mem {
+bool IsCommitted(uint32_t va) { return va < fixture::memory.size(); }
 uint32_t AllocSystem(uint32_t,uint32_t) { assert(false);return 0; }
 uint32_t AllocContiguous(uint32_t,uint32_t,uint32_t,uint32_t) { assert(false);return 0; }
 uint32_t PhysicalFromVirtual(uint32_t va) { return va; }

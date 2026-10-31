@@ -216,8 +216,8 @@ resolution, picture adjustments, effects, HD pack and camera settings.
 The pack toggle cannot create a missing replacement. Turning HD movies off is a
 useful comparison when a movie seems softer or shows an artifact. The additional
 texture/movie upscale pass remains separate work; this guide does not claim it
-has completed. PBR conversion is planned separately and is not an active renderer
-mode in this menu.
+has completed. Material (PBR) shading for city scenery is on its own **PBR** tab;
+see [PBR materials](#pbr-materials-pbr-tab).
 
 ## Picture
 
@@ -234,6 +234,59 @@ not unload the HD texture/movie packs or reset the separate game-effect sliders.
 | Vibrance | **−1–+1**, default **0** | Changes subdued colors more than already vivid colors. |
 | Gamma | **0.50–2.00**, default **1** | Above 1 darkens midtones; below 1 lightens them. |
 | Reset picture | Button | Resets the five numeric picture adjustments. It does not reset other tabs. |
+
+## Enhanced car paint (Quality tab)
+
+Off by default, which keeps the console's look. When on, cars are lit per pixel by the game's own three car lights
+and get clearcoat highlights. The paint, vinyls and reflections stay the game's.
+
+| Option | Range / built-in default | Behavior |
+| --- | --- | --- |
+| Enhanced car paint | Default **Off** | Turns the mode on. |
+| Smooth lighting | **0–1**, default **1** | 0 keeps per-vertex lighting; 1 removes the faceting on low-poly bodies. |
+| Clearcoat highlights | **0–3**, default **1** | Brightness of the light highlights on the paint. |
+| Clearcoat roughness | **0.05–0.80**, default **0.30** | Low: small, sharp, glossy highlights. High: broad, soft, satin. |
+
+## PBR materials (PBR tab)
+
+An opt-in material renderer for city scenery: walls, roads and pavements get ambient-occlusion shading and a little
+surface relief from generated material maps. Colours stay exactly the original textures (the renderer samples the
+game's own texture); the game's baked lighting is kept, so the change is subtle rather than a new look. Untick
+**Enable PBR** at any time to compare with the original.
+
+| Option | Range / built-in default | Behavior |
+| --- | --- | --- |
+| Enable PBR | Default **Off** | Turns the material renderer on. Unsupported surfaces always keep the original shading. |
+| Pack folder / Approved manifest SHA-256 | Text, then **Apply pack selection** | The material pack to use (`pbr-cities` beside `mc3.exe` covers all four cities) and the digest that approves it. A pack never approves itself. |
+| PBR quality | Low–Ultra, default **High** | Detail level of the material shading. |
+| Ambient occlusion strength | **0–2**, default **1** | Contact shading from the AO map. 0 removes it. |
+| Height treatment | **No height effect** / **Parallax (UV shift)** / **Geometry displacement** | Parallax shifts the texture by its height map for relief; materials without a height map draw flat. Geometry displacement is not available for city scenery and draws as parallax. |
+| Parallax height (draw units) | **0–0.1**, default **0** | Relief depth; **0.04** is a modest setting. |
+| Per-texture material assignments | List | One row per material with its observed and PBR draw counts; a texture can be disabled or given its own parameters. |
+
+Not converted, by design: see-through and alpha-tested surfaces (glass, fences, foliage), cars, and draws that use
+two textures or a programmable shader. Build or refresh the city pack with
+`py -3.12 -I tools/pbr/test_pack.py --cities --install` while the game is closed; it writes the approved digest
+into `settings.toml`. Expect the pack to take a few seconds to load the first time PBR is enabled.
+
+## Capture
+
+A capture saves one frame for diagnosing rendering problems: every draw, texture,
+shader and render target, in a new folder under `captures` beside `mc3.exe` (or
+`XBE_CAPTURE_DIR` when that is set). Each capture takes about 30–80 MB.
+
+| Option | Range / built-in default | Behavior |
+| --- | --- | --- |
+| F4 (in game) | Key | Captures the next frame at any time. |
+| Capture 3 seconds after closing | Button | Captures one frame 3 seconds after you close the menu, so you can line up the shot. **Cancel** withdraws it. |
+| Capture automatically while playing | Default **Off** | Captures a frame every interval of play. Paused while the PC menu is open. Saved in `settings.toml` under `[capture]`, so it stays on for the next run. |
+| Every | **5–600 s**, default **30 s** | Time between automatic captures. |
+| Stop after | **1–500**, default **20** | Automatic captures per run of the game, to bound disk use. |
+| Open captures folder / Measure size | Buttons | Opens the folder in Explorer / totals its size. |
+
+The tab also shows this run's automatic and requested capture counts, the last
+capture's folder and any error. Delete old capture folders yourself when you no
+longer need them; the game never deletes them.
 
 ## Info and saving
 
@@ -273,6 +326,9 @@ handles purchased parts, career progress and per-car garage setups.
 | Tire goes through ground / incorrect airbag height | Record the vehicle, front/rear, garage ride step, PC ride values, tire size/profile and road/garage location. All-car contact behavior is still being validated. |
 | Movie is soft, fails or black | Compare Quality → HD movies Off. Keep installed movie names unchanged. On Windows N, install the Media Feature Pack linked in INSTALL. |
 | Setup interrupted / checksum error | Start the same extracted `mc3.exe` again. Keep parts from the same content release. Setup can resume/repair; do not mix manifests or manually edit its marker. |
+| Instant Replay ends after a moment or the car wanders | Replays now keep your car on the path you drove and play to the end; traffic is re-simulated and can differ slightly. The "view a replay?" prompt defaults to **No**. |
+| PBR shows no change | Check the **PBR** tab: **Enable PBR** on, a pack folder and its approved digest set (see the PBR section). "Materials with rendered PBR evidence" counts what is drawing; most changes are subtle shading on city walls and roads. |
+| Songs play over each other | Fixed in the 2026-10-29 build (a stopping song that ran dry during a load was kept alive). Report it with `logs/mc3.log`: lines `dsound: stereo streams ... both playing` show it. |
 | Windows asks for network permission | Handle the Windows dialog yourself. Local setup and offline gameplay do not require allowing public inbound network connections. OS prompts depend on your Windows configuration. |
 | ISO drive moved | Use `mc3.exe --choose-disc`, or see INSTALL for `--disc`. |
 | Crash | Preserve `logs` and any `CrashDumps`, note the last menu/action/car, and include the release version when reporting it. |

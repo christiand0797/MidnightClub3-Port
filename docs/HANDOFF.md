@@ -10,6 +10,102 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-10-30 final (all four cities converted, built in):** maps generated for every city texture (3,259 of
+3,260; the one left is an 8x8 "skip"); `pbr-cities` holds 3,259 materials, loads in ~10 s and is installed in
+settings.toml (parallax 0.04). Native 20-s drives, PBR on, no other load: San Diego 60 fps (211 draws through the path,
+3.3 ms), Atlanta 60 fps (464 draws, 7.6 ms), Tokyo 60 fps (346 draws, 6.5 ms). Detroit's textures are in the pack
+but the city is locked on this save. Player guide has a PBR section and troubleshooting rows; AUTONOMOUS_RUN,
+pbr_system and pbr_reachability notes updated. 58/58 CTest checks and 8 tools/pbr unittests pass.
+
+**2026-10-30 later (whole-city PBR pack, no captures):** a material can now name its texture alone
+(`vertex_shader = "any"`, `pixel_shader = "any"`, `uv_set = "any"`: `pbr::kAnyShader`/`kAnyUv`; every draw-state gate
+still runs, and the mesh uses the draw's own coordinate index) and take `albedo = "game"`: the device binds the draw's
+own accepted colour texture as t0 (a per-material SRV table appended whenever that resource changes; the resource is
+retained per frame), `GeometryConstants::options[2] = 1` decodes its gamma after sampling (the legacy filter order),
+and no albedo copy or alpha proof is needed (coverage is the original's at every mip). Lookups are indexed by texture
+(`Library::by_texture`, `pbr::ForTexture` falls back to a scan for hand-built libraries; device material cache
+indexed too). Limits: loader 4096 materials; device 4096 materials, 40960 SRVs. `tools/pbr/test_pack.py --cities
+[--install]` writes `pbr-cities`: every Detroit/San Diego/Atlanta/Tokyo texture in source_index.json with generated
+maps (ORM 256, height 128, shared flat normal). Generation of the 1568 city textures that lacked maps runs from
+`tools/pbr/sets/cities_missing.json` (two shards; four ran out of RAM). Tokyo with 1821 materials: 262 draws through
+the path at ~60 fps; the rest are blended, alpha-tested, programmable or multi-texture. Detroit stays locked
+("roadtrip" did not unlock it in Arcade); its textures are in the pack regardless. Restart Replay replays identically.
+Startup: never press Enter blindly; the save prompt can start "create new save" (it happened once, backed out).
+
+**2026-10-30 (PBR finished for baked world draws; replays exact on screen):** real pack `pbr-test-real` (817
+materials from 27 captures; albedo = the accepted colour, normal/ORM/height from textures/pbr generated maps resized
+to 256, flat maps for 287 textures without them) is installed with parallax 0.04; 415 Tokyo materials draw at
+59-60 fps (path ~6-7 ms for 350-390 draws). Changes: budgets raised (loader 1024 materials / 1.5 GB decoded; device
+1.5 GB resident of a 2 GB hard cap, 1024 materials, 8192 SRVs); `ValidateMesh` memoizes successes by content hash; a
+mesh needs a triangle with area (collapsed UVs only mean one texel); a material without a height map draws with no
+height effect, and displacement falls back to parallax. Still legacy (correctly): blended draws, GREATER-tested
+cutouts, a texture*TFACTOR-only combiner. Replays: the player car transform is recorded per frame and restored on
+playback (notes/replays.md); a 1600-frame replay played to the end without a drift flag. draw_evidence_test now
+clears its synthetic output folder (fixed stamps exhausted the 64 unique names after many runs).
+
+**2026-10-29 late night (replays, music check, PBR in four cities, perf):** replays ended at the first position check
+even with recorded steps; a per-frame trace shows timing-dependent float drift (see notes/replays.md), so playback now
+plays on past a failed check: a 1244-frame Tokyo replay played to the end. No song overlap or refill-while-stopping
+lines across menu -> cruise -> replay (new `dsound:` overlap/refill log lines watch for it). PBR: 27 captures (title,
+San Diego, Atlanta, Tokyo; Detroit locked) give 817 candidate assignments, 410 fit the loader budget; Tokyo shows
+them widely. Perf: the path cost 16-19 ms/frame for ~270 draws (Tokyo at 33-43 fps). Now ~5 ms/270 draws, 60 fps:
+`RecordDraw` takes the caller's plan (no second PlanDraw), `KeyEqual` compares the assignment before the digest, and
+`TryPbrDraw` caches built meshes by a hash of every input (`fixed_mesh::Refresh` redoes the state gate, constants and
+projection checks). `perf: pbr per frame ...` is logged every 10 s while it draws; the remaining cost is mostly the
+device's own `ValidateMesh` in PlanDraw. settings.toml points at the 410-material `pbr-test-marked` (magenta).
+
+**2026-10-29 night (songs overlapping, PBR in cruise):** songs overlapped after the 10-28 skip fix: a stream
+XACT is stopping (FlushEx with an envelope release) that starved during a load kept the starved-grace PLAYING, so
+the stopped song stayed alive, got refilled and played over the next one. `StreamState::stopping` drops the grace,
+and `Render` deactivates a stopping stream whose packets run out (tests: `stream_status`). Not yet heard in game.
+PBR in Arcade cruise: San Diego and Atlanta captures (Detroit is locked on this save) plus the title give 592
+candidate assignments; `tools/pbr/test_pack.py` now merges captures, uses shared 4x4 flat normal/ORM maps and stops
+at the loader's 512 MB decode budget (373 of 592 fit). Varying-alpha textures are accepted at runtime where the
+written alpha is provably zero (TFACTOR alpha 0, no blend, ALWAYS test).
+
+**2026-10-29 evening (PBR test pack):** captures now record per-draw shader keys and per-stage texture hashes;
+`tools/pbr/test_pack.py --latest --install` builds and approves a test pack from the newest capture (see the
+reachability note, "Test pack"). **First native result:** 72 of 73 title-screen world materials draw through the
+dedicated path (69 before frame-less triangles were allowed) (magenta with `pbr-test-marked`; `pbr-test-neutral` matches PBR off within ~2/255 mean), after
+exact fixes for the world's TFACTOR stage, ended cascades, ALWAYS alpha test and packed output alpha. settings.toml
+currently points at `pbr-test-marked` (height mode none); `settings.toml.bak` holds the previous file.
+
+**2026-10-29 afternoon (PBR face normals, baked mode, fog):** steps 2–4 of the reachability note landed
+(uncommitted) and complete Codex's half-finished baked vertex-diffuse mode, which had left the tree unbuildable.
+Normal-less world streams shade with the triangle's own plane; LIGHTING-off draws use the vertex diffuse as the
+light (decoded like the albedo, so neutral maps reproduce the original); fog matches the legacy fixed path. Vertex
+is now 48 bytes, SceneConstants 704. 8,824 captured draws now pass the capture-visible gates. 58/58 CTest checks
+pass and mc3.exe is rebuilt, but nothing has been drawn through the dedicated path on a GPU yet.
+
+**2026-10-29 morning (PBR reachability):** the working-tree dedicated PBR path builds into mc3.exe and all 58
+CTest checks pass, but a census of 40 captures (71,920 draws) finds **no draw that can reach it**: world draws are
+strips/fans, carry no vertex normal and are lit by baked vertex colour with lighting off. See
+[notes/pbr_reachability_20261029.md](notes/pbr_reachability_20261029.md) and `tools/pbr/draw_census.py` for the
+numbers and the ordered list of what the path needs next (strip expansion, geometric normals, baked-irradiance
+scene mode, fog).
+
+**2026-10-28 late (camber bend / songs skipping):** user reported camber "bends the wheel instead of tilting it" and
+songs skipping on their own.
+- Camber: F7170 scales the wheel matrix rows (axle ×2·width, diameter rows ×D) at 0xF7405, *then* rotates the axle and
+  vertical rows by the camber angle with 0x869D0 (0xF7714 / opposite side 0xF7D39). Mixing rows of unequal length is a
+  shear; invisible at stock −2.5°, a visible bend at large PC camber. New `templates/game/src/game/wheel_camber.{h,cpp}`
+  overrides 0x869D0 only for return addresses 0xF7719/0xF7D3E: rotate the unit axes, restore each row's length.
+  `wheel_width_pivot` now runs the real F7170 at −30°/+20° and checks orthogonal axes, 2·width / D lengths and the
+  tilt angle, and that the original sheared.
+- Songs: XACT's IsPlaying (0x40F198) is only `GetStatus & PLAYING`, and its voice update (0x40D871) ends the wave once
+  no read is pending and the stream isn't PLAYING. The real XDK GetStatus (0x3C4FA9) drops PLAYING when starved, which
+  the console never is, but the port is whenever the title thread stalls past the queued audio (mc3-7.log: songs
+  changing every ~5 s after a race load). Real ends always get Discontinuity (0x40F7DD). `runtime/audio/stream_status.h`
+  keeps a starved stream without one PLAYING for up to 10 s; dsound.cpp tracks `starved_at` and LOGRs the first 16
+  starvations ("ran out of packets mid-wave"). Test: `stream_status`. Neither fix is verified in game yet.
+
+**2026-10-28 evening (neon / vinyl / per-car):** see [notes/neon_vinyl_20261028.md](notes/neon_vinyl_20261028.md).
+Neon brightness now keeps hue (shaders.cpp `sblend.w` caps colour gain at the brightest channel); P8 textures are
+never sampled as a stale render target (`CanBeTargetFormat`, texture.h). Built into the canonical
+`templates/game/out/native/mc3.exe`; the previous `d3879439...` EXE is backed up in
+`.local/exe-backup-20261028-neon/`. Neither fix is verified in game. Per-car tuning: code reviewed, no defect
+found; needs the user's concrete symptom.
+
 **2026-10-23 night:** the frozen public playable content release is
 [v0.3.0-dev.20261023](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.0-dev.20261023).
 The garage-to-street ownership repair passed native Golf R32 checks and 19 CTest checks; ride-only F1 changes

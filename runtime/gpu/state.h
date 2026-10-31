@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
+#include "gpu/pbr_light_proof.h"
 
 // Everything the title handed to the XDK Direct3D API, as the API defines it. The renderer translates
 // this to D3D12; nothing here models the console's GPU.
@@ -131,6 +132,7 @@ struct VertexShader {
     std::vector<uint32_t> program;  // 4 dwords per instruction
     uint32_t program_type = 0;      // 0x2078 vertex, 0x7378 state, 0x7778 read/write
     uint64_t hash = 0;
+    int8_t car_lighting = -1;       // follows the car lighting model (gpu/car_paint.h), -1 not yet known
     // stream layout parsed from the declaration: register -> stream, offset, type
     struct Input {
         int stream = -1;
@@ -183,6 +185,10 @@ struct State {
     std::array<float, 17> material{};
     std::array<std::array<uint32_t, 26>, 8> lights{};  // D3DLIGHT8
     uint32_t light_enable = 0;                         // bit per light
+    pbr::light_proof::Proof pbr_light_proof; // Post-original observations only; never changes legacy light records.
+    // Actual original active slots AND material/model/view/projection must agree with this immutable draw state.
+    // Light-list equality alone cannot certify stateblock/copy changes to material or matrices.
+    bool pbr_active_light_records_verified = false;
     float ss_offset_x = 0, ss_offset_y = 0;
     float zscale = 16777215.0f;  // depth buffer units per 1.0
     // NV2A inline vertex attributes: what a draw reads for a register its vertices do not carry. The title sets them

@@ -1,13 +1,19 @@
 # PBR system development
 
-The material system and shared shading math are implemented and CPU-tested. They are
-foundations for a separate renderer path; the current game picture has not been relabelled
-as PBR. No original-derived PBR asset conversion has run during this work.
+**Status 2026-10-30:** the dedicated renderer path draws baked city scenery in game (opt-in, PBR tab). A whole-city
+pack (`tools/pbr/test_pack.py --cities`) covers every Detroit/San Diego/Atlanta/Tokyo texture with generated
+AO/roughness/height maps and samples the game's own texture as albedo. How draws reach the path, the gates and the
+remaining legacy cases are in [pbr_reachability_20261029.md](pbr_reachability_20261029.md). The sections below are the
+original design record.
+
+The material system and shared shading math are implemented and CPU-tested.
 
 ## Implemented
 
 `runtime/gpu/pbr_material.*` loads explicit `materials-v1.toml` libraries with an independently
-supplied manifest SHA256. Each assignment names an original texture, vertex and pixel shader,
+supplied manifest SHA256. A material names an original texture and, either exact
+or `"any"`, its vertex/pixel shader and UV set; `albedo = "game"` uses the game's accepted colour texture instead of a
+pack image (no alpha proof needed, gamma decoded in the shader). Each assignment names an original texture, vertex and pixel shader,
 texture stage, UV set, and world/vehicle surface. UI, movies, screen-space effects, unknown
 geometry, blended/dynamic textures and render targets do not qualify for material replacement.
 

@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 #include "app/resolution.h"
+#include "gpu/pbr_settings.h"
 
 namespace input {
 struct Pad;
@@ -51,6 +52,12 @@ struct Settings {
         bool hd_movies = true;      // video_hd/<path>.mp4 shown in place of a Bink movie the title plays
         float lod = 1.0f;           // model LOD switch, prop cull and far clip distances, times (lod.cpp)
         float fov_scale = 1.0f;     // the driving camera's vertical field of view, times (fov.cpp)
+        // enhanced car paint (gpu/car_paint.h): per-pixel lighting and clearcoat highlights for cars, off as the console
+        bool car_paint = false;
+        float car_relight = 1.0f;     // 0 the console's per-vertex lighting .. 1 recomputed per pixel
+        float car_specular = 1.0f;    // highlights of the game's three car lights, 0 off .. 3
+        float car_roughness = 0.3f;   // clearcoat roughness, 0.05 mirror-like .. 0.8 satin
+        float car_reflection = 1.0f;  // clearcoat reflection of the game's environment map, Fresnel weighted, 0 .. 2
     } graphics;
 
     // [tuning] in the settings file, changed live from the settings menu: cars past the garage's steps
@@ -76,6 +83,17 @@ struct Settings {
         float traffic_multiplier = 1.0f;
         float pedestrian_multiplier = 1.0f;
     } world;
+
+    // [capture]: frame captures taken automatically while playing (F1 > Capture, gpu/capture_control.h)
+    struct Capture {
+        bool automatic = false;    // capture a frame every interval seconds of play
+        float interval = 30.0f;    // seconds, 5..600
+        uint32_t limit = 20;       // automatic captures a session, 1..500 (each is 30-80 MB)
+    } capture;
+
+    // PC-only reviewed material preferences. Disabled by default; renderer telemetry
+    // determines which exact assignments can actually use PBR.
+    gpu::pbr::controls::Settings pbr;
 
     // config/mc3_enhancements.toml beside the exe (settings.cpp), changed live from the settings menu
     bool force_1080p = false;       // [render] the output is 1920x1080 whatever width/height say (app::Output)

@@ -47,7 +47,8 @@ std::string Lower(std::string text) {
     for (char& c:text) if(c>='A'&&c<='Z') c=char(c-'A'+'a');
     return text;
 }
-uint64_t HashKey(const std::string& text) {
+uint64_t HashKey(const std::string& text,bool any_allowed=false) {
+    if(any_allowed&&text=="any")return kAnyShader;
     Require(Hex(text,16),"Texture/shader identity must be exactly sixteen hexadecimal digits");
     uint64_t value=0;
     for(char c:Lower(text)) value=(value<<4)|uint64_t(c<='9'?c-'0':c-'a'+10);
@@ -256,26 +257,32 @@ Library LoadReviewedManifest(const fs::path& path,const LoadPolicy& policy) {
             Keys(*entry,{"texture","vertex_shader","pixel_shader","stage","uv_set","surface","cutout",
                          "normal_convention","baseline_alpha_sha256","review_sha256","albedo","normal","orm","height","emission"});
             Material material;auto& a=material.assignment;
-            a.original_texture=HashKey(Text(*entry,"texture"));a.vertex_shader=HashKey(Text(*entry,"vertex_shader"));
-            a.pixel_shader=HashKey(Text(*entry,"pixel_shader"));a.stage=Number(*entry,"stage",3);a.uv_set=Number(*entry,"uv_set",3);
+            a.original_texture=HashKey(Text(*entry,"texture"));a.vertex_shader=HashKey(Text(*entry,"vertex_shader"),true);
+            a.pixel_shader=HashKey(Text(*entry,"pixel_shader"),true);a.stage=Number(*entry,"stage",3);
+            a.uv_set=(*entry)["uv_set"].value<std::string>()==std::optional<std::string>("any")?kAnyUv:Number(*entry,"uv_set",3);
             const auto surface=Text(*entry,"surface");Require(surface=="world"||surface=="vehicle","UI/movie/effect/unknown assignments are forbidden");
             a.surface=surface=="world"?SurfaceClass::World:SurfaceClass::Vehicle;a.cutout=Flag(*entry,"cutout");
             const auto convention=Text(*entry,"normal_convention");Require(convention=="opengl"||convention=="directx","Explicit normal convention required");
             material.normal_convention=convention=="opengl"?NormalConvention::OpenGl:NormalConvention::DirectX;
             material.review_sha256=Lower(Text(*entry,"review_sha256"));material.baseline_alpha_sha256=Lower(Text(*entry,"baseline_alpha_sha256"));
             Require(Hex(material.review_sha256,64)&&Hex(material.baseline_alpha_sha256,64),"Missing review/accepted alpha proof identity");
-            for(const auto& prior:library.materials)Require(!Same(prior.assignment,a),"Duplicate/conflicting PBR draw assignment");
-            material.albedo=LoadMap(*entry,"albedo",MapRole::Albedo,root,policy,wic.Get(),used);
-            Require(AlphaDigest(material.albedo.levels.front())==material.baseline_alpha_sha256,"Albedo changes the accepted alpha bytes");
+            if(const auto it=library.by_texture.find(a.original_texture);it!=library.by_texture.end())
+                for(uint32_t row:it->second)Require(!Same(library.materials[row].assignment,a),"Duplicate/conflicting PBR draw assignment");
+            if((*entry)["albedo"].value<std::string>()==std::optional<std::string>("game"))material.game_albedo=true;
+            else {
+                material.albedo=LoadMap(*entry,"albedo",MapRole::Albedo,root,policy,wic.Get(),used);
+                Require(AlphaDigest(material.albedo.levels.front())==material.baseline_alpha_sha256,"Albedo changes the accepted alpha bytes");
+            }
             material.normal=LoadMap(*entry,"normal",MapRole::Normal,root,policy,wic.Get(),used);
             material.orm=LoadMap(*entry,"orm",MapRole::Orm,root,policy,wic.Get(),used);
             if(entry->contains("height")){material.height=LoadMap(*entry,"height",MapRole::Height,root,policy,wic.Get(),used);material.has_height=true;}
             if(entry->contains("emission")){material.emission=LoadMap(*entry,"emission",MapRole::Emission,root,policy,wic.Get(),used);material.has_emission=true;}
+            library.by_texture[material.assignment.original_texture].push_back(uint32_t(library.materials.size()));
             library.materials.push_back(std::move(material));
         }
         library.status=LoadStatus::Ready;
     } catch(const std::exception& error) {
-        library.materials.clear();library.errors.push_back(error.what());
+        library.materials.clear();library.by_texture.clear();library.errors.push_back(error.what());
     }
     return library;
 }
@@ -283,12 +290,14 @@ Library LoadReviewedManifest(const fs::path& path,const LoadPolicy& policy) {
 Selection Select(const Library& library,const SurfaceEvidence& draw) {
     if(library.status!=LoadStatus::Ready)return {nullptr,SelectionReason::Disabled};
     const Material* material=nullptr;
-    for(const auto& candidate:library.materials)if(Same(candidate.assignment,draw.assignment)){material=&candidate;break;}
+    ForTexture(library,draw.assignment.original_texture,[&](uint32_t row){
+        if(!material&&Same(library.materials[row].assignment,draw.assignment))material=&library.materials[row];});
     if(!material)return {nullptr,SelectionReason::NoAssignment};
     if(!draw.texture_2d || draw.pretransformed || draw.screen_space || draw.dynamic_texture || draw.render_target ||
        draw.depth_texture || draw.additive || draw.blended)return {nullptr,SelectionReason::UnsupportedDraw};
     if(!draw.geometric_position || !draw.geometric_normal || !draw.tangent_basis)return {nullptr,SelectionReason::MissingGeometry};
     if(!draw.linear_lighting)return {nullptr,SelectionReason::MissingLinearLighting};
+    if(material->game_albedo)return {material,SelectionReason::Ready};  // the game's own texture: nothing to match
     const auto& color=material->albedo.levels.front();
     if(draw.color_width!=color.width || draw.color_height!=color.height ||
        Lower(draw.current_alpha_sha256)!=material->baseline_alpha_sha256)return {nullptr,SelectionReason::AlphaMismatch};

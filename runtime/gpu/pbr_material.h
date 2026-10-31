@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace gpu::pbr {
@@ -26,6 +27,10 @@ struct Map {
     std::string file, sha256;
     std::vector<Mip> levels;
 };
+// A material can name its texture alone: "any" shaders/UV set. Every draw-state proof still runs on the actual draw;
+// the shader keys then only say which captured draw first showed the texture.
+constexpr uint64_t kAnyShader = ~0ull;
+constexpr uint32_t kAnyUv = 0xFF;
 struct Assignment {
     uint64_t original_texture = 0, vertex_shader = 0, pixel_shader = 0;
     uint32_t stage = 0, uv_set = 0;
@@ -41,6 +46,9 @@ struct Material {
     std::string baseline_alpha_sha256;
     Map albedo, normal, orm;
     bool has_height = false, has_emission = false;
+    // albedo = "game": the draw samples the game's own accepted colour texture (exact colour and coverage by
+    // construction), so the pack carries no albedo copy and no alpha proof. Its gamma is decoded in the shader.
+    bool game_albedo = false;
     Map height, emission;
 };
 
@@ -48,8 +56,9 @@ struct LoadPolicy {
     bool enabled = false;
     // An independently reviewed digest, supplied by the caller. The manifest cannot approve itself.
     std::string approved_manifest_sha256;
-    uint32_t max_materials = 512, max_dimension = 8192;
-    uint64_t max_encoded_file = 128ull << 20, max_decoded_bytes = 512ull << 20;
+    // Sized for a whole city's materials with HD albedos (decoded mips stay in system memory while the pack is used).
+    uint32_t max_materials = 4096, max_dimension = 8192;
+    uint64_t max_encoded_file = 128ull << 20, max_decoded_bytes = 1536ull << 20;
 };
 enum class LoadStatus { Disabled, Ready, Rejected };
 struct Library {
@@ -57,7 +66,19 @@ struct Library {
     std::string manifest_sha256;
     std::vector<Material> materials;
     std::vector<std::string> errors;
+    std::unordered_map<uint64_t, std::vector<uint32_t>> by_texture;  // original_texture -> material rows
 };
+// Calls f(row) for every material naming this texture: through the loader's index, or a scan of a library built
+// without one (tests construct Library directly).
+template <class F> void ForTexture(const Library& library, uint64_t texture, F&& f) {
+    if (!library.by_texture.empty()) {
+        if (const auto it = library.by_texture.find(texture); it != library.by_texture.end())
+            for (uint32_t row : it->second) f(row);
+        return;
+    }
+    for (uint32_t row = 0; row < library.materials.size(); ++row)
+        if (library.materials[row].assignment.original_texture == texture) f(row);
+}
 
 // Explicit worker-thread preparation. Disabled returns before any filesystem/COM/hash operation.
 // Reads ONLY materials-v1.toml and its explicitly listed, digest-pinned PNGs below root.

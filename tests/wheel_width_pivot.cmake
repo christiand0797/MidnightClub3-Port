@@ -3,7 +3,8 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../templates/game/generated/game/x86_recomp
    EXISTS "${CMAKE_CURRENT_LIST_DIR}/../templates/game/generated/game/x86_recomp.27.cpp")
     add_executable(wheel_width_pivot_test "${CMAKE_CURRENT_LIST_DIR}/wheel_width_pivot_fixture.cpp")
     target_include_directories(wheel_width_pivot_test PRIVATE
-        "${CMAKE_CURRENT_LIST_DIR}/../runtime" "${CMAKE_CURRENT_LIST_DIR}/../templates/game/generated/game")
+        "${CMAKE_CURRENT_LIST_DIR}/../runtime" "${CMAKE_CURRENT_LIST_DIR}/../templates/game/generated/game"
+        "${CMAKE_CURRENT_LIST_DIR}/../templates/game/src/game")
     target_compile_features(wheel_width_pivot_test PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(wheel_width_pivot_test PRIVATE /O2 /UNDEBUG)

@@ -17,8 +17,25 @@ struct Image {
     std::vector<std::vector<uint8_t>> levels;
 };
 
+// Companion PBR textures for a content hash from textures/pbr/<hash>_{n,ao,r,m,h}.png:
+// - nrm: BGRA8 normal map (shader .rgb = tangent-space X, Y, Z in 0..1; .a = 1) with renormalized mip chain
+// - orm: BGRA8 packed map (shader .r = AO, .g = roughness, .b = metalness, .a = height) with box-filtered mip chain
+struct PbrMaps {
+    Image nrm;
+    Image orm;
+    bool has_height = false;
+};
+
+enum class PbrPoll : uint8_t { None, Pending, Ready };
+
+// Filename-derived companion maps are an unapproved experiment, not the reviewed material pipeline.
+// Keep them quarantined even when the global PBR preference is enabled. Actual PBR uses
+// LoadReviewedManifest plus exact draw/material approval, not these legacy lookup APIs.
+inline constexpr bool LegacyPbrCompanionsAllowed() { return false; }
+
 bool DumpEnabled();     // settings: graphics.texture_dump
 bool ReplaceEnabled();  // settings: graphics.texture_pack, and a replace folder with files in it
+bool PbrEnabled();      // quarantined false; a preference/file name cannot approve material maps
 
 // the texture's name: its guest bytes (every level), format, size and the palette a P8 one is drawn with
 uint64_t ContentHash(const TextureDesc& d, const uint8_t* guest, uint32_t bytes, uint64_t palette);
@@ -27,12 +44,17 @@ uint64_t ContentHash(const TextureDesc& d, const uint8_t* guest, uint32_t bytes,
 // and can then release them. Null without one; only the file index and used hashes are retained by the pack.
 std::unique_ptr<Image> Find(uint64_t hash);
 
+// Preserved legacy API: quarantined to null/None before indexing, I/O, decoding or queuing work.
+std::unique_ptr<PbrMaps> FindPbr(uint64_t hash);
+PbrPoll PollPbr(uint64_t hash, std::unique_ptr<PbrMaps>& out);
+
 // level 0 as the host decoded it (BGRA8, or BC1/BC2/BC3 blocks), written once per hash
 void Dump(uint64_t hash, const TextureDesc& d, Host host, const std::vector<uint8_t>& px, uint32_t pitch);
 
 // how many replacements the folder has, and how many were used / dumped this run (for the menu)
 struct Stats {
     uint32_t available = 0, used = 0, dumped = 0;
+    uint32_t pbr_available = 0, pbr_used = 0;
 };
 Stats GetStats();
 

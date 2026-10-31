@@ -33,6 +33,8 @@ struct PixelKey {
     uint32_t flat = 0, two_sided = 0;
     uint32_t proj = 0;       // fixed function: bit per stage sampled at coordinates divided by w
     uint32_t quad = 0;       // a screen quad: QuadHlsl
+    uint32_t car_paint = 0;  // enhanced car paint: gpu/car_paint.h PixelHlsl over the generated shader
+    uint32_t pbr = 0;        // stage 0 companion PBR maps bound on t4 (normal) and t5 (ORM+height)
     bool operator==(const PixelKey& o) const;
 };
 
@@ -111,6 +113,10 @@ struct DrawConstants {
     float bwvp[4][16];
     float bwv[4][16];
     float bwvn[4][16];
+    float carpaint[4];   // enhanced car paint (gpu/car_paint.h): relight strength, highlights, roughness, 1; last, so
+                         // nothing before it moves
+    float pbr[4];        // PBR parameters: normal_strength, ao_strength, roughness (factor or -(1+override)), metallic
+    float pbr2[4];       // PBR parameters: parallax_height, base_color.r, base_color.g, base_color.b
 };
 
 }  // namespace gpu

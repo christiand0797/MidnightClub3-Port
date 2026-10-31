@@ -20,6 +20,13 @@ struct FormatInfo {
 
 const FormatInfo& Format(uint32_t xbox_format);
 
+// a texture of this format can be a surface the GPU drew: the NV2A renders neither compressed nor palette (P8)
+// formats, so their bytes are the CPU's even when laid over memory a freed render target once used
+constexpr bool CanBeTargetFormat(uint32_t xbox_format, bool compressed) {
+    constexpr uint32_t kP8 = 0x0B;
+    return !compressed && xbox_format != kP8;
+}
+
 // a D3DPixelContainer decoded
 struct TextureDesc {
     uint32_t data = 0;  // guest virtual address of level 0

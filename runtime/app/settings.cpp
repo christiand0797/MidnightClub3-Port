@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <charconv>
+#include <cstdio>
 #include <fstream>
 #include <sstream>
 
@@ -84,6 +86,11 @@ std::vector<GraphicsField> GraphicsFields(Settings::Graphics& g) {
         {"hd_movies", nullptr, &g.hd_movies, nullptr, 0, 1},
         {"lod", &g.lod, nullptr, nullptr, 0.5f, 4},
         {"fov_scale", &g.fov_scale, nullptr, nullptr, 0.75f, 1.5f},
+        {"car_paint", nullptr, &g.car_paint, nullptr, 0, 1},
+        {"car_relight", &g.car_relight, nullptr, nullptr, 0, 1},
+        {"car_specular", &g.car_specular, nullptr, nullptr, 0, 3},
+        {"car_roughness", &g.car_roughness, nullptr, nullptr, 0.05f, 0.8f},
+        {"car_reflection", &g.car_reflection, nullptr, nullptr, 0, 2},
     };
 }
 
@@ -92,6 +99,122 @@ std::vector<GraphicsField> WorldFields(Settings::World& w) {
         {"traffic_multiplier", &w.traffic_multiplier, nullptr, nullptr, 0, 4},
         {"pedestrian_multiplier", &w.pedestrian_multiplier, nullptr, nullptr, 0, 4},
     };
+}
+
+std::vector<GraphicsField> CaptureFields(Settings::Capture& c) {
+    return {
+        {"automatic", nullptr, &c.automatic, nullptr, 0, 1},
+        {"interval_seconds", &c.interval, nullptr, nullptr, 5, 600},
+        {"max_per_session", nullptr, nullptr, &c.limit, 1, 500},
+    };
+}
+
+namespace pc = gpu::pbr::controls;
+std::vector<GraphicsField> PbrFields(pc::Parameters& p) {
+    return {{"roughness_factor",&p.roughness_factor,nullptr,nullptr,0,4},
+            {"metallic_factor",&p.metallic_factor,nullptr,nullptr,0,4},
+            {"roughness_override",nullptr,&p.roughness_override,nullptr,0,1},
+            {"metallic_override",nullptr,&p.metallic_override,nullptr,0,1},
+            {"roughness",&p.roughness,nullptr,nullptr,0,1},
+            {"metallic",&p.metallic,nullptr,nullptr,0,1},
+            {"normal_strength",&p.normal_strength,nullptr,nullptr,0,4},
+            {"ao_strength",&p.ao_strength,nullptr,nullptr,0,2},
+            {"emission_strength",&p.emission_strength,nullptr,nullptr,0,16},
+            {"parallax_height",&p.parallax_height,nullptr,nullptr,0,0.1f},
+            {"displacement_height",&p.displacement_height,nullptr,nullptr,0,0.25f},
+            {"displacement_midpoint",&p.displacement_midpoint,nullptr,nullptr,0,1},
+            {"tessellation",nullptr,nullptr,&p.tessellation,1,16}};
+}
+const char* QualityName(pc::Quality q) {
+    constexpr const char* names[]={"low","medium","high","ultra"};
+    return names[std::min(uint32_t(q),3u)];
+}
+const char* HeightName(pc::HeightMode mode) {
+    constexpr const char* names[]={"none","parallax","displacement"};
+    return names[std::min(uint32_t(mode),2u)];
+}
+void ReadPbrParameters(const toml::table& table,pc::Parameters& p) {
+    for(const auto& f:PbrFields(p)) {
+        if(f.f)*f.f=table[f.key].value_or(*f.f);
+        if(f.b)*f.b=table[f.key].value_or(*f.b);
+        if(f.u)if(auto v=table[f.key].value<int64_t>())*f.u=uint32_t(std::clamp(*v,int64_t(f.lo),int64_t(f.hi)));
+    }
+    for(auto [key,color]:{std::pair{"base_color",&p.base_color},std::pair{"emission_color",&p.emission_color}})
+        if(const auto* values=table[key].as_array();values&&values->size()==3)
+            for(size_t i=0;i<3;++i)(*color)[i]=(*values)[i].value_or((*color)[i]);
+    const auto mode=table["height_mode"].value_or(std::string("none"));
+    p.height_mode=mode=="parallax"?pc::HeightMode::Parallax:mode=="displacement"?pc::HeightMode::Displacement:pc::HeightMode::None;
+    pc::Sanitize(p);
+}
+toml::table PbrParametersTable(pc::Parameters p) {
+    pc::Sanitize(p);toml::table result;
+    for(const auto& f:PbrFields(p)) {
+        if(f.f)result.insert(f.key,double(*f.f));
+        if(f.b)result.insert(f.key,*f.b);
+        if(f.u)result.insert(f.key,int64_t(*f.u));
+    }
+    result.insert("base_color",toml::array{double(p.base_color[0]),double(p.base_color[1]),double(p.base_color[2])});
+    result.insert("emission_color",toml::array{double(p.emission_color[0]),double(p.emission_color[1]),double(p.emission_color[2])});
+    result.insert("height_mode",HeightName(p.height_mode));return result;
+}
+uint64_t PbrHex(const toml::table& t,const char* key) {
+    const auto text=t[key].value_or(std::string{});uint64_t value=0;
+    if(text.size()!=16)return 0;
+    const auto parsed=std::from_chars(text.data(),text.data()+text.size(),value,16);
+    return parsed.ec==std::errc{}&&parsed.ptr==text.data()+text.size()?value:0;
+}
+std::string PbrHex(uint64_t value) {
+    char text[17];std::snprintf(text,sizeof(text),"%016llx",static_cast<unsigned long long>(value));return text;
+}
+void LoadPbr(const toml::table& root,pc::Settings& settings) {
+    settings={}; // Missing/invalid optional table must never retain a preceding enabled session.
+    const auto* t=root["pbr"].as_table();if(!t)return;
+    settings.enabled=(*t)["enabled"].value_or(false);
+    settings.pack_path=(*t)["pack_path"].value_or(std::string{});
+    settings.approved_manifest_sha256=(*t)["approved_manifest_sha256"].value_or(std::string{});
+    const auto quality=(*t)["quality"].value_or(std::string("high"));
+    settings.quality=quality=="low"?pc::Quality::Low:quality=="medium"?pc::Quality::Medium:
+        quality=="ultra"?pc::Quality::Ultra:pc::Quality::High;
+    if(const auto* p=(*t)["parameters"].as_table())ReadPbrParameters(*p,settings.parameters);
+    if(const auto* rows=(*t)["materials"].as_array()) {
+        const size_t limit=std::min(rows->size(),pc::kMaxMaterials);
+        for(size_t i=0;i<limit;++i) {
+            const auto* row=(*rows)[i].as_table();if(!row)continue;
+            pc::MaterialOverride entry;
+            entry.key.approved_manifest_sha256=(*row)["manifest_sha256"].value_or(std::string{});
+            auto& a=entry.key.assignment;
+            a.original_texture=PbrHex(*row,"original_texture");a.vertex_shader=PbrHex(*row,"vertex_shader");a.pixel_shader=PbrHex(*row,"pixel_shader");
+            const auto stage=(*row)["stage"].value_or(int64_t(-1)),uv=(*row)["uv_set"].value_or(int64_t(-1));
+            if(stage<0||stage>=4||uv<0||uv>=4)continue;
+            a.stage=uint32_t(stage);a.uv_set=uint32_t(uv);
+            const auto surface=(*row)["surface"].value_or(std::string{});
+            if(surface!="world"&&surface!="vehicle")continue;
+            a.surface=surface=="world"?gpu::pbr::SurfaceClass::World:gpu::pbr::SurfaceClass::Vehicle;
+            a.cutout=(*row)["cutout"].value_or(false);
+            entry.enabled=(*row)["enabled"].value_or(true);
+            entry.use_global_parameters=(*row)["use_global_parameters"].value_or(true);
+            if(const auto* p=(*row)["parameters"].as_table())ReadPbrParameters(*p,entry.parameters);
+            settings.materials.push_back(std::move(entry));
+        }
+    }
+    pc::Sanitize(settings);
+}
+toml::table PbrTable(pc::Settings settings) {
+    pc::Sanitize(settings);
+    toml::table result{{"enabled",settings.enabled},{"pack_path",settings.pack_path},
+        {"approved_manifest_sha256",settings.approved_manifest_sha256},{"quality",QualityName(settings.quality)},
+        {"parameters",PbrParametersTable(settings.parameters)}};
+    toml::array rows;
+    for(const auto& entry:settings.materials) {
+        const auto& a=entry.key.assignment;
+        rows.push_back(toml::table{{"manifest_sha256",entry.key.approved_manifest_sha256},
+            {"original_texture",PbrHex(a.original_texture)},{"vertex_shader",PbrHex(a.vertex_shader)},
+            {"pixel_shader",PbrHex(a.pixel_shader)},{"stage",int64_t(a.stage)},{"uv_set",int64_t(a.uv_set)},
+            {"surface",a.surface==gpu::pbr::SurfaceClass::World?"world":"vehicle"},{"cutout",a.cutout},
+            {"enabled",entry.enabled},{"use_global_parameters",entry.use_global_parameters},
+            {"parameters",PbrParametersTable(entry.parameters)}});
+    }
+    result.insert("materials",std::move(rows));return result;
 }
 
 // config/mc3_enhancements.toml beside the exe: the settings app.h lists under it. An earlier session's version of the
@@ -187,6 +310,17 @@ void Load() {
             float v = (*w)[f.key].value_or(*f.f);
             if (std::isfinite(v)) *f.f = std::clamp(v, f.lo, f.hi);
         }
+    if (const toml::table* c = t["capture"].as_table())
+        for (const GraphicsField& f : CaptureFields(s.capture)) {
+            if (f.f) {
+                float v = (*c)[f.key].value_or(*f.f);
+                if (std::isfinite(v)) *f.f = std::clamp(v, f.lo, f.hi);
+            }
+            if (f.b) *f.b = (*c)[f.key].value_or(*f.b);
+            if (f.u)
+                if (auto v = (*c)[f.key].value<int64_t>()) *f.u = uint32_t(std::clamp(*v, int64_t(f.lo), int64_t(f.hi)));
+        }
+    LoadPbr(t,s.pbr);
     LoadEnhancements(s, t["graphics"].as_table());
     s.render_percent = std::clamp(s.render_percent, 25u, 400u);
     s.width = std::min(s.width, resolution::kMaxDimension);
@@ -230,6 +364,14 @@ toml::table Table() {
     for (const GraphicsField& f : WorldFields(const_cast<Settings&>(s).world))
         w.insert(f.key, double(*f.f));
     t.insert("world", std::move(w));
+    toml::table c;
+    for (const GraphicsField& f : CaptureFields(const_cast<Settings&>(s).capture)) {
+        if (f.f) c.insert(f.key, double(*f.f));
+        if (f.b) c.insert(f.key, *f.b);
+        if (f.u) c.insert(f.key, int64_t(*f.u));
+    }
+    t.insert("capture", std::move(c));
+    t.insert("pbr",PbrTable(s.pbr));
     return t;
 }
 

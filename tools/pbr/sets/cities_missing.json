@@ -1,0 +1,6276 @@
+{
+"textures": [
+{
+"hash": "41BF8799D37D4DA3",
+"class": "facade"
+},
+{
+"hash": "8BB453A3BDAA940C",
+"class": "facade"
+},
+{
+"hash": "82751D4C7796E5C3",
+"class": "facade"
+},
+{
+"hash": "E7D9672CA81476B5",
+"class": "facade"
+},
+{
+"hash": "96289EC3324289D9",
+"class": "facade"
+},
+{
+"hash": "27C5743C4957E82F",
+"class": "road_asphalt"
+},
+{
+"hash": "EB234DA210DF6054",
+"class": "facade"
+},
+{
+"hash": "99E0960A5A26721D",
+"class": "facade"
+},
+{
+"hash": "4A7A8E4C3020B9A2",
+"class": "signage"
+},
+{
+"hash": "AE975F2B237FA639",
+"class": "facade"
+},
+{
+"hash": "715ED4D4F433209B",
+"class": "signage"
+},
+{
+"hash": "5E16A6D329E02753",
+"class": "facade"
+},
+{
+"hash": "785E7355B0E8CB90",
+"class": "facade"
+},
+{
+"hash": "A1A50B9A4A71019B",
+"class": "facade"
+},
+{
+"hash": "0D2661C97610E957",
+"class": "facade"
+},
+{
+"hash": "1AB4A6EE44E496E6",
+"class": "facade"
+},
+{
+"hash": "AB6FE7BB43E6D8D2",
+"class": "facade"
+},
+{
+"hash": "341E1C241049B5A9",
+"class": "facade"
+},
+{
+"hash": "0F97DF40ADDA9E7E",
+"class": "facade"
+},
+{
+"hash": "2E86D0375EBA741A",
+"class": "facade"
+},
+{
+"hash": "06C714D9B0F26301",
+"class": "facade"
+},
+{
+"hash": "2D02E17D4BC25168",
+"class": "signage"
+},
+{
+"hash": "691790073EB5DF93",
+"class": "facade"
+},
+{
+"hash": "CC0428C6E8139BB9",
+"class": "facade"
+},
+{
+"hash": "1477A3A5CA123A72",
+"class": "facade"
+},
+{
+"hash": "8655B3D5216CA66C",
+"class": "windows_night"
+},
+{
+"hash": "499FDE1510108BB5",
+"class": "facade"
+},
+{
+"hash": "05518E34BDB78E70",
+"class": "signage"
+},
+{
+"hash": "C234E425A1C3E35C",
+"class": "facade"
+},
+{
+"hash": "25FBDB4886BD725E",
+"class": "facade"
+},
+{
+"hash": "378FB12731EDAE3F",
+"class": "signage"
+},
+{
+"hash": "FC34B13F9B0CAF41",
+"class": "facade"
+},
+{
+"hash": "25C3FDE7BA466975",
+"class": "facade"
+},
+{
+"hash": "1764D581507E6809",
+"class": "facade"
+},
+{
+"hash": "7C9A885C081CAD6D",
+"class": "facade"
+},
+{
+"hash": "2DB59F1886A1EC77",
+"class": "signage"
+},
+{
+"hash": "9A03F59615B4C1B8",
+"class": "facade"
+},
+{
+"hash": "ED14AF660E6448BE",
+"class": "concrete"
+},
+{
+"hash": "F7B8E6FEA10A4494",
+"class": "facade"
+},
+{
+"hash": "56BC5E49F22955E6",
+"class": "facade"
+},
+{
+"hash": "8463D0BE04DBE0CF",
+"class": "signage"
+},
+{
+"hash": "FE19D217A8E9BB56",
+"class": "road_asphalt"
+},
+{
+"hash": "560ACB926BBDE49D",
+"class": "facade"
+},
+{
+"hash": "A1293EA3F7A07290",
+"class": "facade"
+},
+{
+"hash": "79A8BB065A6FB38A",
+"class": "facade"
+},
+{
+"hash": "27DAD034411AE4C7",
+"class": "facade"
+},
+{
+"hash": "7D23E4DADE93C5C3",
+"class": "facade"
+},
+{
+"hash": "BC0E42A7461A0712",
+"class": "facade"
+},
+{
+"hash": "9F5366CD9A53D214",
+"class": "facade"
+},
+{
+"hash": "28CDF46A04094D39",
+"class": "facade"
+},
+{
+"hash": "B9FB276337B47977",
+"class": "facade"
+},
+{
+"hash": "78074A6E5F05D11E",
+"class": "facade"
+},
+{
+"hash": "F55FE8CE4DD0A55A",
+"class": "facade"
+},
+{
+"hash": "69167E2759E9F251",
+"class": "facade"
+},
+{
+"hash": "C2750B9B2D750D5A",
+"class": "facade"
+},
+{
+"hash": "442B22167A57BDFD",
+"class": "facade"
+},
+{
+"hash": "A366651B516DB5B6",
+"class": "facade"
+},
+{
+"hash": "707AC9943ED1B919",
+"class": "facade"
+},
+{
+"hash": "7703C820666E8226",
+"class": "facade"
+},
+{
+"hash": "2F6DCD61A6F57912",
+"class": "signage"
+},
+{
+"hash": "5F5DF76181E5FFFB",
+"class": "signage"
+},
+{
+"hash": "CEAB62AFF61C49A5",
+"class": "facade"
+},
+{
+"hash": "4C16F841E508155E",
+"class": "facade"
+},
+{
+"hash": "42B8BC272D8D6300",
+"class": "facade"
+},
+{
+"hash": "D8888779A3913FE8",
+"class": "facade"
+},
+{
+"hash": "B7950BFEAB9B5B86",
+"class": "facade"
+},
+{
+"hash": "F9FA84EE0136294A",
+"class": "facade"
+},
+{
+"hash": "FEC32B23DEF8A878",
+"class": "facade"
+},
+{
+"hash": "A0F26C84EA6F9244",
+"class": "facade"
+},
+{
+"hash": "ED9A9B0DF3BFDD9E",
+"class": "facade"
+},
+{
+"hash": "2485C85897EEC6F0",
+"class": "facade"
+},
+{
+"hash": "21039371C1CA7D70",
+"class": "facade"
+},
+{
+"hash": "B66B7A70F921F474",
+"class": "facade"
+},
+{
+"hash": "FB1068E07F56418A",
+"class": "road_asphalt"
+},
+{
+"hash": "09FAEE40911002A4",
+"class": "facade"
+},
+{
+"hash": "48066A235E8D06FE",
+"class": "signage"
+},
+{
+"hash": "12F3279551F4FA28",
+"class": "signage"
+},
+{
+"hash": "ADE08CC82E929572",
+"class": "facade"
+},
+{
+"hash": "96A627B6B175A4D2",
+"class": "signage"
+},
+{
+"hash": "8D0CF87ADE6C8E1B",
+"class": "facade"
+},
+{
+"hash": "6A03A1F0474C8298",
+"class": "facade"
+},
+{
+"hash": "EF41AD59BD6063DC",
+"class": "facade"
+},
+{
+"hash": "73BC5CBE35E8B8EE",
+"class": "facade"
+},
+{
+"hash": "C1850F6F448C1CED",
+"class": "facade"
+},
+{
+"hash": "06D1A52AEEF24FE6",
+"class": "facade"
+},
+{
+"hash": "EC09FF1203AF2817",
+"class": "facade"
+},
+{
+"hash": "39E4EB32CFF1A36E",
+"class": "facade"
+},
+{
+"hash": "2451847657CB0F79",
+"class": "road_asphalt"
+},
+{
+"hash": "73369EC1201845B8",
+"class": "facade"
+},
+{
+"hash": "703155FE45E66772",
+"class": "facade"
+},
+{
+"hash": "E15A8CA5F3FF0E6B",
+"class": "signage"
+},
+{
+"hash": "1072A11C90E0B56C",
+"class": "facade"
+},
+{
+"hash": "8DA8F0214AE772FC",
+"class": "facade"
+},
+{
+"hash": "03BB5A6687EC1E77",
+"class": "terrain"
+},
+{
+"hash": "5C33E7E813920842",
+"class": "facade"
+},
+{
+"hash": "BCA0A2C92B1F0FA4",
+"class": "facade"
+},
+{
+"hash": "AF64824BA3EB6C61",
+"class": "facade"
+},
+{
+"hash": "0224B22A5D37711B",
+"class": "facade"
+},
+{
+"hash": "0370588BC519E636",
+"class": "facade"
+},
+{
+"hash": "93863E9CE4FCD687",
+"class": "facade"
+},
+{
+"hash": "DB0FD5837CB97FA9",
+"class": "facade"
+},
+{
+"hash": "1290789FACCBC90D",
+"class": "facade"
+},
+{
+"hash": "0BA8036251880502",
+"class": "facade"
+},
+{
+"hash": "CAB39B19B2E94C09",
+"class": "facade"
+},
+{
+"hash": "351715AC3A4D39CF",
+"class": "facade"
+},
+{
+"hash": "4852E4E7132062F7",
+"class": "facade"
+},
+{
+"hash": "3D04881E75412AE7",
+"class": "facade"
+},
+{
+"hash": "75A8534250BA222B",
+"class": "facade"
+},
+{
+"hash": "1163CC4EB02C97E7",
+"class": "facade"
+},
+{
+"hash": "6AEA795D954F6CED",
+"class": "facade"
+},
+{
+"hash": "35B03E3528164C52",
+"class": "facade"
+},
+{
+"hash": "E225916282BE067F",
+"class": "facade"
+},
+{
+"hash": "C814520C2F7454FC",
+"class": "facade"
+},
+{
+"hash": "149081F6CF43E5B1",
+"class": "facade"
+},
+{
+"hash": "580070D81E6D774A",
+"class": "concrete"
+},
+{
+"hash": "E63A0D129FA24EB7",
+"class": "signage"
+},
+{
+"hash": "1AB09D950ED0255D",
+"class": "facade"
+},
+{
+"hash": "9167C826FC51349C",
+"class": "concrete"
+},
+{
+"hash": "F35DD3B85A3613A1",
+"class": "facade"
+},
+{
+"hash": "0A6A1F3A99B4DF75",
+"class": "facade"
+},
+{
+"hash": "CEDD4B0CF7929815",
+"class": "road_asphalt"
+},
+{
+"hash": "2B7BB21DB5387341",
+"class": "facade"
+},
+{
+"hash": "3A87D4C65299ED88",
+"class": "facade"
+},
+{
+"hash": "116B1BCBA2D6C05C",
+"class": "facade"
+},
+{
+"hash": "8DE8FE893270FF5B",
+"class": "facade"
+},
+{
+"hash": "EBD7403C988E5AC2",
+"class": "facade"
+},
+{
+"hash": "414A997D2E6FF7C5",
+"class": "facade"
+},
+{
+"hash": "7A01C79BA8138DE5",
+"class": "facade"
+},
+{
+"hash": "460B324D28289885",
+"class": "signage"
+},
+{
+"hash": "58124829D32DA879",
+"class": "facade"
+},
+{
+"hash": "15DA7E4CF7B54565",
+"class": "facade"
+},
+{
+"hash": "966044C3B483BBCA",
+"class": "facade"
+},
+{
+"hash": "6FCE2E16A1C14BC0",
+"class": "facade"
+},
+{
+"hash": "31EF95AE311CC863",
+"class": "facade"
+},
+{
+"hash": "BD875393A2CAE41D",
+"class": "facade"
+},
+{
+"hash": "19A8D428A1DE5694",
+"class": "facade"
+},
+{
+"hash": "5E8B1CD3E5000FB5",
+"class": "facade"
+},
+{
+"hash": "FDD914FD1B875D7E",
+"class": "facade"
+},
+{
+"hash": "17550BFC0AB0BBAF",
+"class": "facade"
+},
+{
+"hash": "9F496C6804036953",
+"class": "facade"
+},
+{
+"hash": "E8BA34186907AD17",
+"class": "facade"
+},
+{
+"hash": "96CD26687322EA67",
+"class": "facade"
+},
+{
+"hash": "715C09B4195299F8",
+"class": "facade"
+},
+{
+"hash": "FADF731E15FE047E",
+"class": "facade"
+},
+{
+"hash": "DA0E8B5A26353140",
+"class": "facade"
+},
+{
+"hash": "AAD08B2B81CDB071",
+"class": "facade"
+},
+{
+"hash": "93FFF8B41A877BFA",
+"class": "facade"
+},
+{
+"hash": "2F11685623D4FE6A",
+"class": "road_asphalt"
+},
+{
+"hash": "484F5FFC19C8822D",
+"class": "facade"
+},
+{
+"hash": "6F76BCB97EFFBEAB",
+"class": "facade"
+},
+{
+"hash": "61E932359F6E75B1",
+"class": "concrete"
+},
+{
+"hash": "90556269C2EC2F9D",
+"class": "facade"
+},
+{
+"hash": "54F318EE024303E9",
+"class": "facade"
+},
+{
+"hash": "EE543DB50646C029",
+"class": "facade"
+},
+{
+"hash": "4F992C9E4C889757",
+"class": "facade"
+},
+{
+"hash": "817A761F90BDAB9F",
+"class": "signage"
+},
+{
+"hash": "159D6CD63C229624",
+"class": "facade"
+},
+{
+"hash": "8203D567FDF9E885",
+"class": "windows_night"
+},
+{
+"hash": "3DAD2A45A25C3F99",
+"class": "signage"
+},
+{
+"hash": "C8323BCF36859790",
+"class": "signage"
+},
+{
+"hash": "05AA86E31D9AF5FC",
+"class": "signage"
+},
+{
+"hash": "AA15E0FCC8317BF5",
+"class": "signage"
+},
+{
+"hash": "AEA8F87F500FB0A9",
+"class": "signage"
+},
+{
+"hash": "7FB5B80F5D7AEF77",
+"class": "terrain"
+},
+{
+"hash": "CD7451AAAC8D21E0",
+"class": "facade"
+},
+{
+"hash": "BEB4742DF942CB6D",
+"class": "facade"
+},
+{
+"hash": "ACA07FC4C98B0E4A",
+"class": "facade"
+},
+{
+"hash": "7460E2FEDDCAC9AC",
+"class": "facade"
+},
+{
+"hash": "8F4543F8A549DF07",
+"class": "facade"
+},
+{
+"hash": "37CC8ACEB711AC0A",
+"class": "facade"
+},
+{
+"hash": "3517F7D6077DE324",
+"class": "facade"
+},
+{
+"hash": "2861F99E79AB9E03",
+"class": "facade"
+},
+{
+"hash": "3AD25615B7E60DA9",
+"class": "signage"
+},
+{
+"hash": "483F5EB014C6A793",
+"class": "facade"
+},
+{
+"hash": "A4D4D1EABB0459AD",
+"class": "terrain"
+},
+{
+"hash": "73722E456F914F12",
+"class": "terrain"
+},
+{
+"hash": "D306C00DB00BFED8",
+"class": "terrain"
+},
+{
+"hash": "2F69FBEAEB36F0B6",
+"class": "terrain"
+},
+{
+"hash": "52159674410EA551",
+"class": "terrain"
+},
+{
+"hash": "DCE608D56727BA5F",
+"class": "signage"
+},
+{
+"hash": "51B18F1678518B54",
+"class": "facade"
+},
+{
+"hash": "10E51CC16F384A2B",
+"class": "facade"
+},
+{
+"hash": "95B9BDE9BFF78B38",
+"class": "facade"
+},
+{
+"hash": "ED92B3CF18ECECA6",
+"class": "facade"
+},
+{
+"hash": "057EF963127B84B0",
+"class": "windows_night"
+},
+{
+"hash": "8DB43CBCE3A4D03B",
+"class": "signage"
+},
+{
+"hash": "76A3C72A5076F554",
+"class": "signage"
+},
+{
+"hash": "3BCA6DB8A24BCB0E",
+"class": "facade"
+},
+{
+"hash": "0CCE9D8FEE2EA338",
+"class": "facade"
+},
+{
+"hash": "BB96AF1BA3AD8305",
+"class": "facade"
+},
+{
+"hash": "015746291B4CD59D",
+"class": "facade"
+},
+{
+"hash": "BE94158B77155B48",
+"class": "facade"
+},
+{
+"hash": "A75FCA091EF806AA",
+"class": "road_asphalt"
+},
+{
+"hash": "B0D0C2C06A207422",
+"class": "facade"
+},
+{
+"hash": "D6A0A5050273A915",
+"class": "road_asphalt"
+},
+{
+"hash": "2746D10B188703C8",
+"class": "facade"
+},
+{
+"hash": "0FE977ABCBC9C625",
+"class": "concrete"
+},
+{
+"hash": "9500DE6929C5E080",
+"class": "facade"
+},
+{
+"hash": "35A6BE6FD48A442F",
+"class": "facade"
+},
+{
+"hash": "8C753185808F12BF",
+"class": "facade"
+},
+{
+"hash": "11DD54DB76CD480A",
+"class": "facade"
+},
+{
+"hash": "0B02FF9E9830D9BE",
+"class": "facade"
+},
+{
+"hash": "C300AC7CF6C17DCC",
+"class": "facade"
+},
+{
+"hash": "E2DECECF63D6B6E2",
+"class": "facade"
+},
+{
+"hash": "6CF81C7A1AF3FBB3",
+"class": "facade"
+},
+{
+"hash": "F789338BCBE7E4B0",
+"class": "facade"
+},
+{
+"hash": "00507ECC3AD82EBC",
+"class": "facade"
+},
+{
+"hash": "3199CCD4021CE29F",
+"class": "signage"
+},
+{
+"hash": "1370C0E6BF2AEAF3",
+"class": "facade"
+},
+{
+"hash": "CF23F3254B9DFF1D",
+"class": "facade"
+},
+{
+"hash": "77F4EAD228C2C8C1",
+"class": "facade"
+},
+{
+"hash": "7354DFB39B0AF075",
+"class": "facade"
+},
+{
+"hash": "1D3607D8CDFD7A8D",
+"class": "facade"
+},
+{
+"hash": "849E98401CBF5CD4",
+"class": "facade"
+},
+{
+"hash": "13FC84993B4B493B",
+"class": "facade"
+},
+{
+"hash": "992A70BBD671EB76",
+"class": "facade"
+},
+{
+"hash": "F052DDCB1902F448",
+"class": "facade"
+},
+{
+"hash": "6FCCACF9157F02FC",
+"class": "concrete"
+},
+{
+"hash": "766C393AE01AB5D8",
+"class": "facade"
+},
+{
+"hash": "6F7A012FE77656AB",
+"class": "signage"
+},
+{
+"hash": "C4B0FD84B0BD9959",
+"class": "facade"
+},
+{
+"hash": "E020510DE7FCBE33",
+"class": "signage"
+},
+{
+"hash": "196EB8F0A60B36C5",
+"class": "facade"
+},
+{
+"hash": "D5AD93D763C5B1FC",
+"class": "facade"
+},
+{
+"hash": "FFE91A8EC9050D80",
+"class": "facade"
+},
+{
+"hash": "58D20626F6907DC5",
+"class": "facade"
+},
+{
+"hash": "325664D4E339B095",
+"class": "facade"
+},
+{
+"hash": "27E4A64426AF18FF",
+"class": "facade"
+},
+{
+"hash": "7BBFA4B093186ABD",
+"class": "facade"
+},
+{
+"hash": "5390A7D73584309A",
+"class": "facade"
+},
+{
+"hash": "51DAB02A04177925",
+"class": "facade"
+},
+{
+"hash": "978741C19930DE7F",
+"class": "facade"
+},
+{
+"hash": "622831D4A285D82F",
+"class": "facade"
+},
+{
+"hash": "613F805F5C2682DD",
+"class": "facade"
+},
+{
+"hash": "0A02D44BF73FDB08",
+"class": "facade"
+},
+{
+"hash": "475D492E73E26DA3",
+"class": "facade"
+},
+{
+"hash": "12FC7B092F6C1619",
+"class": "terrain"
+},
+{
+"hash": "FD52178791012ECF",
+"class": "facade"
+},
+{
+"hash": "A7E3F47AD69ECC3D",
+"class": "facade"
+},
+{
+"hash": "8A568D31E66CAA9B",
+"class": "facade"
+},
+{
+"hash": "7C088A40F7865350",
+"class": "facade"
+},
+{
+"hash": "2703DE5F44E3DD30",
+"class": "facade"
+},
+{
+"hash": "B0DADA5113C9A637",
+"class": "facade"
+},
+{
+"hash": "A823A330B2674962",
+"class": "facade"
+},
+{
+"hash": "637E09BA079BB129",
+"class": "facade"
+},
+{
+"hash": "D45C8E61E3858367",
+"class": "facade"
+},
+{
+"hash": "9E9ED8EE6668ABF9",
+"class": "facade"
+},
+{
+"hash": "EB2B90ECCD77BBDB",
+"class": "facade"
+},
+{
+"hash": "D4F54675D05B52AA",
+"class": "facade"
+},
+{
+"hash": "81A58C9BF0EEC099",
+"class": "facade"
+},
+{
+"hash": "87C1B255CBAA8527",
+"class": "concrete"
+},
+{
+"hash": "16156A7EC89E9F5D",
+"class": "facade"
+},
+{
+"hash": "238BECE9642F4A87",
+"class": "facade"
+},
+{
+"hash": "6DEF71A10FAE1740",
+"class": "facade"
+},
+{
+"hash": "3C579E5C32901B3A",
+"class": "facade"
+},
+{
+"hash": "8DBA76F978D7167C",
+"class": "facade"
+},
+{
+"hash": "D25FCF2D2F443BEF",
+"class": "facade"
+},
+{
+"hash": "A155B117EEB1A115",
+"class": "facade"
+},
+{
+"hash": "D0B52B0B2173861F",
+"class": "facade"
+},
+{
+"hash": "E7A1C54767D26781",
+"class": "concrete"
+},
+{
+"hash": "DE0DC04C010BC8C6",
+"class": "facade"
+},
+{
+"hash": "9608377B389D80BF",
+"class": "facade"
+},
+{
+"hash": "7C11870BEF0C6B73",
+"class": "facade"
+},
+{
+"hash": "84810BD29F3E3CF5",
+"class": "facade"
+},
+{
+"hash": "9947BAD9F09370CA",
+"class": "facade"
+},
+{
+"hash": "1BE8B87F076550CE",
+"class": "facade"
+},
+{
+"hash": "407A0F46CB007A3D",
+"class": "facade"
+},
+{
+"hash": "88808FAAE30D6684",
+"class": "facade"
+},
+{
+"hash": "D5D0F8EB43EB33A3",
+"class": "facade"
+},
+{
+"hash": "400A41B391D2115E",
+"class": "facade"
+},
+{
+"hash": "D8A103F5C77E98D1",
+"class": "facade"
+},
+{
+"hash": "ABBC6586ED7D2E47",
+"class": "facade"
+},
+{
+"hash": "3C9CF46D7A268BF9",
+"class": "facade"
+},
+{
+"hash": "BA4DCC808213046C",
+"class": "facade"
+},
+{
+"hash": "51F20F3C5A846350",
+"class": "facade"
+},
+{
+"hash": "4CEC20F32E596636",
+"class": "facade"
+},
+{
+"hash": "B0E6B7647529226D",
+"class": "facade"
+},
+{
+"hash": "D9B08C71370D8FA3",
+"class": "facade"
+},
+{
+"hash": "AFB4D48142F8F765",
+"class": "facade"
+},
+{
+"hash": "E9DD65EC9E05F110",
+"class": "facade"
+},
+{
+"hash": "D38E27CBFFB20C2D",
+"class": "facade"
+},
+{
+"hash": "54D77DB2A1A7100C",
+"class": "facade"
+},
+{
+"hash": "83675484DE3BEE06",
+"class": "signage"
+},
+{
+"hash": "E0BF65B907642448",
+"class": "facade"
+},
+{
+"hash": "2FF589381A5199F5",
+"class": "facade"
+},
+{
+"hash": "19D04A8501702DE3",
+"class": "facade"
+},
+{
+"hash": "69984CE103BCE345",
+"class": "facade"
+},
+{
+"hash": "085E206022538822",
+"class": "facade"
+},
+{
+"hash": "CEDBF7B0DFA73C7F",
+"class": "facade"
+},
+{
+"hash": "D3C33AE16A30BF37",
+"class": "facade"
+},
+{
+"hash": "0ECDF0CD344952B4",
+"class": "facade"
+},
+{
+"hash": "08D8F05AD7AB54E9",
+"class": "facade"
+},
+{
+"hash": "4B674074DE4CDF94",
+"class": "facade"
+},
+{
+"hash": "13F018D81F1E1C4D",
+"class": "rider"
+},
+{
+"hash": "8F48E993DFC82DAD",
+"class": "rider"
+},
+{
+"hash": "969F1E6D9524F182",
+"class": "rider"
+},
+{
+"hash": "8DDDBA575ABF2373",
+"class": "rider"
+},
+{
+"hash": "C508A8098BD9118A",
+"class": "rider"
+},
+{
+"hash": "86B451F59F77C138",
+"class": "rider"
+},
+{
+"hash": "D6428DBA96A4391B",
+"class": "rider"
+},
+{
+"hash": "A3AFAA3A8C5EBB49",
+"class": "rider"
+},
+{
+"hash": "2B147D481468FB70",
+"class": "rider"
+},
+{
+"hash": "C92F1E5B97379213",
+"class": "rider"
+},
+{
+"hash": "DBAC6B83E297E366",
+"class": "rider"
+},
+{
+"hash": "D46FFE1C835DC489",
+"class": "rider"
+},
+{
+"hash": "786B2F15849795DF",
+"class": "rider"
+},
+{
+"hash": "807AA33B70D63662",
+"class": "rider"
+},
+{
+"hash": "124C226ED544E6EE",
+"class": "rider"
+},
+{
+"hash": "B0A4BD623209234E",
+"class": "rider"
+},
+{
+"hash": "463ED3177FE07761",
+"class": "signage"
+},
+{
+"hash": "B636691D847DECF8",
+"class": "facade"
+},
+{
+"hash": "0378763B10F70586",
+"class": "facade"
+},
+{
+"hash": "48DA50F9443DD71C",
+"class": "facade"
+},
+{
+"hash": "0D80F0EFE4E0A321",
+"class": "concrete"
+},
+{
+"hash": "230E651D34AF219A",
+"class": "facade"
+},
+{
+"hash": "23635E8C96C03EEF",
+"class": "concrete"
+},
+{
+"hash": "28BC6B58DF3F2ACC",
+"class": "facade"
+},
+{
+"hash": "F4CB837BCE5790BF",
+"class": "concrete"
+},
+{
+"hash": "90E971DF3F5525AB",
+"class": "concrete"
+},
+{
+"hash": "0DFEC53C3C747993",
+"class": "signage"
+},
+{
+"hash": "68757041D877A539",
+"class": "facade"
+},
+{
+"hash": "7B5E020B6261FCEE",
+"class": "facade"
+},
+{
+"hash": "5E4B4234946E6332",
+"class": "road_asphalt"
+},
+{
+"hash": "E0DCD744BDAC841B",
+"class": "facade"
+},
+{
+"hash": "2A8F2F020ED507EF",
+"class": "facade"
+},
+{
+"hash": "20367B9C685368A8",
+"class": "concrete"
+},
+{
+"hash": "D713D89B58F00A4F",
+"class": "facade"
+},
+{
+"hash": "C09F56DC68AFEA3D",
+"class": "signage"
+},
+{
+"hash": "FA6D2BCCB79BDF30",
+"class": "facade"
+},
+{
+"hash": "E283F5AD810E87A6",
+"class": "facade"
+},
+{
+"hash": "B5A7D088E8A5C21B",
+"class": "facade"
+},
+{
+"hash": "5F443C8E4B9D4F2E",
+"class": "facade"
+},
+{
+"hash": "6119C771F9E55313",
+"class": "facade"
+},
+{
+"hash": "CFC0471B83BA2A25",
+"class": "facade"
+},
+{
+"hash": "9E56095C9D149245",
+"class": "facade"
+},
+{
+"hash": "BDA88ECFBF8C9F9C",
+"class": "facade"
+},
+{
+"hash": "44A803596B1A6337",
+"class": "signage"
+},
+{
+"hash": "B00DA2C702C3A03E",
+"class": "concrete"
+},
+{
+"hash": "5CEE14417CDDDD29",
+"class": "concrete"
+},
+{
+"hash": "84B469727C615071",
+"class": "road_asphalt"
+},
+{
+"hash": "80C2E46A715757C8",
+"class": "facade"
+},
+{
+"hash": "ACF4E0F54EA559C1",
+"class": "facade"
+},
+{
+"hash": "C744BC62F8D63743",
+"class": "facade"
+},
+{
+"hash": "FD5A971EEE12B6D9",
+"class": "facade"
+},
+{
+"hash": "A0DD6066EC17348A",
+"class": "facade"
+},
+{
+"hash": "3DA765AD57A7DF2D",
+"class": "facade"
+},
+{
+"hash": "5DD1E859B9735C28",
+"class": "signage"
+},
+{
+"hash": "F2B769367715F789",
+"class": "facade"
+},
+{
+"hash": "F4DF530184815507",
+"class": "facade"
+},
+{
+"hash": "0DDDA17E24265968",
+"class": "facade"
+},
+{
+"hash": "590CDB160602AC35",
+"class": "facade"
+},
+{
+"hash": "B9D8C34C3D2D46B4",
+"class": "signage"
+},
+{
+"hash": "9CCBBE7E8FC456C5",
+"class": "facade"
+},
+{
+"hash": "474F5D0E0EE32E1F",
+"class": "signage"
+},
+{
+"hash": "3AB95F94A282BE08",
+"class": "facade"
+},
+{
+"hash": "0DC9C1D42BD71EAB",
+"class": "facade"
+},
+{
+"hash": "72A59A071CD2A688",
+"class": "signage"
+},
+{
+"hash": "4E7B3C2D4C71C061",
+"class": "facade"
+},
+{
+"hash": "F560C008A5DE4F3B",
+"class": "facade"
+},
+{
+"hash": "B3F6FC7277A3A9B0",
+"class": "facade"
+},
+{
+"hash": "50F26AD1BEE0F203",
+"class": "terrain"
+},
+{
+"hash": "46A1D68F3B10C803",
+"class": "signage"
+},
+{
+"hash": "46C5AB2D52C3D1A8",
+"class": "facade"
+},
+{
+"hash": "9FDC9CAA4582EEF2",
+"class": "facade"
+},
+{
+"hash": "64EE5585205A9947",
+"class": "windows_night"
+},
+{
+"hash": "27BC634F1619FB35",
+"class": "facade"
+},
+{
+"hash": "CDFBE1DF3EC96C40",
+"class": "facade"
+},
+{
+"hash": "BDE6CEA600A335BD",
+"class": "road_asphalt"
+},
+{
+"hash": "2C01A0F6C18609E9",
+"class": "facade"
+},
+{
+"hash": "EC3EFC5F911495F6",
+"class": "facade"
+},
+{
+"hash": "71F8CA9F996067F3",
+"class": "facade"
+},
+{
+"hash": "4FD83D82613AF513",
+"class": "facade"
+},
+{
+"hash": "72B516CFCED6D2EA",
+"class": "facade"
+},
+{
+"hash": "3630C6899FD10CE5",
+"class": "facade"
+},
+{
+"hash": "9D6DDC367993D2A9",
+"class": "facade"
+},
+{
+"hash": "B45C21EAB311606D",
+"class": "facade"
+},
+{
+"hash": "C508016F3AE6ADB2",
+"class": "facade"
+},
+{
+"hash": "74B58B68AD701703",
+"class": "facade"
+},
+{
+"hash": "717CC7711E795BE4",
+"class": "concrete"
+},
+{
+"hash": "CC2D0DB8978B698D",
+"class": "concrete"
+},
+{
+"hash": "599FBEEA7E4A81EA",
+"class": "road_asphalt"
+},
+{
+"hash": "A3EA6535BC738F16",
+"class": "road_asphalt"
+},
+{
+"hash": "E3FDDCA54DD7B97E",
+"class": "facade"
+},
+{
+"hash": "5FE26C4724EF8291",
+"class": "facade"
+},
+{
+"hash": "D431C152E71CDA32",
+"class": "signage"
+},
+{
+"hash": "21B5DC45CCDE3D79",
+"class": "facade"
+},
+{
+"hash": "FD73746E631CDBBD",
+"class": "facade"
+},
+{
+"hash": "DA379E3F4581C680",
+"class": "facade"
+},
+{
+"hash": "B291B567F06AFD7C",
+"class": "facade"
+},
+{
+"hash": "934687B95B853811",
+"class": "signage"
+},
+{
+"hash": "4AE0B36372D83E7B",
+"class": "facade"
+},
+{
+"hash": "8DC9C365B3976944",
+"class": "signage"
+},
+{
+"hash": "ED89AC66DAFAC138",
+"class": "facade"
+},
+{
+"hash": "5DBC41FC78E8EDE2",
+"class": "road_asphalt"
+},
+{
+"hash": "CBCEF13E770B9C0C",
+"class": "road_asphalt"
+},
+{
+"hash": "B409B0E45EF1649A",
+"class": "road_asphalt"
+},
+{
+"hash": "702AD4C79AF66675",
+"class": "road_asphalt"
+},
+{
+"hash": "322296059E58B905",
+"class": "road_asphalt"
+},
+{
+"hash": "121301D4506DF57B",
+"class": "road_asphalt"
+},
+{
+"hash": "5687C852B0D9BF12",
+"class": "facade"
+},
+{
+"hash": "6166B2EBB57A1402",
+"class": "signage"
+},
+{
+"hash": "A7CE5698564D3622",
+"class": "facade"
+},
+{
+"hash": "63ED626BAEDF8153",
+"class": "signage"
+},
+{
+"hash": "E1B97FDFDA859BEC",
+"class": "facade"
+},
+{
+"hash": "7C0A09CEF22D00B2",
+"class": "signage"
+},
+{
+"hash": "A4407BC6DB9546F8",
+"class": "facade"
+},
+{
+"hash": "5CBE0F704D5EB019",
+"class": "road_asphalt"
+},
+{
+"hash": "97044579FCAA64C2",
+"class": "road_asphalt"
+},
+{
+"hash": "A47D6D4DA33545E5",
+"class": "terrain"
+},
+{
+"hash": "355FF2C032562A3B",
+"class": "signage"
+},
+{
+"hash": "DAD92ED21C1A74EC",
+"class": "signage"
+},
+{
+"hash": "7CDA713D10A1D0ED",
+"class": "terrain"
+},
+{
+"hash": "AD80E2FBE983D76B",
+"class": "facade"
+},
+{
+"hash": "59F9F902AD58DC00",
+"class": "facade"
+},
+{
+"hash": "C6010787BBE630C9",
+"class": "facade"
+},
+{
+"hash": "ECE8C93533374E09",
+"class": "signage"
+},
+{
+"hash": "4E7C4BA908ECA665",
+"class": "facade"
+},
+{
+"hash": "E7F60F60D38D0553",
+"class": "facade"
+},
+{
+"hash": "54D03EDD1D5F0AB3",
+"class": "facade"
+},
+{
+"hash": "AD538F65D1D3644C",
+"class": "facade"
+},
+{
+"hash": "098BFD6CE38E44E3",
+"class": "facade"
+},
+{
+"hash": "4C533FCEDFF8ABC6",
+"class": "signage"
+},
+{
+"hash": "16C91AECB3805350",
+"class": "concrete"
+},
+{
+"hash": "601C094BDF5C2024",
+"class": "facade"
+},
+{
+"hash": "B45C2A4395432FD3",
+"class": "facade"
+},
+{
+"hash": "A3E8F60995E271D6",
+"class": "facade"
+},
+{
+"hash": "9D38AD01551E8BC3",
+"class": "facade"
+},
+{
+"hash": "FB8B8A03B8B4DB90",
+"class": "facade"
+},
+{
+"hash": "7240D453576C5499",
+"class": "facade"
+},
+{
+"hash": "798D320C16B76DB8",
+"class": "foliage"
+},
+{
+"hash": "6438DCECDBDCCF9C",
+"class": "facade"
+},
+{
+"hash": "DF595D7CBA1FE980",
+"class": "facade"
+},
+{
+"hash": "F7590C5575E4E70D",
+"class": "facade"
+},
+{
+"hash": "270A5E19999FCC5B",
+"class": "facade"
+},
+{
+"hash": "EA5E56CFF74E1DB0",
+"class": "facade"
+},
+{
+"hash": "F1B85C7F4A89A31E",
+"class": "signage"
+},
+{
+"hash": "E6DF3F52ED702A08",
+"class": "concrete"
+},
+{
+"hash": "EC0551BBB3C9412F",
+"class": "signage"
+},
+{
+"hash": "F28A4C6FFAE8C5CC",
+"class": "facade"
+},
+{
+"hash": "F85A0D82E3A3F1C7",
+"class": "signage"
+},
+{
+"hash": "FCB01C3C7600355E",
+"class": "facade"
+},
+{
+"hash": "9E73714E3447F684",
+"class": "facade"
+},
+{
+"hash": "EABACA6ED4FE0A4A",
+"class": "concrete"
+},
+{
+"hash": "50A3F08D63A4E9A7",
+"class": "facade"
+},
+{
+"hash": "D875811A3BBD7928",
+"class": "signage"
+},
+{
+"hash": "300046BD35B28074",
+"class": "signage"
+},
+{
+"hash": "E5775A86445C2C2C",
+"class": "facade"
+},
+{
+"hash": "D8F0B3E53AA1592F",
+"class": "facade"
+},
+{
+"hash": "DE8D60891615DCF3",
+"class": "signage"
+},
+{
+"hash": "3A31ADDDA892A137",
+"class": "windows_night"
+},
+{
+"hash": "2DEF637DE565223F",
+"class": "facade"
+},
+{
+"hash": "08168A7E1DE5B562",
+"class": "facade"
+},
+{
+"hash": "3A39CB84C0AA3137",
+"class": "road_asphalt"
+},
+{
+"hash": "94DDF04ECD677C0B",
+"class": "facade"
+},
+{
+"hash": "3C92F729D0954C69",
+"class": "facade"
+},
+{
+"hash": "A45395EB84C2D778",
+"class": "facade"
+},
+{
+"hash": "64743FF6AA146FB0",
+"class": "facade"
+},
+{
+"hash": "5638238F2E2EAFE0",
+"class": "road_asphalt"
+},
+{
+"hash": "6D7271562333601E",
+"class": "road_asphalt"
+},
+{
+"hash": "981B93896B24378E",
+"class": "facade"
+},
+{
+"hash": "D3803A3DD391F3EC",
+"class": "facade"
+},
+{
+"hash": "F956A5BDACB3A3A9",
+"class": "facade"
+},
+{
+"hash": "C031B797B6D6DDA2",
+"class": "facade"
+},
+{
+"hash": "A599B0A2D77C7BE6",
+"class": "signage"
+},
+{
+"hash": "621E0258F0C0BA7E",
+"class": "facade"
+},
+{
+"hash": "ECBF3AE09964E1C3",
+"class": "concrete"
+},
+{
+"hash": "F60B576C4EB65BB8",
+"class": "facade"
+},
+{
+"hash": "5E8B2417E7C47C18",
+"class": "facade"
+},
+{
+"hash": "3093EF197123EBA5",
+"class": "facade"
+},
+{
+"hash": "B1215A94131DD976",
+"class": "signage"
+},
+{
+"hash": "7003F78EFF3DC99A",
+"class": "facade"
+},
+{
+"hash": "CAE2AE5FEEDFDAD8",
+"class": "windows_night"
+},
+{
+"hash": "86A9544A753518E0",
+"class": "facade"
+},
+{
+"hash": "8830916B37EA2B48",
+"class": "facade"
+},
+{
+"hash": "077F3C60839B96CC",
+"class": "facade"
+},
+{
+"hash": "417416D67A9FBB68",
+"class": "facade"
+},
+{
+"hash": "1E542BA0F706E85F",
+"class": "facade"
+},
+{
+"hash": "9E5293C839DAFC18",
+"class": "facade"
+},
+{
+"hash": "5472FF731332341D",
+"class": "signage"
+},
+{
+"hash": "D29BCD23717ABF1B",
+"class": "facade"
+},
+{
+"hash": "89CD6679331FB65E",
+"class": "signage"
+},
+{
+"hash": "CA560EBEEC825A0B",
+"class": "signage"
+},
+{
+"hash": "EF197899B997D755",
+"class": "road_asphalt"
+},
+{
+"hash": "135188107AD8372C",
+"class": "facade"
+},
+{
+"hash": "312692E377B8238F",
+"class": "facade"
+},
+{
+"hash": "0A48999E4CC8848A",
+"class": "facade"
+},
+{
+"hash": "EBDA321A5CAADD4E",
+"class": "facade"
+},
+{
+"hash": "ED0DD6C0A9BDA68F",
+"class": "facade"
+},
+{
+"hash": "47A536881063A00B",
+"class": "facade"
+},
+{
+"hash": "DBD816021F07E7C0",
+"class": "concrete"
+},
+{
+"hash": "D1FEC9B02FFB82EC",
+"class": "signage"
+},
+{
+"hash": "D84E2C2954DC518E",
+"class": "road_asphalt"
+},
+{
+"hash": "E27FD67964451E1C",
+"class": "facade"
+},
+{
+"hash": "C5D09E9D96218347",
+"class": "terrain"
+},
+{
+"hash": "215F772351BF65C0",
+"class": "facade"
+},
+{
+"hash": "D772E2A43D47B056",
+"class": "road_asphalt"
+},
+{
+"hash": "03264C4CE522F00B",
+"class": "facade"
+},
+{
+"hash": "FEF6044EA2AFF3A9",
+"class": "signage"
+},
+{
+"hash": "772A1E7F6D236862",
+"class": "foliage"
+},
+{
+"hash": "1B8CD5063F3B4724",
+"class": "facade"
+},
+{
+"hash": "BFD79570956FEAD5",
+"class": "terrain"
+},
+{
+"hash": "D35723E51DC11E3F",
+"class": "facade"
+},
+{
+"hash": "89AC826E290CCF80",
+"class": "concrete"
+},
+{
+"hash": "54BBD3980ABC00BA",
+"class": "road_asphalt"
+},
+{
+"hash": "4DAD7D352400BB38",
+"class": "concrete"
+},
+{
+"hash": "B701F69A9474D136",
+"class": "facade"
+},
+{
+"hash": "7342F99F1EC0F962",
+"class": "road_asphalt"
+},
+{
+"hash": "CBC76294A0065D55",
+"class": "road_asphalt"
+},
+{
+"hash": "61B58B848E6ED350",
+"class": "facade"
+},
+{
+"hash": "DD84EEBC08DCA4CC",
+"class": "signage"
+},
+{
+"hash": "A97482BFE4A93613",
+"class": "facade"
+},
+{
+"hash": "C9EF4AD9D7DD4EA6",
+"class": "facade"
+},
+{
+"hash": "CCB791381C58F1E0",
+"class": "facade"
+},
+{
+"hash": "45CCB862EA567E0A",
+"class": "facade"
+},
+{
+"hash": "0CA76172B558D113",
+"class": "facade"
+},
+{
+"hash": "520FC065715FC336",
+"class": "facade"
+},
+{
+"hash": "31CD826570DAC48E",
+"class": "facade"
+},
+{
+"hash": "E40156E29E21D5FA",
+"class": "facade"
+},
+{
+"hash": "E47B899D316E0E01",
+"class": "facade"
+},
+{
+"hash": "BC3D83295CEB8A28",
+"class": "facade"
+},
+{
+"hash": "8707056E5DF45097",
+"class": "facade"
+},
+{
+"hash": "21C2560BC73EC6C4",
+"class": "facade"
+},
+{
+"hash": "7630F2E4EEFB43DC",
+"class": "facade"
+},
+{
+"hash": "4A6835A10127FF08",
+"class": "facade"
+},
+{
+"hash": "D6DBFD618A905A74",
+"class": "signage"
+},
+{
+"hash": "46869026FAAAF631",
+"class": "facade"
+},
+{
+"hash": "4F51D35125AF6D50",
+"class": "facade"
+},
+{
+"hash": "3A0A03441964082E",
+"class": "facade"
+},
+{
+"hash": "972B3C26AEC654F9",
+"class": "concrete"
+},
+{
+"hash": "0BA61567AFB9EF8E",
+"class": "foliage"
+},
+{
+"hash": "8A28700B480E9120",
+"class": "signage"
+},
+{
+"hash": "1E4BE560FF5CB5B6",
+"class": "signage"
+},
+{
+"hash": "A2CCD6AE354DF8A4",
+"class": "signage"
+},
+{
+"hash": "DED88BB25B55E1D2",
+"class": "facade"
+},
+{
+"hash": "69A3FEFADDAA5FE8",
+"class": "signage"
+},
+{
+"hash": "5E104E3CBF3CF1C9",
+"class": "signage"
+},
+{
+"hash": "1EA0D10125BDC7CF",
+"class": "signage"
+},
+{
+"hash": "C5CD1917C982805E",
+"class": "facade"
+},
+{
+"hash": "AB274EF3EB1FE02B",
+"class": "facade"
+},
+{
+"hash": "1C96D38EC058DCC7",
+"class": "facade"
+},
+{
+"hash": "BAC0D07C6BEDE972",
+"class": "signage"
+},
+{
+"hash": "E67FCCC47CDFD5B8",
+"class": "facade"
+},
+{
+"hash": "544B2ECD030A45BA",
+"class": "facade"
+},
+{
+"hash": "47CDD2C1783728B4",
+"class": "facade"
+},
+{
+"hash": "77A8C7B68E2A80C7",
+"class": "facade"
+},
+{
+"hash": "1F0D7261BBB3E0C4",
+"class": "facade"
+},
+{
+"hash": "E2E7D5891542015A",
+"class": "facade"
+},
+{
+"hash": "E8DCD23CFD48ADE3",
+"class": "signage"
+},
+{
+"hash": "38980B3D690BAC60",
+"class": "facade"
+},
+{
+"hash": "AAC2728EEA8185E5",
+"class": "road_asphalt"
+},
+{
+"hash": "1368EAE9DE815D59",
+"class": "facade"
+},
+{
+"hash": "9159906A6D0E9F86",
+"class": "facade"
+},
+{
+"hash": "7ADC4B1E29CA7636",
+"class": "signage"
+},
+{
+"hash": "8231AA4945DF098C",
+"class": "facade"
+},
+{
+"hash": "A3834B479E24EC3C",
+"class": "facade"
+},
+{
+"hash": "B360F262D036BCC0",
+"class": "facade"
+},
+{
+"hash": "91F8392EE4CD6A32",
+"class": "facade"
+},
+{
+"hash": "2221B41326EF1576",
+"class": "facade"
+},
+{
+"hash": "524D087E7442667E",
+"class": "concrete"
+},
+{
+"hash": "BC2BD0DC19533C26",
+"class": "signage"
+},
+{
+"hash": "4C41578AD6A5B099",
+"class": "facade"
+},
+{
+"hash": "722A25D24DBFB6B6",
+"class": "signage"
+},
+{
+"hash": "2BF800504D886701",
+"class": "facade"
+},
+{
+"hash": "A5E776DECB0425BA",
+"class": "signage"
+},
+{
+"hash": "781B8440FF8C3280",
+"class": "concrete"
+},
+{
+"hash": "03F3DD236E3C5243",
+"class": "signage"
+},
+{
+"hash": "35CF71955F45608C",
+"class": "concrete"
+},
+{
+"hash": "167B0CF9A8D38267",
+"class": "facade"
+},
+{
+"hash": "4DA43C7BECDFFE98",
+"class": "facade"
+},
+{
+"hash": "3C66D17E5194CC2A",
+"class": "facade"
+},
+{
+"hash": "7B36DE2116F49B29",
+"class": "facade"
+},
+{
+"hash": "77EEF05988D7CF46",
+"class": "facade"
+},
+{
+"hash": "A34BC03D2EEA74DF",
+"class": "facade"
+},
+{
+"hash": "6F8AADFECF6ABC6F",
+"class": "facade"
+},
+{
+"hash": "A453644B4A9295E9",
+"class": "facade"
+},
+{
+"hash": "DD03F36C53B2C9B4",
+"class": "facade"
+},
+{
+"hash": "726F047D5A826696",
+"class": "facade"
+},
+{
+"hash": "47CF1345DC8FFED9",
+"class": "facade"
+},
+{
+"hash": "76BB0BCBC22188F6",
+"class": "signage"
+},
+{
+"hash": "EF4E7C0AA7F3B3B1",
+"class": "facade"
+},
+{
+"hash": "5A97D97C2A22C10A",
+"class": "facade"
+},
+{
+"hash": "D71A8D1C25D8FD19",
+"class": "facade"
+},
+{
+"hash": "746A0E2982C19EB8",
+"class": "facade"
+},
+{
+"hash": "7C54011150CAEB15",
+"class": "facade"
+},
+{
+"hash": "4AD25A0C69F5336B",
+"class": "concrete"
+},
+{
+"hash": "73CC368B27E6020C",
+"class": "facade"
+},
+{
+"hash": "6FA7F24FB58B7163",
+"class": "facade"
+},
+{
+"hash": "B8D891E3227FADEE",
+"class": "signage"
+},
+{
+"hash": "5A96DE114BBD7772",
+"class": "facade"
+},
+{
+"hash": "445F1DF63329AF12",
+"class": "facade"
+},
+{
+"hash": "A285E2D7972DF315",
+"class": "concrete"
+},
+{
+"hash": "70B357698D63C4FC",
+"class": "facade"
+},
+{
+"hash": "EF862CBBA8A63F88",
+"class": "facade"
+},
+{
+"hash": "13182DE994EABB4F",
+"class": "facade"
+},
+{
+"hash": "A2ECBA04115E1FD3",
+"class": "facade"
+},
+{
+"hash": "EB71886D85CC6B4E",
+"class": "facade"
+},
+{
+"hash": "69FE3420A1E55A7E",
+"class": "facade"
+},
+{
+"hash": "C52D88BB48BC3477",
+"class": "facade"
+},
+{
+"hash": "41AF8E44DBE9F391",
+"class": "facade"
+},
+{
+"hash": "1B374D123DC53F07",
+"class": "facade"
+},
+{
+"hash": "8BAD86284D29E34D",
+"class": "facade"
+},
+{
+"hash": "E11DC1E92EBAD4BB",
+"class": "facade"
+},
+{
+"hash": "891033B496FF11C0",
+"class": "signage"
+},
+{
+"hash": "D7DF4AD5676A1790",
+"class": "facade"
+},
+{
+"hash": "2729887979FC416D",
+"class": "facade"
+},
+{
+"hash": "42D405A1CAE887D0",
+"class": "facade"
+},
+{
+"hash": "8564C7972F0F3225",
+"class": "facade"
+},
+{
+"hash": "FD1C485C809F3D7F",
+"class": "facade"
+},
+{
+"hash": "BA3FEDCD363F5D2F",
+"class": "signage"
+},
+{
+"hash": "E0DE1342EF3A81EF",
+"class": "signage"
+},
+{
+"hash": "B8A4724CCE797A18",
+"class": "road_asphalt"
+},
+{
+"hash": "D2CB959C657537D4",
+"class": "road_asphalt"
+},
+{
+"hash": "1616575E77F5D997",
+"class": "facade"
+},
+{
+"hash": "36E7DFA01A64A5DC",
+"class": "facade"
+},
+{
+"hash": "0A39F82CF3CC4646",
+"class": "signage"
+},
+{
+"hash": "84E91663253A034D",
+"class": "facade"
+},
+{
+"hash": "9C48B3977D0C283E",
+"class": "signage"
+},
+{
+"hash": "013BD7F2757ABEF0",
+"class": "facade"
+},
+{
+"hash": "E26FF9EA7CE2FADD",
+"class": "facade"
+},
+{
+"hash": "78C75385C67C0D2E",
+"class": "facade"
+},
+{
+"hash": "6B000ED24E22B19E",
+"class": "facade"
+},
+{
+"hash": "B1631B8CC0687629",
+"class": "facade"
+},
+{
+"hash": "473BDDCD69818BD4",
+"class": "facade"
+},
+{
+"hash": "A162BB75E4D4D56A",
+"class": "facade"
+},
+{
+"hash": "ABA20D055EB94344",
+"class": "facade"
+},
+{
+"hash": "7DCF94167247E3D1",
+"class": "signage"
+},
+{
+"hash": "801A9FDF6F74962D",
+"class": "facade"
+},
+{
+"hash": "A2FB653FE4E499B3",
+"class": "facade"
+},
+{
+"hash": "B277378795055474",
+"class": "facade"
+},
+{
+"hash": "BB2501704772689B",
+"class": "signage"
+},
+{
+"hash": "307BFCE5880592DD",
+"class": "signage"
+},
+{
+"hash": "236E353B74A0F6AF",
+"class": "concrete"
+},
+{
+"hash": "4C319B2136A22C6C",
+"class": "facade"
+},
+{
+"hash": "D6113CDB3026524F",
+"class": "signage"
+},
+{
+"hash": "B1F330248BB6AFCF",
+"class": "facade"
+},
+{
+"hash": "6396A10B94F9B090",
+"class": "facade"
+},
+{
+"hash": "DB0257B70C093532",
+"class": "facade"
+},
+{
+"hash": "466A7D96872A4542",
+"class": "facade"
+},
+{
+"hash": "8DE23769F20EEFC3",
+"class": "facade"
+},
+{
+"hash": "33EA20FE8B7AD706",
+"class": "facade"
+},
+{
+"hash": "0F46E2F4A84E5F2E",
+"class": "terrain"
+},
+{
+"hash": "7AC5FC5B8F8C2E04",
+"class": "facade"
+},
+{
+"hash": "8545F8799C46231E",
+"class": "facade"
+},
+{
+"hash": "68C5D7A803736B16",
+"class": "facade"
+},
+{
+"hash": "026E3D9BD05E6A89",
+"class": "facade"
+},
+{
+"hash": "DEEC0005AD62352F",
+"class": "signage"
+},
+{
+"hash": "2DA62A25B29EEA8F",
+"class": "facade"
+},
+{
+"hash": "71E70BEAB508D074",
+"class": "facade"
+},
+{
+"hash": "CA3403208FDAD0CE",
+"class": "signage"
+},
+{
+"hash": "C0C60B03965FB1D1",
+"class": "facade"
+},
+{
+"hash": "5AC264606BB87265",
+"class": "signage"
+},
+{
+"hash": "BCC769E05CC05EA1",
+"class": "facade"
+},
+{
+"hash": "2E826FFF2D4BE58F",
+"class": "facade"
+},
+{
+"hash": "F200195C9043D317",
+"class": "facade"
+},
+{
+"hash": "8E4AB1B13FCB8A85",
+"class": "facade"
+},
+{
+"hash": "6AFFA989FC398EBF",
+"class": "facade"
+},
+{
+"hash": "8490F24E401DD51C",
+"class": "facade"
+},
+{
+"hash": "B427E0F7DC2A8136",
+"class": "facade"
+},
+{
+"hash": "00EA3447F0FC2FD4",
+"class": "road_asphalt"
+},
+{
+"hash": "B1BF671C1E22D0C4",
+"class": "facade"
+},
+{
+"hash": "77AADDEF0CC8B033",
+"class": "facade"
+},
+{
+"hash": "114DC33932689607",
+"class": "road_asphalt"
+},
+{
+"hash": "60532C28CA8C0484",
+"class": "facade"
+},
+{
+"hash": "2542D74C48EE6BD0",
+"class": "facade"
+},
+{
+"hash": "8D10F00389665039",
+"class": "road_asphalt"
+},
+{
+"hash": "E2923D949BDAB9A7",
+"class": "road_asphalt"
+},
+{
+"hash": "DE35DE67E225F9CA",
+"class": "road_asphalt"
+},
+{
+"hash": "3C6F5AAED66C4EAC",
+"class": "road_asphalt"
+},
+{
+"hash": "53DDF77E37204A0F",
+"class": "facade"
+},
+{
+"hash": "96B2B2A96022ECEA",
+"class": "facade"
+},
+{
+"hash": "6CCF18E37871EA49",
+"class": "road_asphalt"
+},
+{
+"hash": "5E923CA4B016F061",
+"class": "facade"
+},
+{
+"hash": "7708B27D894E59C3",
+"class": "facade"
+},
+{
+"hash": "B372EB6C532BC64C",
+"class": "facade"
+},
+{
+"hash": "BB562E6477543483",
+"class": "facade"
+},
+{
+"hash": "55690DCFD617D253",
+"class": "road_asphalt"
+},
+{
+"hash": "964A60B5F14C237D",
+"class": "road_asphalt"
+},
+{
+"hash": "52392046933489F2",
+"class": "road_asphalt"
+},
+{
+"hash": "3451105B2501F77C",
+"class": "road_asphalt"
+},
+{
+"hash": "0B7B257D6C06D5AB",
+"class": "facade"
+},
+{
+"hash": "77DE860AFA0F7577",
+"class": "road_asphalt"
+},
+{
+"hash": "B1B6DC8A96ABF10D",
+"class": "facade"
+},
+{
+"hash": "54B4845C60D147A5",
+"class": "facade"
+},
+{
+"hash": "2AA93A5B47280791",
+"class": "facade"
+},
+{
+"hash": "3D27E6ED4CFBB879",
+"class": "facade"
+},
+{
+"hash": "BC00E2F486728CC1",
+"class": "facade"
+},
+{
+"hash": "A17BBF3936E9DE56",
+"class": "facade"
+},
+{
+"hash": "047A5EAC1D85F23B",
+"class": "facade"
+},
+{
+"hash": "B1F9E7F5EB47BF37",
+"class": "facade"
+},
+{
+"hash": "2A5D3196D43BBA6B",
+"class": "facade"
+},
+{
+"hash": "E5873ADE4208D19A",
+"class": "facade"
+},
+{
+"hash": "9C76D168832F48B1",
+"class": "facade"
+},
+{
+"hash": "997E20823F0A57ED",
+"class": "facade"
+},
+{
+"hash": "B542C7433BF7ACD7",
+"class": "facade"
+},
+{
+"hash": "44C757F3585B5559",
+"class": "facade"
+},
+{
+"hash": "03A0B6D9ADC330C0",
+"class": "facade"
+},
+{
+"hash": "244EEF84FF94C486",
+"class": "facade"
+},
+{
+"hash": "ABC40DEE6536AB00",
+"class": "facade"
+},
+{
+"hash": "658FA3BF23F52B8A",
+"class": "facade"
+},
+{
+"hash": "6BFB40AFAA06FD51",
+"class": "facade"
+},
+{
+"hash": "BFCE384FD1389079",
+"class": "facade"
+},
+{
+"hash": "A877F2AD955A22DD",
+"class": "rider"
+},
+{
+"hash": "6D2DD5423CE07B72",
+"class": "rider"
+},
+{
+"hash": "7AE121992721CBA4",
+"class": "rider"
+},
+{
+"hash": "2D5835261D7B2D88",
+"class": "rider"
+},
+{
+"hash": "E3F530CE583550BF",
+"class": "rider"
+},
+{
+"hash": "CA4C339A60655818",
+"class": "rider"
+},
+{
+"hash": "F37FB822AA41C8B4",
+"class": "rider"
+},
+{
+"hash": "A58C71D0E324AC28",
+"class": "rider"
+},
+{
+"hash": "63F9C72A69C61F5B",
+"class": "rider"
+},
+{
+"hash": "732BE2442405E113",
+"class": "rider"
+},
+{
+"hash": "0F6CFA32EC4152E3",
+"class": "rider"
+},
+{
+"hash": "3068064955526C3A",
+"class": "rider"
+},
+{
+"hash": "9BA5456A5D393231",
+"class": "rider"
+},
+{
+"hash": "38E8F278BC29E745",
+"class": "rider"
+},
+{
+"hash": "D0286A2788353C85",
+"class": "rider"
+},
+{
+"hash": "9DAAEE2FCB4A08B2",
+"class": "rider"
+},
+{
+"hash": "CBD7BFB78140A4B4",
+"class": "signage"
+},
+{
+"hash": "25723C24A63AA9B6",
+"class": "facade"
+},
+{
+"hash": "FD5B2F6262E5FFA3",
+"class": "signage"
+},
+{
+"hash": "ABD61CDC6B49ED85",
+"class": "signage"
+},
+{
+"hash": "B92170439CE3914A",
+"class": "facade"
+},
+{
+"hash": "2347885926B92BF6",
+"class": "facade"
+},
+{
+"hash": "791028E66D5D28FE",
+"class": "signage"
+},
+{
+"hash": "7FADA557795CA727",
+"class": "facade"
+},
+{
+"hash": "13E1551F6B1D8D00",
+"class": "facade"
+},
+{
+"hash": "13F6C917844D1FB8",
+"class": "facade"
+},
+{
+"hash": "76092AD8D1E91037",
+"class": "concrete"
+},
+{
+"hash": "05E5034739AB06B9",
+"class": "facade"
+},
+{
+"hash": "DF5284F9CCDEED3C",
+"class": "road_asphalt"
+},
+{
+"hash": "CA0DCAE5DE13E33E",
+"class": "road_asphalt"
+},
+{
+"hash": "742D8CDB7A4478D9",
+"class": "facade"
+},
+{
+"hash": "3F529BEB3FE08270",
+"class": "road_asphalt"
+},
+{
+"hash": "4E5FBDA870DCF698",
+"class": "facade"
+},
+{
+"hash": "4C921BBFA1222F0D",
+"class": "facade"
+},
+{
+"hash": "48A4885FBD8DF715",
+"class": "facade"
+},
+{
+"hash": "7899A9E83562ED24",
+"class": "facade"
+},
+{
+"hash": "36037496B204BC2A",
+"class": "facade"
+},
+{
+"hash": "1D5C8D4EF86A161C",
+"class": "facade"
+},
+{
+"hash": "5DDDA2ECB64F5B47",
+"class": "facade"
+},
+{
+"hash": "62902A83F7CF46CE",
+"class": "road_asphalt"
+},
+{
+"hash": "4FB31F6076E95D66",
+"class": "facade"
+},
+{
+"hash": "80157D02C2F9FAA0",
+"class": "concrete"
+},
+{
+"hash": "2A5933C3867CB73F",
+"class": "concrete"
+},
+{
+"hash": "F549E29F9C381245",
+"class": "facade"
+},
+{
+"hash": "437D7D2635C8C2BA",
+"class": "signage"
+},
+{
+"hash": "40AED6318217A617",
+"class": "facade"
+},
+{
+"hash": "9D3FC76FFD456EA4",
+"class": "facade"
+},
+{
+"hash": "CFDA2E763B8960C5",
+"class": "foliage"
+},
+{
+"hash": "B59DEBB6D2BE808D",
+"class": "facade"
+},
+{
+"hash": "CF17DA3E5CD5864B",
+"class": "road_asphalt"
+},
+{
+"hash": "8EE9896B8E2981E8",
+"class": "facade"
+},
+{
+"hash": "AEE0D6BA8A56EAE4",
+"class": "road_asphalt"
+},
+{
+"hash": "9B05E3F1EA3DACA0",
+"class": "facade"
+},
+{
+"hash": "177BA0CC12BA56CF",
+"class": "road_asphalt"
+},
+{
+"hash": "38928A011BEC10B6",
+"class": "facade"
+},
+{
+"hash": "BC9A45496AD20DFC",
+"class": "facade"
+},
+{
+"hash": "B8505849E3443C79",
+"class": "facade"
+},
+{
+"hash": "B879C4D9E512E459",
+"class": "facade"
+},
+{
+"hash": "F0C6C2CF5834798D",
+"class": "facade"
+},
+{
+"hash": "E076B47501475132",
+"class": "facade"
+},
+{
+"hash": "FFB472A6C7DF46EB",
+"class": "concrete"
+},
+{
+"hash": "2D2D34A4ADAD4A7F",
+"class": "facade"
+},
+{
+"hash": "233CC33B8078A86B",
+"class": "facade"
+},
+{
+"hash": "4DF622E6FF19A609",
+"class": "windows_night"
+},
+{
+"hash": "E5831D8FB14E6B7D",
+"class": "facade"
+},
+{
+"hash": "E7101B6C8E1F8BC2",
+"class": "facade"
+},
+{
+"hash": "B4656DA4E06612CF",
+"class": "facade"
+},
+{
+"hash": "D7CAA5D668501669",
+"class": "facade"
+},
+{
+"hash": "E62FA01347B36B9F",
+"class": "signage"
+},
+{
+"hash": "0D1D1BD79DE280C6",
+"class": "road_asphalt"
+},
+{
+"hash": "F67742BF470C736D",
+"class": "road_asphalt"
+},
+{
+"hash": "079CCD03A8DA4ACB",
+"class": "facade"
+},
+{
+"hash": "2791649D544BAB0C",
+"class": "facade"
+},
+{
+"hash": "FBE255B31566C726",
+"class": "road_asphalt"
+},
+{
+"hash": "36D98BE7AC9244D7",
+"class": "facade"
+},
+{
+"hash": "0F547CAD3C805579",
+"class": "facade"
+},
+{
+"hash": "9EB3539842044C4F",
+"class": "facade"
+},
+{
+"hash": "17F9E0B6FD43AF8A",
+"class": "foliage"
+},
+{
+"hash": "02C9F68CC5D35266",
+"class": "concrete"
+},
+{
+"hash": "32180ED8C413C27A",
+"class": "concrete"
+},
+{
+"hash": "A40C74FC37D8BB45",
+"class": "facade"
+},
+{
+"hash": "16102FC1E86064D6",
+"class": "terrain"
+},
+{
+"hash": "5D423748F1DF6F27",
+"class": "facade"
+},
+{
+"hash": "4BD16E9FC09446B5",
+"class": "signage"
+},
+{
+"hash": "5C503B9E73B4E8F8",
+"class": "facade"
+},
+{
+"hash": "B0D6E7697618286F",
+"class": "facade"
+},
+{
+"hash": "4BA9B8E086EAF2DB",
+"class": "facade"
+},
+{
+"hash": "D83704C33ED03927",
+"class": "facade"
+},
+{
+"hash": "E9C4E5696640F4FA",
+"class": "facade"
+},
+{
+"hash": "A282AD22239A727D",
+"class": "signage"
+},
+{
+"hash": "F3CCB8E168085787",
+"class": "signage"
+},
+{
+"hash": "ACC70AAEF018040D",
+"class": "signage"
+},
+{
+"hash": "3C060F18090EA693",
+"class": "windows_night"
+},
+{
+"hash": "9CCC8321E1265B1D",
+"class": "signage"
+},
+{
+"hash": "1A1FDFAF4FFB383A",
+"class": "facade"
+},
+{
+"hash": "68CAB86A9802C2DE",
+"class": "facade"
+},
+{
+"hash": "7257D6C760240530",
+"class": "facade"
+},
+{
+"hash": "E865767CBE687FAD",
+"class": "facade"
+},
+{
+"hash": "6D7D53D4D4242274",
+"class": "signage"
+},
+{
+"hash": "F2C43F82A4F0261B",
+"class": "facade"
+},
+{
+"hash": "9C7F87E92A12C35B",
+"class": "facade"
+},
+{
+"hash": "8F53D3A15D2B3A83",
+"class": "facade"
+},
+{
+"hash": "EBAC970D27423503",
+"class": "facade"
+},
+{
+"hash": "4BF48EEF8048C047",
+"class": "facade"
+},
+{
+"hash": "408B6C93DBCD4DB6",
+"class": "facade"
+},
+{
+"hash": "034185C27F515244",
+"class": "concrete"
+},
+{
+"hash": "F2DCEBD5FCB16FBF",
+"class": "facade"
+},
+{
+"hash": "1F727644557F9992",
+"class": "road_asphalt"
+},
+{
+"hash": "5737EA65ADA46456",
+"class": "road_asphalt"
+},
+{
+"hash": "142C259437702DD2",
+"class": "facade"
+},
+{
+"hash": "F4AABDA0A8D2EAFC",
+"class": "facade"
+},
+{
+"hash": "3D1C378AD7A4109E",
+"class": "facade"
+},
+{
+"hash": "136CB7B9047EF8A4",
+"class": "facade"
+},
+{
+"hash": "0BD7A983421E708C",
+"class": "facade"
+},
+{
+"hash": "0B26153AB773F21B",
+"class": "facade"
+},
+{
+"hash": "37C65F1EF6E55D61",
+"class": "facade"
+},
+{
+"hash": "874A72BB13DE4C0E",
+"class": "facade"
+},
+{
+"hash": "9A5C2301A0670410",
+"class": "road_asphalt"
+},
+{
+"hash": "408B787DACA9D15E",
+"class": "road_asphalt"
+},
+{
+"hash": "965082E7B14C08F2",
+"class": "road_asphalt"
+},
+{
+"hash": "A57A1BF0B5976402",
+"class": "facade"
+},
+{
+"hash": "E881E65A809B76E4",
+"class": "signage"
+},
+{
+"hash": "A59613E51B1760AB",
+"class": "facade"
+},
+{
+"hash": "EE52C1A6F674AA58",
+"class": "facade"
+},
+{
+"hash": "5D2A10416BB67FA5",
+"class": "facade"
+},
+{
+"hash": "58061D8BD018B691",
+"class": "facade"
+},
+{
+"hash": "8F11CFC98A67E1B7",
+"class": "facade"
+},
+{
+"hash": "EC9A64883ACA1CBB",
+"class": "facade"
+},
+{
+"hash": "9911349551A3CA5F",
+"class": "facade"
+},
+{
+"hash": "0787711F2FF27355",
+"class": "facade"
+},
+{
+"hash": "ECF98588377CDEC0",
+"class": "facade"
+},
+{
+"hash": "4C257AFFD37A2859",
+"class": "facade"
+},
+{
+"hash": "6D8C8158657F6414",
+"class": "facade"
+},
+{
+"hash": "84F4D8B8FBACABD5",
+"class": "facade"
+},
+{
+"hash": "7DFE8B876FB004EF",
+"class": "facade"
+},
+{
+"hash": "646979188B2DD8F0",
+"class": "signage"
+},
+{
+"hash": "7D81109F176E59C4",
+"class": "facade"
+},
+{
+"hash": "B9A8EBEE1519FACE",
+"class": "signage"
+},
+{
+"hash": "EEB23004D5DFCED6",
+"class": "signage"
+},
+{
+"hash": "4F5E488AD82319EA",
+"class": "facade"
+},
+{
+"hash": "7BB10C6A2F8D3E4B",
+"class": "facade"
+},
+{
+"hash": "F9613B6AFFA1686F",
+"class": "facade"
+},
+{
+"hash": "3AF1ADF9B8D2A57A",
+"class": "concrete"
+},
+{
+"hash": "DCF253C0C4623930",
+"class": "concrete"
+},
+{
+"hash": "7B0C2F7E67A82041",
+"class": "facade"
+},
+{
+"hash": "7FEA2B56F48D81AD",
+"class": "facade"
+},
+{
+"hash": "9B6EFE54251DC811",
+"class": "facade"
+},
+{
+"hash": "B9068F78B2C065C9",
+"class": "facade"
+},
+{
+"hash": "52DC0C112CEF07D6",
+"class": "facade"
+},
+{
+"hash": "FA3C5D1E0AA28D71",
+"class": "facade"
+},
+{
+"hash": "924A9576072805F4",
+"class": "facade"
+},
+{
+"hash": "6D92F521145B8B11",
+"class": "facade"
+},
+{
+"hash": "3BAFD621C85C7E2A",
+"class": "facade"
+},
+{
+"hash": "FEB9578DF8AF323B",
+"class": "facade"
+},
+{
+"hash": "6E541FCC7E435C0E",
+"class": "facade"
+},
+{
+"hash": "A5B962615790495D",
+"class": "facade"
+},
+{
+"hash": "D405896A56B0A82D",
+"class": "facade"
+},
+{
+"hash": "29699491F0E5FF6A",
+"class": "signage"
+},
+{
+"hash": "A352A9CA9633EDF3",
+"class": "facade"
+},
+{
+"hash": "9937616A44F8F02F",
+"class": "signage"
+},
+{
+"hash": "308F4A3ADAEB6F8C",
+"class": "signage"
+},
+{
+"hash": "7B62B81FACC5CC0F",
+"class": "facade"
+},
+{
+"hash": "E1A0D0D7B8A408D6",
+"class": "facade"
+},
+{
+"hash": "CFEF48485EF30085",
+"class": "concrete"
+},
+{
+"hash": "00CB0ED2EED097F2",
+"class": "facade"
+},
+{
+"hash": "ECCC527BC68BB7F7",
+"class": "facade"
+},
+{
+"hash": "EA317EA634446268",
+"class": "facade"
+},
+{
+"hash": "1C48C3132140EBA1",
+"class": "facade"
+},
+{
+"hash": "01B9C7949B50F508",
+"class": "concrete"
+},
+{
+"hash": "B377E056BCD94D60",
+"class": "facade"
+},
+{
+"hash": "B9A22221ED5AEE8B",
+"class": "facade"
+},
+{
+"hash": "8FA999C88F9FDF57",
+"class": "facade"
+},
+{
+"hash": "A265BDF99E43A5B5",
+"class": "facade"
+},
+{
+"hash": "D09C441ADFE47BD3",
+"class": "facade"
+},
+{
+"hash": "F5725E651DDF6D5E",
+"class": "signage"
+},
+{
+"hash": "1AD94BE8E84CC5DE",
+"class": "signage"
+},
+{
+"hash": "FCAF76B05F730DF5",
+"class": "facade"
+},
+{
+"hash": "3C721100B801C6E2",
+"class": "concrete"
+},
+{
+"hash": "90668C8CA438BF24",
+"class": "facade"
+},
+{
+"hash": "6A01055DE61A0A26",
+"class": "concrete"
+},
+{
+"hash": "0163A003942BEF57",
+"class": "facade"
+},
+{
+"hash": "0FBD892A0FC4C9AB",
+"class": "facade"
+},
+{
+"hash": "14EAF29411AE1C85",
+"class": "facade"
+},
+{
+"hash": "5C4F0361F9DFBEDC",
+"class": "facade"
+},
+{
+"hash": "0CADE1B423E5A199",
+"class": "concrete"
+},
+{
+"hash": "258AAD549C1E7E70",
+"class": "facade"
+},
+{
+"hash": "FDC2C8D96FCF1F2E",
+"class": "facade"
+},
+{
+"hash": "DFC70EE48CE2B437",
+"class": "facade"
+},
+{
+"hash": "1F0EAE4F990337B3",
+"class": "signage"
+},
+{
+"hash": "BB8DB906291810EE",
+"class": "road_asphalt"
+},
+{
+"hash": "499E2F980601A485",
+"class": "road_asphalt"
+},
+{
+"hash": "07A8016A368FD6FF",
+"class": "road_asphalt"
+},
+{
+"hash": "907D578E3D10D1AE",
+"class": "facade"
+},
+{
+"hash": "BF28CDFC04E41E1F",
+"class": "signage"
+},
+{
+"hash": "2231B9D1DFA4E20B",
+"class": "signage"
+},
+{
+"hash": "BE395B5EDB940513",
+"class": "facade"
+},
+{
+"hash": "DD31C63C52D8F9C5",
+"class": "facade"
+},
+{
+"hash": "4F94ED303B6F0C87",
+"class": "facade"
+},
+{
+"hash": "78F8DEE93A48E972",
+"class": "facade"
+},
+{
+"hash": "B5B739404778D0CA",
+"class": "facade"
+},
+{
+"hash": "C1DA846D3DACE4EA",
+"class": "facade"
+},
+{
+"hash": "1B016F474964AAF8",
+"class": "facade"
+},
+{
+"hash": "66D89C62C3A970B4",
+"class": "facade"
+},
+{
+"hash": "E49EA1CEF1C54561",
+"class": "facade"
+},
+{
+"hash": "4D74D2E4BAFFD428",
+"class": "signage"
+},
+{
+"hash": "A7967A7E73142A5F",
+"class": "road_asphalt"
+},
+{
+"hash": "527FBBE863D2A58B",
+"class": "facade"
+},
+{
+"hash": "215636A0EBA87304",
+"class": "facade"
+},
+{
+"hash": "C467B265A08DC453",
+"class": "facade"
+},
+{
+"hash": "C51AB6EEC71C3764",
+"class": "signage"
+},
+{
+"hash": "DA00B49F3007489D",
+"class": "signage"
+},
+{
+"hash": "27F81464E4B5BB07",
+"class": "windows_night"
+},
+{
+"hash": "D4E30FBF89E56DD6",
+"class": "windows_night"
+},
+{
+"hash": "1458645D05C7139A",
+"class": "facade"
+},
+{
+"hash": "7572C5E54B0ED723",
+"class": "facade"
+},
+{
+"hash": "3431F98CC5E005C2",
+"class": "signage"
+},
+{
+"hash": "EFA8E54EBC47BE6E",
+"class": "facade"
+},
+{
+"hash": "D6AFA25C135DC755",
+"class": "facade"
+},
+{
+"hash": "0F0517A5483B8145",
+"class": "facade"
+},
+{
+"hash": "FB7A34E1C2F7099F",
+"class": "facade"
+},
+{
+"hash": "59B343600DD33210",
+"class": "facade"
+},
+{
+"hash": "A443CF9FCFC133D0",
+"class": "facade"
+},
+{
+"hash": "6563DFA2C973A19C",
+"class": "signage"
+},
+{
+"hash": "7D525822FB24166F",
+"class": "facade"
+},
+{
+"hash": "5A32F8CEE22B7F47",
+"class": "facade"
+},
+{
+"hash": "96B5F1A931FF6B22",
+"class": "facade"
+},
+{
+"hash": "9E00217C0CF8D1C4",
+"class": "facade"
+},
+{
+"hash": "15E655A1624D75DF",
+"class": "signage"
+},
+{
+"hash": "A5839DCEF6B3BDBC",
+"class": "facade"
+},
+{
+"hash": "148DBD4FD8D8E8ED",
+"class": "foliage"
+},
+{
+"hash": "56142719EC717E58",
+"class": "facade"
+},
+{
+"hash": "A37DB9C305BE3B6E",
+"class": "signage"
+},
+{
+"hash": "4ACE1A1B715A3AA1",
+"class": "facade"
+},
+{
+"hash": "442AC195653C5812",
+"class": "signage"
+},
+{
+"hash": "52BC0254938899C7",
+"class": "facade"
+},
+{
+"hash": "BEB53FA70014DAEC",
+"class": "facade"
+},
+{
+"hash": "59C8520C25D2E460",
+"class": "concrete"
+},
+{
+"hash": "901A9022F3C29418",
+"class": "signage"
+},
+{
+"hash": "6E0111BBB07825D1",
+"class": "facade"
+},
+{
+"hash": "39A54967AE5A171E",
+"class": "signage"
+},
+{
+"hash": "53C5EAF26BA33C46",
+"class": "concrete"
+},
+{
+"hash": "8F2E90450CA490FA",
+"class": "facade"
+},
+{
+"hash": "CB1EDFB45D4F106E",
+"class": "facade"
+},
+{
+"hash": "13C89510415CC550",
+"class": "road_asphalt"
+},
+{
+"hash": "B1CEA5A275AF9603",
+"class": "road_asphalt"
+},
+{
+"hash": "19B5A70E017488FA",
+"class": "facade"
+},
+{
+"hash": "8C5993D91108A290",
+"class": "facade"
+},
+{
+"hash": "56938FA47666D595",
+"class": "facade"
+},
+{
+"hash": "2072DA8ACBF248EA",
+"class": "facade"
+},
+{
+"hash": "F0E39F634479A541",
+"class": "facade"
+},
+{
+"hash": "8E95FA732DD2F707",
+"class": "concrete"
+},
+{
+"hash": "A1EE970DDE167ACC",
+"class": "facade"
+},
+{
+"hash": "2F3FEFEF3089F9F3",
+"class": "concrete"
+},
+{
+"hash": "FDFA1820CB1447BD",
+"class": "facade"
+},
+{
+"hash": "23AE998E93157911",
+"class": "facade"
+},
+{
+"hash": "7B9819B27B069AD3",
+"class": "facade"
+},
+{
+"hash": "15237D1876B0FA00",
+"class": "facade"
+},
+{
+"hash": "FBCDDEE101FF7381",
+"class": "road_asphalt"
+},
+{
+"hash": "371FC3FD92006815",
+"class": "facade"
+},
+{
+"hash": "F5A1DFA58E6F54F7",
+"class": "concrete"
+},
+{
+"hash": "A42DB3D45EE7C3ED",
+"class": "facade"
+},
+{
+"hash": "0B15AEE88262F12B",
+"class": "signage"
+},
+{
+"hash": "FDB26861B0A81F9B",
+"class": "facade"
+},
+{
+"hash": "940C0250B329C10D",
+"class": "facade"
+},
+{
+"hash": "16C490385AF64D57",
+"class": "facade"
+},
+{
+"hash": "EA62E6AC463C24C8",
+"class": "concrete"
+},
+{
+"hash": "99DB2C1EC26509E0",
+"class": "concrete"
+},
+{
+"hash": "81F88D8A7FD0112B",
+"class": "facade"
+},
+{
+"hash": "00A676B32C376F63",
+"class": "signage"
+},
+{
+"hash": "37C06E82A3D97BED",
+"class": "facade"
+},
+{
+"hash": "E8AAB01FB73CCAAD",
+"class": "facade"
+},
+{
+"hash": "09DD4D7D25914947",
+"class": "signage"
+},
+{
+"hash": "42C26C48C6CDB0F9",
+"class": "facade"
+},
+{
+"hash": "75F199005DA97A4E",
+"class": "facade"
+},
+{
+"hash": "CCA197CD3FBFCE03",
+"class": "facade"
+},
+{
+"hash": "73DD8C19053E838F",
+"class": "facade"
+},
+{
+"hash": "BA60D11B7786C108",
+"class": "facade"
+},
+{
+"hash": "DA60DB8F878FF1E5",
+"class": "facade"
+},
+{
+"hash": "5D60C200FCE98C99",
+"class": "signage"
+},
+{
+"hash": "8234EDC257425085",
+"class": "facade"
+},
+{
+"hash": "C4586251BA3D592E",
+"class": "signage"
+},
+{
+"hash": "D8CF060BE46AD518",
+"class": "facade"
+},
+{
+"hash": "CABE871E29B31422",
+"class": "facade"
+},
+{
+"hash": "75843F22988DAA78",
+"class": "facade"
+},
+{
+"hash": "21765A4BACE25468",
+"class": "facade"
+},
+{
+"hash": "B7C6D11E4C2DE6C7",
+"class": "terrain"
+},
+{
+"hash": "6CA3E0D96310F26C",
+"class": "concrete"
+},
+{
+"hash": "ACA503FFA3259A80",
+"class": "facade"
+},
+{
+"hash": "1695092BE30731E2",
+"class": "foliage"
+},
+{
+"hash": "1A5475F516DCE8B2",
+"class": "signage"
+},
+{
+"hash": "CCC85C776E6D2617",
+"class": "facade"
+},
+{
+"hash": "20719E97133A470D",
+"class": "road_asphalt"
+},
+{
+"hash": "428CD947CC71D652",
+"class": "signage"
+},
+{
+"hash": "CB1E6783001CA586",
+"class": "signage"
+},
+{
+"hash": "DFB087A34293C19F",
+"class": "facade"
+},
+{
+"hash": "4210696466766D4D",
+"class": "facade"
+},
+{
+"hash": "73AE26FFC0F56C93",
+"class": "concrete"
+},
+{
+"hash": "EEF21347B6323471",
+"class": "facade"
+},
+{
+"hash": "EDC94DE424348FDA",
+"class": "signage"
+},
+{
+"hash": "75F434B46A0E9EDA",
+"class": "signage"
+},
+{
+"hash": "9E13D864191CFFAD",
+"class": "facade"
+},
+{
+"hash": "DB8DD92917E8AB24",
+"class": "signage"
+},
+{
+"hash": "28AA980DF71DD23F",
+"class": "facade"
+},
+{
+"hash": "59391B864B2A1C17",
+"class": "facade"
+},
+{
+"hash": "F9CF586ABD0784B6",
+"class": "facade"
+},
+{
+"hash": "33A756D3CD6B4893",
+"class": "facade"
+},
+{
+"hash": "ABBB4C3AB0850769",
+"class": "facade"
+},
+{
+"hash": "984472F40FA6DB15",
+"class": "signage"
+},
+{
+"hash": "7CA520466D47412D",
+"class": "facade"
+},
+{
+"hash": "6D8B2FF457B4C03F",
+"class": "facade"
+},
+{
+"hash": "37DD7B201344B674",
+"class": "facade"
+},
+{
+"hash": "181C6543656BFC0B",
+"class": "facade"
+},
+{
+"hash": "D99234998649DF30",
+"class": "facade"
+},
+{
+"hash": "66F080617AF51648",
+"class": "facade"
+},
+{
+"hash": "472AF1EEE9D8538B",
+"class": "signage"
+},
+{
+"hash": "3573A052B3B2D964",
+"class": "signage"
+},
+{
+"hash": "5AA81794B110C5D9",
+"class": "facade"
+},
+{
+"hash": "55D710AE2629F355",
+"class": "facade"
+},
+{
+"hash": "63B80817EDD62BAB",
+"class": "facade"
+},
+{
+"hash": "64B089D5E3DDC10C",
+"class": "facade"
+},
+{
+"hash": "C495F46D0114F1D0",
+"class": "facade"
+},
+{
+"hash": "6BD0B27593CFB307",
+"class": "concrete"
+},
+{
+"hash": "FB844D2A4D37A6C3",
+"class": "signage"
+},
+{
+"hash": "EB8A2D49E0E3D1C7",
+"class": "facade"
+},
+{
+"hash": "C7573C642D1A3A13",
+"class": "facade"
+},
+{
+"hash": "D691119863FBC680",
+"class": "concrete"
+},
+{
+"hash": "E670A454F1F5F6D8",
+"class": "facade"
+},
+{
+"hash": "06C6AC5D748AD1F3",
+"class": "signage"
+},
+{
+"hash": "714854B2D23A1996",
+"class": "facade"
+},
+{
+"hash": "92F2CB759B336D62",
+"class": "facade"
+},
+{
+"hash": "54A6F19175006C90",
+"class": "facade"
+},
+{
+"hash": "84D6691EAB7137CF",
+"class": "facade"
+},
+{
+"hash": "1516187AAF46B06F",
+"class": "facade"
+},
+{
+"hash": "ED2EC3495AE59F13",
+"class": "signage"
+},
+{
+"hash": "E7AAE7E5C782DB58",
+"class": "facade"
+},
+{
+"hash": "D23D6F93B939C74F",
+"class": "facade"
+},
+{
+"hash": "72121E386ADB256C",
+"class": "facade"
+},
+{
+"hash": "5309CFAE10A28CDA",
+"class": "facade"
+},
+{
+"hash": "48838E1FFD122760",
+"class": "facade"
+},
+{
+"hash": "AF68AE61BACF5603",
+"class": "signage"
+},
+{
+"hash": "B9915E3B1FA20362",
+"class": "facade"
+},
+{
+"hash": "6B6735AF203E8658",
+"class": "facade"
+},
+{
+"hash": "B3C1CEAB01A1BD11",
+"class": "facade"
+},
+{
+"hash": "97BE7583C981FD3D",
+"class": "facade"
+},
+{
+"hash": "F4F600016A32ACD5",
+"class": "facade"
+},
+{
+"hash": "88F8A7702C0CC3F6",
+"class": "road_asphalt"
+},
+{
+"hash": "260A3280F4679E27",
+"class": "road_asphalt"
+},
+{
+"hash": "F0CE622F1B450B46",
+"class": "road_asphalt"
+},
+{
+"hash": "B68B67E887F4A358",
+"class": "road_asphalt"
+},
+{
+"hash": "64891C0FFA09BF66",
+"class": "facade"
+},
+{
+"hash": "BF7F91C704FB993A",
+"class": "road_asphalt"
+},
+{
+"hash": "B0BE258173EA47DF",
+"class": "road_asphalt"
+},
+{
+"hash": "FB4826C9877798E1",
+"class": "road_asphalt"
+},
+{
+"hash": "AC953961A19B35D0",
+"class": "road_asphalt"
+},
+{
+"hash": "A94FFD4F1AF3F6D7",
+"class": "road_asphalt"
+},
+{
+"hash": "01C4BE9E06042FF1",
+"class": "road_asphalt"
+},
+{
+"hash": "F516FB01B1509E64",
+"class": "road_asphalt"
+},
+{
+"hash": "B56668AD596F905C",
+"class": "road_asphalt"
+},
+{
+"hash": "6FCD30AF68685F8E",
+"class": "facade"
+},
+{
+"hash": "3E53333B566B5D0A",
+"class": "facade"
+},
+{
+"hash": "28B60E067CC9F9ED",
+"class": "facade"
+},
+{
+"hash": "F75C7050E3097FF7",
+"class": "facade"
+},
+{
+"hash": "16919548A1585999",
+"class": "facade"
+},
+{
+"hash": "46E2518EC10E4245",
+"class": "road_asphalt"
+},
+{
+"hash": "CB985A1EA70D1167",
+"class": "road_asphalt"
+},
+{
+"hash": "74E61023BEA45303",
+"class": "facade"
+},
+{
+"hash": "DC9A96838586BBAE",
+"class": "road_asphalt"
+},
+{
+"hash": "30F3579CFA9E0B7E",
+"class": "road_asphalt"
+},
+{
+"hash": "215AE6ACB8FAB692",
+"class": "facade"
+},
+{
+"hash": "19877FD813075ECF",
+"class": "road_asphalt"
+},
+{
+"hash": "0202E2E3585CA54E",
+"class": "road_asphalt"
+},
+{
+"hash": "660DD7B7EF76C1BC",
+"class": "road_asphalt"
+},
+{
+"hash": "A78D9C3A455F4830",
+"class": "road_asphalt"
+},
+{
+"hash": "8732DF66A7DA8D19",
+"class": "road_asphalt"
+},
+{
+"hash": "D2CA2ECAD64ED9F1",
+"class": "road_asphalt"
+},
+{
+"hash": "B30680DCA1AC42B1",
+"class": "road_asphalt"
+},
+{
+"hash": "E4543C3BE3CD782C",
+"class": "road_asphalt"
+},
+{
+"hash": "5D377F7A190B036E",
+"class": "facade"
+},
+{
+"hash": "84FEED47558E2061",
+"class": "facade"
+},
+{
+"hash": "EB9BAC9A60AC385C",
+"class": "facade"
+},
+{
+"hash": "445EF4AF2AF8C4BF",
+"class": "facade"
+},
+{
+"hash": "7EF0DE897B3F3D7B",
+"class": "facade"
+},
+{
+"hash": "35ED91F4E3F2A58E",
+"class": "facade"
+},
+{
+"hash": "C5D34B4160E02B27",
+"class": "facade"
+},
+{
+"hash": "4E41BBA4D669E911",
+"class": "concrete"
+},
+{
+"hash": "FF94EF896F0A49C4",
+"class": "facade"
+},
+{
+"hash": "5A4BC95137B0C570",
+"class": "facade"
+},
+{
+"hash": "A0086825D852C37E",
+"class": "facade"
+},
+{
+"hash": "2C707EFBFD362E58",
+"class": "facade"
+},
+{
+"hash": "86FDB9655F9F1D64",
+"class": "facade"
+},
+{
+"hash": "2F4B6DBA7267E494",
+"class": "facade"
+},
+{
+"hash": "CCE15B9F12E09A1A",
+"class": "facade"
+},
+{
+"hash": "17C7A5610B5EC814",
+"class": "facade"
+},
+{
+"hash": "7477D4043DAFE358",
+"class": "facade"
+},
+{
+"hash": "3E562C425FE105C3",
+"class": "facade"
+},
+{
+"hash": "13F1F4AFCE746401",
+"class": "facade"
+},
+{
+"hash": "D3C8776D275C73BA",
+"class": "facade"
+},
+{
+"hash": "95443AC34E7AA712",
+"class": "facade"
+},
+{
+"hash": "10AB4DBBF1FC7B34",
+"class": "facade"
+},
+{
+"hash": "3CFE99614E50B1C6",
+"class": "facade"
+},
+{
+"hash": "12538200A4803301",
+"class": "facade"
+},
+{
+"hash": "272F9C5CEDBDA324",
+"class": "facade"
+},
+{
+"hash": "85F90C0E142A0F46",
+"class": "facade"
+},
+{
+"hash": "C394C2B3F3FBE641",
+"class": "facade"
+},
+{
+"hash": "AAAC67E561D16E86",
+"class": "road_asphalt"
+},
+{
+"hash": "4D90064F7A70AA45",
+"class": "facade"
+},
+{
+"hash": "88AC8D7DA87F3A2E",
+"class": "facade"
+},
+{
+"hash": "AB031F4E9266F7D2",
+"class": "facade"
+},
+{
+"hash": "F78A690BDCB6E0E2",
+"class": "facade"
+},
+{
+"hash": "54A12D6512FA8A35",
+"class": "facade"
+},
+{
+"hash": "C1057B6486EBFB4D",
+"class": "facade"
+},
+{
+"hash": "E973959377551D11",
+"class": "rider"
+},
+{
+"hash": "833367C1FB55A0EF",
+"class": "rider"
+},
+{
+"hash": "4E1A1CE4E7707677",
+"class": "rider"
+},
+{
+"hash": "F8608003A3350D4F",
+"class": "rider"
+},
+{
+"hash": "F9CE004D201B73C4",
+"class": "rider"
+},
+{
+"hash": "FFB898595AE01B2B",
+"class": "rider"
+},
+{
+"hash": "E84C0643F7562CFA",
+"class": "rider"
+},
+{
+"hash": "C918806602D1D1B5",
+"class": "rider"
+},
+{
+"hash": "23C0A0900B0B0127",
+"class": "rider"
+},
+{
+"hash": "642689AD5EFC2C34",
+"class": "rider"
+},
+{
+"hash": "D242544940E39269",
+"class": "rider"
+},
+{
+"hash": "B10D1A326BE8634D",
+"class": "rider"
+},
+{
+"hash": "A80833E718CC2B79",
+"class": "rider"
+},
+{
+"hash": "EBE47F49F6E316E4",
+"class": "rider"
+},
+{
+"hash": "C15CEF167FF48BC1",
+"class": "rider"
+},
+{
+"hash": "4EC771A23241984E",
+"class": "rider"
+},
+{
+"hash": "9DE19DD6C0FC25C4",
+"class": "concrete"
+},
+{
+"hash": "5C8C9F5F2DF3B7C2",
+"class": "facade"
+},
+{
+"hash": "402A33EC4BF031F0",
+"class": "facade"
+},
+{
+"hash": "CBC0759E0881F549",
+"class": "concrete"
+},
+{
+"hash": "0A13818B3D8E27F3",
+"class": "facade"
+},
+{
+"hash": "E313D484DE249731",
+"class": "facade"
+},
+{
+"hash": "BF2EA2C9B8536215",
+"class": "concrete"
+},
+{
+"hash": "37EF1B3CCEEB40DA",
+"class": "facade"
+},
+{
+"hash": "D6ABD48973CE888A",
+"class": "concrete"
+},
+{
+"hash": "A7F59A18474FCDB5",
+"class": "concrete"
+},
+{
+"hash": "DDA3B16E9CB434E9",
+"class": "facade"
+},
+{
+"hash": "B0FF57CB75F2F23E",
+"class": "facade"
+},
+{
+"hash": "2FCB82C6DF1E51D9",
+"class": "facade"
+},
+{
+"hash": "01AA0AC65A9CD8D0",
+"class": "facade"
+},
+{
+"hash": "9968364B6AF32D08",
+"class": "road_asphalt"
+},
+{
+"hash": "A74C3BED73DAB54F",
+"class": "road_asphalt"
+},
+{
+"hash": "30A26ED73B36BE57",
+"class": "road_asphalt"
+},
+{
+"hash": "86E06317E9130808",
+"class": "facade"
+},
+{
+"hash": "4D2A1F067EA4B175",
+"class": "facade"
+},
+{
+"hash": "6BE8BCA5B30E1C4E",
+"class": "facade"
+},
+{
+"hash": "54C6E9AF168E4376",
+"class": "road_asphalt"
+},
+{
+"hash": "335A7233666232C9",
+"class": "facade"
+},
+{
+"hash": "EA9249C0C0F79364",
+"class": "facade"
+},
+{
+"hash": "3D392C259F5BED93",
+"class": "facade"
+},
+{
+"hash": "8D8999CCB3F7E309",
+"class": "concrete"
+},
+{
+"hash": "F4EB08D566F30AD0",
+"class": "facade"
+},
+{
+"hash": "F907288BF985C194",
+"class": "facade"
+},
+{
+"hash": "0869A11D231706AC",
+"class": "facade"
+},
+{
+"hash": "1F52F8177D02B0F5",
+"class": "facade"
+},
+{
+"hash": "23D8A7B8397AEBA3",
+"class": "road_asphalt"
+},
+{
+"hash": "964F2FCE6771746C",
+"class": "facade"
+},
+{
+"hash": "64305E5881BBED0E",
+"class": "facade"
+},
+{
+"hash": "2D753AD05403CACA",
+"class": "facade"
+},
+{
+"hash": "4910BC8BC85AA0F4",
+"class": "facade"
+},
+{
+"hash": "963F1750D26A5027",
+"class": "facade"
+},
+{
+"hash": "01DAF8EAA31A36EC",
+"class": "facade"
+},
+{
+"hash": "CC3A44C72CB5C900",
+"class": "facade"
+},
+{
+"hash": "DBAE5EC4715FFFD7",
+"class": "facade"
+},
+{
+"hash": "D31B4B4067F7CD3C",
+"class": "facade"
+},
+{
+"hash": "0F91764738E6280F",
+"class": "facade"
+},
+{
+"hash": "C7ABB4382C634B7E",
+"class": "facade"
+},
+{
+"hash": "931D2B43853D8B2A",
+"class": "concrete"
+},
+{
+"hash": "B93FC6EEDEA7D634",
+"class": "facade"
+},
+{
+"hash": "33897A295DCBC4EB",
+"class": "concrete"
+},
+{
+"hash": "867D8EC205456A28",
+"class": "concrete"
+},
+{
+"hash": "F2B4E8D78FFBD67B",
+"class": "signage"
+},
+{
+"hash": "65726FB2194868EB",
+"class": "concrete"
+},
+{
+"hash": "3DA67BFAA1B21BD7",
+"class": "facade"
+},
+{
+"hash": "C7E222B40618849D",
+"class": "facade"
+},
+{
+"hash": "2C6E19A55BACD83C",
+"class": "facade"
+},
+{
+"hash": "74757C6A7F7CF330",
+"class": "road_asphalt"
+},
+{
+"hash": "7D98A4CA98D600BB",
+"class": "facade"
+},
+{
+"hash": "5608D3F5C74BC596",
+"class": "concrete"
+},
+{
+"hash": "A7EC0A5412246FA3",
+"class": "facade"
+},
+{
+"hash": "39856B54BE4A4BED",
+"class": "facade"
+},
+{
+"hash": "8FAB863520103FE8",
+"class": "facade"
+},
+{
+"hash": "2EBC0BCEB29698CE",
+"class": "facade"
+},
+{
+"hash": "B822EA76C2A7843C",
+"class": "road_asphalt"
+},
+{
+"hash": "184DB3CF0D9D7913",
+"class": "road_asphalt"
+},
+{
+"hash": "F52EE4814380B135",
+"class": "facade"
+},
+{
+"hash": "E80FC66386D5D66D",
+"class": "facade"
+},
+{
+"hash": "7B2DF14F5346A3EB",
+"class": "facade"
+},
+{
+"hash": "AFDA4D9DBABA5DDB",
+"class": "facade"
+},
+{
+"hash": "1AAD389FB4803EF2",
+"class": "facade"
+},
+{
+"hash": "381C3B6F8BBE20E8",
+"class": "facade"
+},
+{
+"hash": "AB1842222F8679DA",
+"class": "facade"
+},
+{
+"hash": "01600A55AE308ED6",
+"class": "facade"
+},
+{
+"hash": "B57053EF586261D4",
+"class": "facade"
+},
+{
+"hash": "BD6212B79EF6CDE6",
+"class": "facade"
+},
+{
+"hash": "1E7C204BADB10A48",
+"class": "facade"
+},
+{
+"hash": "79B59C4CD962061F",
+"class": "facade"
+},
+{
+"hash": "3DC60634D0C13F7E",
+"class": "facade"
+},
+{
+"hash": "4382A771D8812878",
+"class": "facade"
+},
+{
+"hash": "B94868D70419D4B0",
+"class": "facade"
+},
+{
+"hash": "DE2EDEEF312B0F64",
+"class": "facade"
+},
+{
+"hash": "B2D2586EA28F435F",
+"class": "signage"
+},
+{
+"hash": "768811F8D629EAF6",
+"class": "facade"
+},
+{
+"hash": "26865DF040224422",
+"class": "signage"
+},
+{
+"hash": "7DBE6E002D7AF1E6",
+"class": "signage"
+},
+{
+"hash": "07B07AA8AC8ED715",
+"class": "signage"
+},
+{
+"hash": "A2FC074972FE9D29",
+"class": "signage"
+},
+{
+"hash": "04C0A0BE17E51B1F",
+"class": "signage"
+},
+{
+"hash": "B2E26536F521A70C",
+"class": "facade"
+},
+{
+"hash": "3A0042784A7CDA80",
+"class": "facade"
+},
+{
+"hash": "8745D20449CCB1A9",
+"class": "facade"
+},
+{
+"hash": "A5FA1FA23FA80FBB",
+"class": "road_asphalt"
+},
+{
+"hash": "46BC2E8D2E5D617A",
+"class": "facade"
+},
+{
+"hash": "5DE7DBB92744D809",
+"class": "foliage"
+},
+{
+"hash": "2B700FF4B0971D83",
+"class": "concrete"
+},
+{
+"hash": "6B90E3C07F4DF22E",
+"class": "signage"
+},
+{
+"hash": "CBDED6A201E8A4C8",
+"class": "facade"
+},
+{
+"hash": "013A3CD02FCA8BE5",
+"class": "facade"
+},
+{
+"hash": "1B264300D93C436A",
+"class": "facade"
+},
+{
+"hash": "355E96E669337F0F",
+"class": "windows_night"
+},
+{
+"hash": "B6F70872079A1EBA",
+"class": "facade"
+},
+{
+"hash": "29FF1516F4CAD54D",
+"class": "facade"
+},
+{
+"hash": "211FA207595B58FE",
+"class": "facade"
+},
+{
+"hash": "02350C3449439315",
+"class": "facade"
+},
+{
+"hash": "EDEC7B7F35D07DAB",
+"class": "facade"
+},
+{
+"hash": "4EBF551332F49006",
+"class": "facade"
+},
+{
+"hash": "0AAA0666A4F50CCF",
+"class": "facade"
+},
+{
+"hash": "67F4D8BEC182CF28",
+"class": "facade"
+},
+{
+"hash": "B9F0AAE44E8D0FEF",
+"class": "facade"
+},
+{
+"hash": "1C0488ABFFD2E28D",
+"class": "facade"
+},
+{
+"hash": "A8BB65CBF4DF4EE5",
+"class": "facade"
+},
+{
+"hash": "5BA2D6D96296800A",
+"class": "facade"
+},
+{
+"hash": "A82F2D0658511AAD",
+"class": "facade"
+},
+{
+"hash": "E74ED9BD653808E1",
+"class": "concrete"
+},
+{
+"hash": "22886CD39D0EA8A8",
+"class": "concrete"
+},
+{
+"hash": "D7EB053CD2D5BE4E",
+"class": "facade"
+},
+{
+"hash": "F4AF29D9DFF6F5F9",
+"class": "facade"
+},
+{
+"hash": "DC1DC0F09D47ABFF",
+"class": "facade"
+},
+{
+"hash": "E00F6C421A41EA9A",
+"class": "facade"
+},
+{
+"hash": "B2D45D07FD2E872B",
+"class": "facade"
+},
+{
+"hash": "365AB5170C7BD552",
+"class": "signage"
+},
+{
+"hash": "91EDA4480EFF244E",
+"class": "concrete"
+},
+{
+"hash": "7DF0C04FC0FAB1A2",
+"class": "facade"
+},
+{
+"hash": "4F9B7E066FF7A047",
+"class": "facade"
+},
+{
+"hash": "FF718F8DF2406E9D",
+"class": "facade"
+},
+{
+"hash": "55E71F2EC2C295B0",
+"class": "facade"
+},
+{
+"hash": "71FE13930BA663E1",
+"class": "facade"
+},
+{
+"hash": "4888EB9235259A11",
+"class": "facade"
+},
+{
+"hash": "AEE035006313CC4D",
+"class": "facade"
+},
+{
+"hash": "B4A8122B310C227E",
+"class": "facade"
+},
+{
+"hash": "738C4519840AE786",
+"class": "facade"
+},
+{
+"hash": "4B62F3BEBBCC9DC6",
+"class": "facade"
+},
+{
+"hash": "6544A2439A13FB53",
+"class": "facade"
+},
+{
+"hash": "548D695170291D50",
+"class": "facade"
+},
+{
+"hash": "924F3DFFABBB5FD2",
+"class": "facade"
+},
+{
+"hash": "3B04AF46F3A59488",
+"class": "facade"
+},
+{
+"hash": "CAAD78C3C81636CE",
+"class": "facade"
+},
+{
+"hash": "7EC30C3646E60992",
+"class": "facade"
+},
+{
+"hash": "76FB1BDD7F601587",
+"class": "facade"
+},
+{
+"hash": "55EA86B6DD74FF63",
+"class": "facade"
+},
+{
+"hash": "BB4363F925BD2237",
+"class": "facade"
+},
+{
+"hash": "A2E07A579780BC32",
+"class": "facade"
+},
+{
+"hash": "ABD8337FD88E55F2",
+"class": "facade"
+},
+{
+"hash": "3FAB0E64E959FD8B",
+"class": "concrete"
+},
+{
+"hash": "D591F914496818CC",
+"class": "concrete"
+},
+{
+"hash": "81C254E18C3D995D",
+"class": "facade"
+},
+{
+"hash": "0D93EB14B5198BF5",
+"class": "concrete"
+},
+{
+"hash": "EF115F03CF6B36DF",
+"class": "facade"
+},
+{
+"hash": "9623E4E0F8F20FB8",
+"class": "facade"
+},
+{
+"hash": "8BBFD206B7ECCFC8",
+"class": "facade"
+},
+{
+"hash": "E1A5683C2982EB10",
+"class": "facade"
+},
+{
+"hash": "C6CACED6DC1C9DCC",
+"class": "facade"
+},
+{
+"hash": "E0BD2D6E9412F1B4",
+"class": "facade"
+},
+{
+"hash": "E1E102ADA3F29C68",
+"class": "facade"
+},
+{
+"hash": "E5799FDE91538736",
+"class": "facade"
+},
+{
+"hash": "584494E84BDFA464",
+"class": "facade"
+},
+{
+"hash": "A05699EA8C640B3C",
+"class": "road_asphalt"
+},
+{
+"hash": "F0E09848B74F62EE",
+"class": "concrete"
+},
+{
+"hash": "00E5F2B9E564EA33",
+"class": "facade"
+},
+{
+"hash": "C1ECC8AD086E3F7E",
+"class": "concrete"
+},
+{
+"hash": "90625629435322C6",
+"class": "facade"
+},
+{
+"hash": "6339152CC32A339E",
+"class": "road_asphalt"
+},
+{
+"hash": "B2504411E53873D6",
+"class": "facade"
+},
+{
+"hash": "1D8C474BD1220392",
+"class": "facade"
+},
+{
+"hash": "C26AB848B4EE93D4",
+"class": "facade"
+},
+{
+"hash": "CAFD00A195FB0034",
+"class": "facade"
+},
+{
+"hash": "C6293F2D98803B8A",
+"class": "facade"
+},
+{
+"hash": "9E771DFF3F26DF06",
+"class": "concrete"
+},
+{
+"hash": "DB5BCBD25448134D",
+"class": "facade"
+},
+{
+"hash": "0E181EA80153920F",
+"class": "facade"
+},
+{
+"hash": "0481E58AE6A4D7BA",
+"class": "road_asphalt"
+},
+{
+"hash": "04728127BFB094A0",
+"class": "road_asphalt"
+},
+{
+"hash": "B3E5FE5E2D77BB5F",
+"class": "facade"
+},
+{
+"hash": "AF41FCD831963D4D",
+"class": "concrete"
+},
+{
+"hash": "5AFCCCF885C4CFCA",
+"class": "facade"
+},
+{
+"hash": "0E254E645D0A27FA",
+"class": "facade"
+},
+{
+"hash": "8DABCEFBC61154FB",
+"class": "facade"
+},
+{
+"hash": "EFA66CC55CCCC087",
+"class": "facade"
+},
+{
+"hash": "83BD4BD4DC377D6F",
+"class": "facade"
+},
+{
+"hash": "853814442796D744",
+"class": "concrete"
+},
+{
+"hash": "117541107C14A49F",
+"class": "facade"
+},
+{
+"hash": "319CD2118938B933",
+"class": "facade"
+},
+{
+"hash": "9A4A3E98C4393256",
+"class": "facade"
+},
+{
+"hash": "E3C6026330ECC8F4",
+"class": "facade"
+},
+{
+"hash": "AA4236745202D385",
+"class": "concrete"
+},
+{
+"hash": "8F377F13111C0D89",
+"class": "facade"
+},
+{
+"hash": "79F02F15EE2D3323",
+"class": "facade"
+},
+{
+"hash": "7F770759F2312E47",
+"class": "concrete"
+},
+{
+"hash": "9DA6D727355051CE",
+"class": "facade"
+},
+{
+"hash": "932A0E2BCD6A8C26",
+"class": "facade"
+},
+{
+"hash": "50E91B054B6FF463",
+"class": "facade"
+},
+{
+"hash": "F7D12A4D49E2D43C",
+"class": "terrain"
+},
+{
+"hash": "1B45795627E230F9",
+"class": "facade"
+},
+{
+"hash": "662E0C60089FED4D",
+"class": "facade"
+},
+{
+"hash": "C41492DD2434D95E",
+"class": "facade"
+},
+{
+"hash": "8E27A691AAB77893",
+"class": "facade"
+},
+{
+"hash": "AE9FEBDF520B9879",
+"class": "facade"
+},
+{
+"hash": "1129984FF1BD71A1",
+"class": "facade"
+},
+{
+"hash": "0A59E63A41284718",
+"class": "facade"
+},
+{
+"hash": "616C12CEA96D17BD",
+"class": "facade"
+},
+{
+"hash": "1FE3B91C67E58736",
+"class": "facade"
+},
+{
+"hash": "40286B0C70CCF569",
+"class": "signage"
+},
+{
+"hash": "27356C64F185D913",
+"class": "terrain"
+},
+{
+"hash": "7FB26FCFA1B2909D",
+"class": "facade"
+},
+{
+"hash": "83D00E6CFD44D708",
+"class": "facade"
+},
+{
+"hash": "99435597722F647E",
+"class": "concrete"
+},
+{
+"hash": "E4ADCA44CDBF3A35",
+"class": "facade"
+},
+{
+"hash": "DDB11F1F7A14CFA8",
+"class": "facade"
+},
+{
+"hash": "E1EFA7534DE56D25",
+"class": "signage"
+},
+{
+"hash": "B711BAD8E92F27F3",
+"class": "facade"
+},
+{
+"hash": "45A4CA87E824A669",
+"class": "facade"
+},
+{
+"hash": "CE076B51EA4E700D",
+"class": "facade"
+},
+{
+"hash": "82508FD342D5F802",
+"class": "facade"
+},
+{
+"hash": "159325D5A30DF0F9",
+"class": "facade"
+},
+{
+"hash": "299F8E1A36AD0EF5",
+"class": "facade"
+},
+{
+"hash": "A307429334C32B53",
+"class": "signage"
+},
+{
+"hash": "2DEF23BF7EB4969D",
+"class": "signage"
+},
+{
+"hash": "6FCB258BB409E716",
+"class": "facade"
+},
+{
+"hash": "8F7673BDC0A676CC",
+"class": "facade"
+},
+{
+"hash": "39A44E336985B700",
+"class": "signage"
+},
+{
+"hash": "D2F51014795974AD",
+"class": "facade"
+},
+{
+"hash": "D03AE1564C879674",
+"class": "facade"
+},
+{
+"hash": "C2E6B47D1E0044ED",
+"class": "concrete"
+},
+{
+"hash": "11B941C1E15F8813",
+"class": "facade"
+},
+{
+"hash": "833471636B0BBB4D",
+"class": "signage"
+},
+{
+"hash": "F0165A85877E6D2A",
+"class": "facade"
+},
+{
+"hash": "3B084EB1AAD4867A",
+"class": "facade"
+},
+{
+"hash": "61095A673CD09E37",
+"class": "road_asphalt"
+},
+{
+"hash": "EA566A13DE41AE12",
+"class": "facade"
+},
+{
+"hash": "5C0BAF26971103B1",
+"class": "facade"
+},
+{
+"hash": "0E6CA237062ACE27",
+"class": "facade"
+},
+{
+"hash": "7D8B60812A83F0BA",
+"class": "concrete"
+},
+{
+"hash": "E1DAEAEEEAEA038C",
+"class": "facade"
+},
+{
+"hash": "22A4E06C37A8DCAA",
+"class": "signage"
+},
+{
+"hash": "3DAD54E5A1A179D3",
+"class": "signage"
+},
+{
+"hash": "5CDD8E634E00A906",
+"class": "facade"
+},
+{
+"hash": "C2DDC57A50D82C6E",
+"class": "facade"
+},
+{
+"hash": "B6DA43EFE6AE8BAB",
+"class": "facade"
+},
+{
+"hash": "27113A9EA4846E96",
+"class": "signage"
+},
+{
+"hash": "D81F730A140F54E4",
+"class": "signage"
+},
+{
+"hash": "6413E388CD063F49",
+"class": "concrete"
+},
+{
+"hash": "0C44568FC8E6F467",
+"class": "facade"
+},
+{
+"hash": "53E614523B66054C",
+"class": "signage"
+},
+{
+"hash": "00EBE34B987657CB",
+"class": "facade"
+},
+{
+"hash": "0DEBC1F34C4F46E4",
+"class": "facade"
+},
+{
+"hash": "CC0FB8573727A1DA",
+"class": "facade"
+},
+{
+"hash": "C14FEB6099B90C1A",
+"class": "facade"
+},
+{
+"hash": "ED1BD7292381C09C",
+"class": "facade"
+},
+{
+"hash": "BD63BDADB22EF110",
+"class": "facade"
+},
+{
+"hash": "830CE222D518546C",
+"class": "facade"
+},
+{
+"hash": "D4A27A6EACDE86E6",
+"class": "facade"
+},
+{
+"hash": "5F8CEDE68E08E7CF",
+"class": "concrete"
+},
+{
+"hash": "B49615AD36E2DB43",
+"class": "facade"
+},
+{
+"hash": "44B1202C21C936FF",
+"class": "facade"
+},
+{
+"hash": "ADF64436FF92898E",
+"class": "signage"
+},
+{
+"hash": "B32A09747550156D",
+"class": "signage"
+},
+{
+"hash": "A47EE2E178E0AAD9",
+"class": "facade"
+},
+{
+"hash": "DF5BBE92E368D0AF",
+"class": "signage"
+},
+{
+"hash": "9D268E4BC35C4193",
+"class": "facade"
+},
+{
+"hash": "1CF4D71D656AC579",
+"class": "facade"
+},
+{
+"hash": "9D0E568436EFA64D",
+"class": "signage"
+},
+{
+"hash": "C4E7AE9492FD9FA0",
+"class": "facade"
+},
+{
+"hash": "BCAD48C0D62F692F",
+"class": "facade"
+},
+{
+"hash": "1948B0A48353DA2E",
+"class": "facade"
+},
+{
+"hash": "ABC96D89D8734CA3",
+"class": "road_asphalt"
+},
+{
+"hash": "A60DDFD5060D3468",
+"class": "road_asphalt"
+},
+{
+"hash": "24B9F15929A53C49",
+"class": "facade"
+},
+{
+"hash": "F7937B0776B8EE00",
+"class": "facade"
+},
+{
+"hash": "02D88DF2BC25CE93",
+"class": "signage"
+},
+{
+"hash": "D9056FA2035DBC8D",
+"class": "facade"
+},
+{
+"hash": "BB9F4A2C3A7CA70C",
+"class": "facade"
+},
+{
+"hash": "AF97B8384411AE03",
+"class": "facade"
+},
+{
+"hash": "032BF128B486E6A2",
+"class": "facade"
+},
+{
+"hash": "2FF22AE607657E6A",
+"class": "road_asphalt"
+},
+{
+"hash": "5919382B67A99D44",
+"class": "facade"
+},
+{
+"hash": "735C8D1D3CC0158F",
+"class": "facade"
+},
+{
+"hash": "A947433F6EF4BADC",
+"class": "facade"
+},
+{
+"hash": "5FEC2BE5AAC8C22F",
+"class": "facade"
+},
+{
+"hash": "F90D2B142A489AF9",
+"class": "facade"
+},
+{
+"hash": "33399839BCF7902A",
+"class": "facade"
+},
+{
+"hash": "98DD0D4784A1E6E6",
+"class": "facade"
+},
+{
+"hash": "2F3D24E6D4D6640C",
+"class": "signage"
+},
+{
+"hash": "E91E7061DB6A0D2E",
+"class": "facade"
+},
+{
+"hash": "4DE3F653DFC6ED46",
+"class": "facade"
+},
+{
+"hash": "80350BF6CC2F97AF",
+"class": "facade"
+},
+{
+"hash": "BDE13EEED2F5EDAF",
+"class": "facade"
+},
+{
+"hash": "3CA901C547B8BE92",
+"class": "concrete"
+},
+{
+"hash": "1D2E8F9793F134A0",
+"class": "facade"
+},
+{
+"hash": "F2D5A6FFB60DB83C",
+"class": "facade"
+},
+{
+"hash": "7ED5B5657EC2945C",
+"class": "signage"
+},
+{
+"hash": "0231D93CC76BBB7F",
+"class": "facade"
+},
+{
+"hash": "EC736049D34BD2AD",
+"class": "facade"
+},
+{
+"hash": "A7EEDB4F1FB53613",
+"class": "facade"
+},
+{
+"hash": "E989D11CE358F329",
+"class": "facade"
+},
+{
+"hash": "986E1FD87D6E7BAC",
+"class": "signage"
+},
+{
+"hash": "6A5AC902CF13220F",
+"class": "facade"
+},
+{
+"hash": "0166FBFDCF65F8D8",
+"class": "facade"
+},
+{
+"hash": "1C4ECEACE5F8D0D8",
+"class": "facade"
+},
+{
+"hash": "F4A63E17771FEC63",
+"class": "facade"
+},
+{
+"hash": "1F125CCDBA6063D9",
+"class": "facade"
+},
+{
+"hash": "2EED85C2281187AF",
+"class": "concrete"
+},
+{
+"hash": "851D849BDD7D7C75",
+"class": "facade"
+},
+{
+"hash": "0A3FEE64852AB87D",
+"class": "concrete"
+},
+{
+"hash": "48734B778E1C83FC",
+"class": "facade"
+},
+{
+"hash": "4BE59BFF5213B70A",
+"class": "facade"
+},
+{
+"hash": "C890ADAC7C879849",
+"class": "facade"
+},
+{
+"hash": "009ED06F637EEA33",
+"class": "facade"
+},
+{
+"hash": "B1C937E835F5D21B",
+"class": "signage"
+},
+{
+"hash": "A80A11007167C432",
+"class": "signage"
+},
+{
+"hash": "FFABA93AD2CDE6C6",
+"class": "facade"
+},
+{
+"hash": "563C1A0EC1984530",
+"class": "facade"
+},
+{
+"hash": "8C84A21D4D02AEAA",
+"class": "facade"
+},
+{
+"hash": "0E1ED3BCB7563E54",
+"class": "facade"
+},
+{
+"hash": "0B44A568F5A6A4F7",
+"class": "road_asphalt"
+},
+{
+"hash": "4957505E687E0926",
+"class": "road_asphalt"
+},
+{
+"hash": "584FFFF2F7B5302E",
+"class": "road_asphalt"
+},
+{
+"hash": "AD9DEA88FB8AC3E9",
+"class": "facade"
+},
+{
+"hash": "5ECE752E7AC81E69",
+"class": "facade"
+},
+{
+"hash": "7D09334E0FEBEF07",
+"class": "facade"
+},
+{
+"hash": "BEAAA24B48DAE677",
+"class": "signage"
+},
+{
+"hash": "C618D19AD35CCA06",
+"class": "facade"
+},
+{
+"hash": "8687663300C38575",
+"class": "facade"
+},
+{
+"hash": "558E04565C4ACBDD",
+"class": "signage"
+},
+{
+"hash": "9F8E8F4C29694F10",
+"class": "concrete"
+},
+{
+"hash": "587BD1AA339FA204",
+"class": "facade"
+},
+{
+"hash": "8CACAD58FB916902",
+"class": "facade"
+},
+{
+"hash": "FC7B486C0071D089",
+"class": "facade"
+},
+{
+"hash": "B3FBE689DF51373B",
+"class": "signage"
+},
+{
+"hash": "3919EE8B89C64CE7",
+"class": "facade"
+},
+{
+"hash": "0E37B54576990D1F",
+"class": "signage"
+},
+{
+"hash": "684ABFC978C871E8",
+"class": "facade"
+},
+{
+"hash": "D23143AFCEDB4898",
+"class": "facade"
+},
+{
+"hash": "7ECE35B666AEDA1D",
+"class": "signage"
+},
+{
+"hash": "64B8E6D0248272DE",
+"class": "facade"
+},
+{
+"hash": "1BD0938E1133E1AF",
+"class": "facade"
+},
+{
+"hash": "D0240F475090EC26",
+"class": "facade"
+},
+{
+"hash": "8A32954E60304306",
+"class": "facade"
+},
+{
+"hash": "07F55DA3C4465CEE",
+"class": "facade"
+},
+{
+"hash": "CA8F784032D7A272",
+"class": "concrete"
+},
+{
+"hash": "C4C9A98FE18765EE",
+"class": "facade"
+},
+{
+"hash": "92AA47EF84D414DE",
+"class": "facade"
+},
+{
+"hash": "9105D741CAB88129",
+"class": "facade"
+},
+{
+"hash": "49F896C87B557DCA",
+"class": "facade"
+},
+{
+"hash": "3E8EF483B64D658C",
+"class": "facade"
+},
+{
+"hash": "BBA4C56F5A1E53B0",
+"class": "concrete"
+},
+{
+"hash": "E1F2AE857820B78A",
+"class": "facade"
+},
+{
+"hash": "77EB8E2361BB9BF9",
+"class": "facade"
+},
+{
+"hash": "22F4BDC41A501717",
+"class": "facade"
+},
+{
+"hash": "87E57495E0C49037",
+"class": "facade"
+},
+{
+"hash": "F4B633644E6FE6EA",
+"class": "facade"
+},
+{
+"hash": "065E5270C0C92CF2",
+"class": "windows_night"
+},
+{
+"hash": "8E897C1C5BD709E8",
+"class": "facade"
+},
+{
+"hash": "5E209275BC4AF312",
+"class": "facade"
+},
+{
+"hash": "63112BD74529A9B4",
+"class": "road_asphalt"
+},
+{
+"hash": "7AB62FFA789A0D97",
+"class": "facade"
+},
+{
+"hash": "AEC16C6EEF1D48A0",
+"class": "facade"
+},
+{
+"hash": "C917ECF7594535A6",
+"class": "facade"
+},
+{
+"hash": "A604A96F4DC2300F",
+"class": "facade"
+},
+{
+"hash": "2FBFAD7A98C62F21",
+"class": "facade"
+},
+{
+"hash": "33E4F5DEDF8E1D89",
+"class": "facade"
+},
+{
+"hash": "CEBBA35115BC706C",
+"class": "facade"
+},
+{
+"hash": "7A761769E80BA3E1",
+"class": "facade"
+},
+{
+"hash": "DCAC7EBF86D4A235",
+"class": "facade"
+},
+{
+"hash": "5E8E640A3102BCA5",
+"class": "facade"
+},
+{
+"hash": "ABF4DB6725A4F198",
+"class": "facade"
+},
+{
+"hash": "42879BD7F3C25ABB",
+"class": "road_asphalt"
+},
+{
+"hash": "33A25A2729FC4B5A",
+"class": "road_asphalt"
+},
+{
+"hash": "1DC2A746CD61F4D7",
+"class": "road_asphalt"
+},
+{
+"hash": "BA0483B47FA6A429",
+"class": "facade"
+},
+{
+"hash": "EC018F46C53F9E6D",
+"class": "facade"
+},
+{
+"hash": "60BC2352FCB4D2DE",
+"class": "road_asphalt"
+},
+{
+"hash": "99F36D53CB94E9C2",
+"class": "facade"
+},
+{
+"hash": "79D784752D55D332",
+"class": "facade"
+},
+{
+"hash": "79438B6119A41F88",
+"class": "road_asphalt"
+},
+{
+"hash": "BC23ADFC7812DFE4",
+"class": "road_asphalt"
+},
+{
+"hash": "17640306476A9668",
+"class": "road_asphalt"
+},
+{
+"hash": "DDDD5BB5034CB536",
+"class": "facade"
+},
+{
+"hash": "910B0CEED897AE3A",
+"class": "facade"
+},
+{
+"hash": "D9FE12C687C58E6B",
+"class": "road_asphalt"
+},
+{
+"hash": "0FDA48651552A8EF",
+"class": "facade"
+},
+{
+"hash": "8AF7F5466A02DD73",
+"class": "road_asphalt"
+},
+{
+"hash": "F7C0A4196A7A42BD",
+"class": "road_asphalt"
+},
+{
+"hash": "55DF479AD1FC6E4B",
+"class": "facade"
+},
+{
+"hash": "04E53BAE2F1B9016",
+"class": "road_asphalt"
+},
+{
+"hash": "14A9D317C82C5C05",
+"class": "facade"
+},
+{
+"hash": "E89B2F94761E9272",
+"class": "road_asphalt"
+},
+{
+"hash": "98932C14EE2A673A",
+"class": "road_asphalt"
+},
+{
+"hash": "30879A39729BC613",
+"class": "road_asphalt"
+},
+{
+"hash": "2977B060ACE55415",
+"class": "facade"
+},
+{
+"hash": "2E902CF4F051A3CF",
+"class": "facade"
+},
+{
+"hash": "86FC5ACF5482B9A7",
+"class": "facade"
+},
+{
+"hash": "7500241C9F98DCBE",
+"class": "facade"
+},
+{
+"hash": "01F79B2369175C1E",
+"class": "road_asphalt"
+},
+{
+"hash": "61F0D633710EB0FC",
+"class": "facade"
+},
+{
+"hash": "D96F310A3F814423",
+"class": "facade"
+},
+{
+"hash": "31EE55D31D7D364D",
+"class": "facade"
+},
+{
+"hash": "1815460FDBE401C8",
+"class": "facade"
+},
+{
+"hash": "F616B6A6B07A5F8D",
+"class": "facade"
+},
+{
+"hash": "639272559919A3C7",
+"class": "facade"
+},
+{
+"hash": "FFD013A211760F83",
+"class": "facade"
+},
+{
+"hash": "2869C1E215EB3873",
+"class": "facade"
+},
+{
+"hash": "128707542185F214",
+"class": "facade"
+},
+{
+"hash": "AD8A6D6B68F67E2B",
+"class": "facade"
+},
+{
+"hash": "20CD7201041FC993",
+"class": "facade"
+},
+{
+"hash": "C9EEBCEEA0BB9303",
+"class": "facade"
+},
+{
+"hash": "A9187EC684E4A3C5",
+"class": "facade"
+},
+{
+"hash": "D2E0A3F5EC2107AA",
+"class": "facade"
+},
+{
+"hash": "892C5AAB3D5996B7",
+"class": "facade"
+},
+{
+"hash": "41BDA70CB0862405",
+"class": "facade"
+},
+{
+"hash": "7F839C876151FCE1",
+"class": "facade"
+},
+{
+"hash": "FF65287D3A06210A",
+"class": "facade"
+},
+{
+"hash": "804140AF7FA192A5",
+"class": "facade"
+},
+{
+"hash": "A45379886401BE57",
+"class": "facade"
+},
+{
+"hash": "586E4C45FD5FB9B2",
+"class": "facade"
+},
+{
+"hash": "5DFEE353A6DEDC98",
+"class": "facade"
+},
+{
+"hash": "6827D4CB468B08DF",
+"class": "signage"
+},
+{
+"hash": "58F52E7728E8C9ED",
+"class": "signage"
+},
+{
+"hash": "3E6F641F6D60DC10",
+"class": "signage"
+},
+{
+"hash": "50DC504DDA9F96C7",
+"class": "facade"
+},
+{
+"hash": "C304C4389AC3F04A",
+"class": "facade"
+},
+{
+"hash": "EAAE7952DCA9D713",
+"class": "facade"
+},
+{
+"hash": "98CB01E3D924EB06",
+"class": "facade"
+},
+{
+"hash": "E4204AECF940D6C4",
+"class": "concrete"
+},
+{
+"hash": "48E37CA723FD7B8E",
+"class": "facade"
+},
+{
+"hash": "0B68EDF345057043",
+"class": "facade"
+},
+{
+"hash": "3C10BBEF9A4B7B3A",
+"class": "facade"
+},
+{
+"hash": "D499F6C70257CEB8",
+"class": "facade"
+},
+{
+"hash": "092960C770E691BA",
+"class": "facade"
+},
+{
+"hash": "F7D9D00CEEFBD084",
+"class": "rider"
+},
+{
+"hash": "A9ACCA1BB063213E",
+"class": "rider"
+},
+{
+"hash": "2CE4687CBC038BC0",
+"class": "rider"
+},
+{
+"hash": "48134CA524A874D5",
+"class": "rider"
+},
+{
+"hash": "BBF6D658A7837A23",
+"class": "rider"
+},
+{
+"hash": "949DD133AB1FE877",
+"class": "rider"
+},
+{
+"hash": "17BFBD9373CDFD89",
+"class": "rider"
+},
+{
+"hash": "93C6B03A39356FBB",
+"class": "rider"
+},
+{
+"hash": "4DB4B0711C46045A",
+"class": "rider"
+},
+{
+"hash": "5630E95E5B5FD0C4",
+"class": "rider"
+},
+{
+"hash": "9FBFE78623B97C4D",
+"class": "rider"
+},
+{
+"hash": "ED5771F922D409AA",
+"class": "rider"
+},
+{
+"hash": "B497CF311BB47337",
+"class": "rider"
+},
+{
+"hash": "3E6554F46AAB0FA3",
+"class": "rider"
+},
+{
+"hash": "512D228BAEF8EF49",
+"class": "rider"
+},
+{
+"hash": "9EC8CED72D60889B",
+"class": "rider"
+},
+{
+"hash": "DE63B2EC7C169CE9",
+"class": "facade"
+},
+{
+"hash": "338D4C77AA3A6231",
+"class": "facade"
+}
+]
+}

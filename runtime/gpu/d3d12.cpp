@@ -13,6 +13,8 @@
 #include <wrl/client.h>
 
 #include <algorithm>
+#include <bit>
+#include <memory>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -39,6 +41,17 @@
 #include "gpu/shaders.h"
 #include "gpu/skinning_capture.h"
 #include "gpu/capture_directory.h"
+#include "gpu/capture_control.h"
+#include "gpu/car_paint.h"
+#include "gpu/pbr_controls.h"
+#include "gpu/pbr_library_cache.h"
+#include "gpu/pbr_surface.h"
+#include "gpu/pbr_fixed_mesh.h"
+#include "gpu/pbr_device.h"
+#include "gpu/pbr_scene.h"
+#include "gpu/pbr_observation.h"
+#include "gpu/pbr_legacy_surface.h"
+#include "gpu/draw_evidence.h"
 #include "gpu/photo_capture_policy.h"
 #include "gpu/photo_capture_io.h"
 #include "gpu/photo_capture_shader.h"
@@ -123,16 +136,41 @@ struct Perf {
     uint64_t lates = 0;
 };
 Perf g_perf;
+// the dedicated PBR path's own share, logged every ten seconds while it draws (release builds keep LOGR)
+struct PbrPerf {
+    double total = 0, mesh = 0, plan = 0, record = 0;  // ms
+    uint64_t attempts = 0, drawn = 0, frames = 0;
+};
+PbrPerf g_pbr_perf;
+// 64-bit content hash for the PBR mesh cache key: eight bytes a step, so hashing a draw's vertex bytes costs about
+// what copying them does
+uint64_t MixHash(const void* data, size_t n, uint64_t h) {
+    constexpr uint64_t m = 0x9E3779B97F4A7C15ull;
+    const auto* p = static_cast<const uint8_t*>(data);
+    for (; n >= 8; p += 8, n -= 8) {
+        uint64_t v;
+        std::memcpy(&v, p, 8);
+        h = (h ^ v) * m;
+        h ^= h >> 32;
+    }
+    uint64_t v = 0;
+    std::memcpy(&v, p, n);
+    h = (h ^ v ^ n) * m;
+    return h ^ (h >> 29);
+}
 struct PerfScope {
     double& acc;
     PerfClock::time_point t = PerfClock::now();
     ~PerfScope() { acc += PerfMs(t); }
 };
 
-// F3 captures only with diag::CaptureDir set
-bool CaptureOn() {
-    if (diag::CaptureDir().empty()) LOG_FIRST(1, "capture: set XBE_CAPTURE_DIR");
-    return !diag::CaptureDir().empty();
+
+// Diagnostic-only opt-in: selection strings never alter the draw/shader path.
+std::string DrawEvidenceEnv(const char* name) {
+    char value[128] = {};
+    DWORD n = GetEnvironmentVariableA(name, value, sizeof(value));
+    if (!n) return {};
+    return n < sizeof(value) ? std::string(value, n) : std::string("invalid-too-long");
 }
 
 const char* kBlitHlsl = R"(
@@ -449,6 +487,19 @@ struct Tex {
     uint32_t uploads = 0;   // times its bytes changed: past a few it is video or drawn to, never packed
     uint8_t role = 0;       // TexRole: a texture the graphics settings scale the draws of
     photo_capture::TextureIdentity photo_identity;  // original bytes; retained across cached binds
+    pbr::ColorProof pbr_color;
+    uint64_t pbr_proof_epoch = 0;
+    ComPtr<ID3D12Resource> pbr_nrm;
+    ComPtr<ID3D12Resource> pbr_orm;
+    uint32_t pbr_levels = 1;
+    uint64_t pbr_hash = 0;
+    uint64_t pbr_vs = 0;
+    uint64_t pbr_ps = 0;
+    uint64_t pbr_draws = 0;
+    bool pbr_done = false;
+    bool pbr_has_height = false;
+    bool pbr_vehicle = false;
+    bool pbr_cutout = false;
 };
 
 // textures recognised by their content hash (texture_pack.h ContentHash, the names in textures/source_index.json)
@@ -525,6 +576,12 @@ struct DrawTextures {
     uint8_t role[4] = {};       // TexRole of a guest texture
     photo_capture::TextureIdentity photo_identity[4];
     bool photo_replaced[4] = {};
+    Tex* accepted_color[4] = {}; // Actual accepted upload; not a render target/movie or a filename-derived map.
+    ID3D12Resource* pbr_nrm = nullptr;
+    ID3D12Resource* pbr_orm = nullptr;
+    uint32_t pbr_levels = 1;
+    bool pbr_has_height = false;
+    Tex* pbr_tex = nullptr;
 };
 
 // a draw's shaders: what they are made from, their cache keys, the hashes Compile returned and the compiled blobs
@@ -532,6 +589,7 @@ struct DrawShaders {
     bool prog = false;  // a vertex program, else the fixed function pipeline
     bool quad = false;
     bool fixed_transform = false;  // fixed function on untransformed vertices: the shader reads matrices and lights
+    bool car_paint = false;  // the enhanced car paint variants (gpu/car_paint.h)
     FixedKey fk;
     uint64_t vkey = 0;
     uint64_t vh = 0;
@@ -549,6 +607,7 @@ struct GuestExtent {
 
 class D3D12Backend final : public Backend, public Context {
 public:
+    ~D3D12Backend() override { pbr::observation::RequestGuestProof(false); }
     bool Init(uint32_t width, uint32_t height) override;
     void Clear(const State& s, uint32_t count, const uint8_t* rects, uint32_t flags, uint32_t color, float z,
                uint32_t stencil) override;
@@ -586,6 +645,9 @@ private:
         uint64_t used = 0;
         uint64_t fence = 0;
         std::vector<ComPtr<ID3D12Resource>> garbage;
+        std::vector<ComPtr<IUnknown>> pbr_retained; // Same actual frame fence as upload/allocator ownership.
+        std::shared_ptr<const pbr::Library> pbr_owner;
+        std::vector<uint64_t> pbr_pending_draws; // Published only after this frame's ACTUAL fence completes.
         uint32_t srv = 0;
     };
     struct Alloc {
@@ -652,6 +714,12 @@ private:
                        bool same, uint64_t dump = 0);
     // a texture pack image in place of the console's texture: BGRA, its own size and mip chain
     bool UploadReplacement(Tex& tx, const pack::Image& img);
+    ComPtr<ID3D12Resource> UploadPackImage(const pack::Image& img);
+    void PublishPbrTelemetry();
+    void UpdatePbrSettings();
+    void CompletePbrFrame(Frame&);
+    bool TryPbrDraw(const State&,const Assembled&,const DrawShaders&,const PixelKey&,const PsoKey&,
+                    const DrawTextures&,GuestExtent,ID3D12PipelineState* legacy_pso);
     // an HD movie's picture in place of the texture the title decodes its Bink into (video_hd.h)
     ID3D12Resource* BindMovie(const TextureDesc& d, int stage, DrawTextures& stages);
     void UploadTextureLevel(Tex& tx, uint32_t f, uint32_t l, const std::vector<uint8_t>& px, uint32_t pitch);
@@ -664,7 +732,7 @@ private:
     float TargetScale() const;  // host pixels per console pixel of the bound target
     float RenderTargetShift(const State& s, const DrawShaders& sh) const;
     void UploadConstants(const State& s, const DrawShaders& sh, const PsoKey& k, const DrawTextures& stages,
-                         GuestExtent size, DrawConstants& c);
+                         GuestExtent size, DrawConstants& c, draw_evidence::Recorder* evidence = nullptr);
     void FillTextureConstants(const State& s, const DrawShaders& sh, const DrawTextures& stages, DrawConstants& c);
     void FillTexelConstants(int i, const TextureDesc& d, const DrawTextures& stages, DrawConstants& c);
     void CaptureDraw(const State& s, uint32_t prim, uint32_t count, const PsoKey& k, const DrawConstants& c,
@@ -681,8 +749,8 @@ private:
     bool ScaleTextureEffect(const PsoKey& k, const DrawTextures& stages, DrawConstants& c);
     void SetViewportScissor(const State& s, uint32_t gw);
     void SetBlendFactorStencilRef(const State& s);
-    void DrawGeometry(const Assembled& a);
-    void UploadVertexBuffers(const Assembled& a);
+    void DrawGeometry(const Assembled& a, draw_evidence::Recorder* evidence = nullptr);
+    void UploadVertexBuffers(const Assembled& a, draw_evidence::Recorder* evidence = nullptr);
     // visibility tests
     bool EnsureQueries();
     uint32_t BeginCountedDraw(const State& s);
@@ -832,6 +900,23 @@ private:
     std::unordered_map<uint32_t, uint64_t> target_used_;  // target address to the frame it was last used
     std::unordered_map<uint64_t, Tex> textures_;  // by data address, a P8 texture's with its palette's above
     std::unordered_map<uint32_t, Tex> movies_;    // HD movie pictures by the data address of the texture they replace
+    pbr::LibraryCache pbr_library_cache_;
+    pbr::LibrarySnapshot pbr_library_;
+    std::unique_ptr<pbr::controls::PreparedSettings> pbr_settings_;
+    pbr::device::Device pbr_device_;
+    uint64_t pbr_proof_epoch_ = 0;
+    std::vector<pbr::controls::CatalogMaterial> pbr_observed_;
+    std::vector<std::string> pbr_trace_;
+    // Built PBR meshes by MixHash of everything fixed_mesh::Build reads (vertex/index bytes included). A hit reuses
+    // the vertices/indices and refreshes only the transform-dependent constants; deterministic failures are kept too.
+    struct PbrMeshEntry {
+        pbr::fixed_mesh::Mesh mesh;
+        pbr::fixed_mesh::Status status = pbr::fixed_mesh::Status::Ready;
+        std::string detail;
+    };
+    std::unordered_map<uint64_t, PbrMeshEntry> pbr_mesh_cache_;
+    static constexpr size_t kPbrMeshCacheEntries = 1024;  // reasons already logged per material row, so the log says each once
+    pbr::controls::Capabilities pbr_capabilities_;
     std::unordered_map<uint64_t, ComPtr<ID3D12PipelineState>> blit_psos_;
     Extension* ext_ = nullptr;
     // one frame capture: every draw in a text file, each target as the frame leaves it, the textures it read
@@ -841,7 +926,10 @@ private:
     std::array<photo_capture::Observation, photo_capture::kMaxTextures> photo_observed_{};
     std::unordered_map<uint64_t, uint32_t> photo_sampled_;
     std::filesystem::path cap_dir_;
+    capture::AutoSchedule auto_capture_;  // F1 > Capture: automatic captures while playing
+    bool cap_auto_ = false;               // the open capture was an automatic one
     uint32_t cap_i_ = 0;
+    draw_evidence::Selector draw_evidence_selector_;
     uint32_t cap_rt_ = 0;
     std::unordered_set<uint32_t> cap_seen_;
     std::unordered_set<uint64_t> cap_sh_;
@@ -937,6 +1025,13 @@ bool D3D12Backend::Init(uint32_t width, uint32_t height) {
 }
 
 bool D3D12Backend::CreateDevice() {
+    const auto evidence_enabled = DrawEvidenceEnv("XBE_PBR_DRAW_EVIDENCE");
+    if (!evidence_enabled.empty() && evidence_enabled != "0") {
+        draw_evidence_selector_ = draw_evidence::ParseSelector(evidence_enabled,
+            DrawEvidenceEnv("XBE_PBR_EVIDENCE_VERTEX_KEY"), DrawEvidenceEnv("XBE_PBR_EVIDENCE_PIXEL_KEY"),
+            DrawEvidenceEnv("XBE_PBR_EVIDENCE_DRAW"));
+        if (draw_evidence_selector_.invalid) LOGI("draw evidence: invalid opt-in selector, capture disabled");
+    }
     debug_gpu_ = GetEnvironmentVariableW(L"XBE_D3D12_DEBUG", nullptr, 0) != 0;
     if (debug_gpu_) {
         ComPtr<ID3D12Debug> dbg;
@@ -1111,12 +1206,33 @@ void D3D12Backend::CreateHeaps() {
 }
 
 bool D3D12Backend::CreateRootSignature() {
-    D3D12_DESCRIPTOR_RANGE ranges[2] = {};
+    D3D12_DESCRIPTOR_RANGE ranges[3] = {};
     ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     ranges[0].NumDescriptors = 4;
     ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
     ranges[1].NumDescriptors = 4;
-    D3D12_ROOT_PARAMETER params[4] = {};
+    ranges[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    ranges[2].BaseShaderRegister = 4;
+    ranges[2].NumDescriptors = 2;
+    D3D12_ROOT_PARAMETER params[5] = {};
+    params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    params[0].Descriptor.ShaderRegister = 0;
+    params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    params[1].Descriptor.ShaderRegister = 1;
+    for (int i = 0; i < 3; i++) {
+        params[2 + i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+        params[2 + i].DescriptorTable.NumDescriptorRanges = 1;
+        params[2 + i].DescriptorTable.pDescriptorRanges = &ranges[i];
+        params[2 + i].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    }
+    D3D12_ROOT_SIGNATURE_DESC rsd{};
+    rsd.NumParameters = 5;
+    ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    ranges[0].NumDescriptors = 4;
+    ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+    ranges[1].NumDescriptors = 4;
+#if 0
+    // root signature parameters 0..4 configured above
     params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     params[0].Descriptor.ShaderRegister = 0;
     params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -1129,6 +1245,7 @@ bool D3D12Backend::CreateRootSignature() {
     }
     D3D12_ROOT_SIGNATURE_DESC rsd{};
     rsd.NumParameters = 4;
+#endif
     rsd.pParameters = params;
     rsd.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
     ComPtr<ID3DBlob> rs;
@@ -1195,8 +1312,10 @@ void D3D12Backend::Submit(bool wait) {
              static_cast<unsigned long long>(f.used), wait ? ", synchronous" : "");
     if (wait) {
         WaitFence(fence_value_);
+        CompletePbrFrame(f);
         CheckGpu(dev_.Get(), f.alloc->Reset(), "resetting the synchronous frame allocator");
         f.garbage.clear();
+        f.pbr_retained.clear();
         f.used = 0;
         f.srv = 0;
         CheckGpu(dev_.Get(), cl_->Reset(f.alloc.Get(), nullptr), "resetting the synchronous command list");
@@ -1274,10 +1393,11 @@ D3D12Backend::Alloc D3D12Backend::Upload(uint64_t size, uint64_t align) {
     D3D12_HEAP_PROPERTIES hp{D3D12_HEAP_TYPE_UPLOAD};
     constexpr uint64_t kOwnAlign = 0x10000;  // a committed buffer's size granularity
     D3D12_RESOURCE_DESC bd = BufferDesc((size + kOwnAlign - 1) & ~(kOwnAlign - 1));
-    dev_->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                                  IID_PPV_ARGS(&r));
+    CheckGpu(dev_.Get(), dev_->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bd,
+             D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&r)), "allocating a spill upload buffer");
     uint8_t* p = nullptr;
-    r->Map(0, nullptr, reinterpret_cast<void**>(&p));
+    CheckGpu(dev_.Get(), r->Map(0, nullptr, reinterpret_cast<void**>(&p)), "mapping a spill upload buffer");
+    if (!p || !r->GetGPUVirtualAddress()) throw std::runtime_error("Invalid mapped upload buffer.");
     f.garbage.push_back(r);
     return {r.Get(), 0, p, r->GetGPUVirtualAddress()};
 }
@@ -1941,6 +2061,8 @@ bool SameTexture(const Tex& tx, const TextureDesc& d) {
 bool D3D12Backend::CreateTexture(Tex& tx, const TextureDesc& d, const FormatInfo& fi, uint64_t key) {
     g_perf.newtex++;
     if (tx.res) CurrentFrame().garbage.push_back(tx.res);
+    if (tx.pbr_nrm) CurrentFrame().garbage.push_back(tx.pbr_nrm);
+    if (tx.pbr_orm) CurrentFrame().garbage.push_back(tx.pbr_orm);
     tx = Tex{};
     tx.d = d;
     tx.fmt = HostFormat(fi.host);
@@ -2020,12 +2142,22 @@ bool D3D12Backend::UploadReplacement(Tex& tx, const pack::Image& img) {
                                              IID_PPV_ARGS(&res))))
         return false;
     if (tx.res) CurrentFrame().garbage.push_back(tx.res);
+    if (tx.pbr_nrm) CurrentFrame().garbage.push_back(tx.pbr_nrm);
+    if (tx.pbr_orm) CurrentFrame().garbage.push_back(tx.pbr_orm);
     tx.res = res;
     tx.fmt = kBgra;
     tx.levels = uint32_t(img.levels.size());
     tx.replaced = true;
+    tx.pbr_color = {};
+    if (pbr_library_.library && !img.levels.empty())
+        tx.pbr_color = pbr::ProveUploadedColor(Host::BGRA8, img.width, img.height, img.width * 4, img.levels[0]);
+    tx.pbr_proof_epoch = pbr_proof_epoch_;
     uint32_t w = img.width, h = img.height;
     for (uint32_t l = 0; l < tx.levels; l++) {
+        if (pbr_library_.library && l > 0) {
+            const auto level=pbr::ProveUploadedColor(Host::BGRA8,w,h,w*4,img.levels[l]);
+            tx.pbr_color.constant_alpha &= level.ready() && level.constant_alpha && level.alpha==tx.pbr_color.alpha;
+        }
         UploadTextureLevel(tx, 0, l, img.levels[l], w * 4);
         w = std::max(w / 2, 1u);
         h = std::max(h / 2, 1u);
@@ -2035,18 +2167,53 @@ bool D3D12Backend::UploadReplacement(Tex& tx, const pack::Image& img) {
     return true;
 }
 
+ComPtr<ID3D12Resource> D3D12Backend::UploadPackImage(const pack::Image& img) {
+    if (!img.width || !img.height || img.levels.empty()) return nullptr;
+    D3D12_HEAP_PROPERTIES hp{D3D12_HEAP_TYPE_DEFAULT};
+    D3D12_RESOURCE_DESC td{};
+    td.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    td.Width = img.width;
+    td.Height = img.height;
+    td.DepthOrArraySize = 1;
+    td.MipLevels = UINT16(img.levels.size());
+    td.Format = kBgra;
+    td.SampleDesc.Count = 1;
+    ComPtr<ID3D12Resource> res;
+    if (FAILED(dev_->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &td, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                             IID_PPV_ARGS(&res))))
+        return nullptr;
+    Tex tmp{};
+    tmp.res = res;
+    tmp.levels = uint32_t(img.levels.size());
+    uint32_t w = img.width;
+    for (uint32_t l = 0; l < tmp.levels; l++) {
+        UploadTextureLevel(tmp, 0, l, img.levels[l], w * 4);
+        w = std::max(w / 2, 1u);
+    }
+    D3D12_RESOURCE_STATES st = D3D12_RESOURCE_STATE_COPY_DEST;
+    Transition(res.Get(), st, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    return res;
+}
+
 void D3D12Backend::UploadTexture(Tex& tx, const TextureDesc& d, const FormatInfo& fi, const uint8_t* p,
                                  const uint32_t* colours, bool same, uint64_t dump) {
     D3D12_RESOURCE_STATES st = same ? D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE : D3D12_RESOURCE_STATE_COPY_DEST;
     Transition(tx.res.Get(), st, D3D12_RESOURCE_STATE_COPY_DEST);
     uint32_t faces = d.cube ? 6 : 1;
     std::vector<uint8_t> px;
+    tx.pbr_color = {};
+    tx.pbr_proof_epoch = pbr_proof_epoch_;
     for (uint32_t f = 0; f < faces; f++) {
         for (uint32_t l = 0; l < tx.levels; l++) {
             uint32_t pitch;
             DecodeLevel(d, l, f, p, colours, px, pitch);
             if (dump && f == 0 && l == 0) pack::Dump(dump, d, fi.host, px, pitch);
             if (ext_) ext_->Decoded(d, fi, f, l, px, pitch, tx.flags);
+            if (pbr_library_.library && f == 0 && faces == 1 && d.depth == 1 && !fi.depth) {
+                const auto level=pbr::ProveUploadedColor(fi.host,std::max(1u,d.width>>l),std::max(1u,d.height>>l),pitch,px);
+                if (l==0) tx.pbr_color=level;
+                else tx.pbr_color.constant_alpha &= level.ready() && level.constant_alpha && level.alpha==tx.pbr_color.alpha;
+            }
             UploadTextureLevel(tx, f, l, px, pitch);
         }
     }
@@ -2101,8 +2268,9 @@ ID3D12Resource* D3D12Backend::BindGuestTexture(const State& s, int stage, const 
     if (!same && !CreateTexture(tx, d, fi, key)) return nullptr;
     const bool pack_enabled = app::Get().graphics.texture_pack;
     const bool selection_changed = tx.pack_enabled != pack_enabled;
+    const bool proof_needed = pbr_library_.library && tx.pbr_proof_epoch != pbr_proof_epoch_;
     // cheap change check once per frame: lock epochs plus a sample of the bytes
-    if (tx.frame != presents_ + 1 || !same || tx.palette != palette.hash || selection_changed) {
+    if (tx.frame != presents_ + 1 || !same || tx.palette != palette.hash || selection_changed || proof_needed) {
         tx.frame = presents_ + 1;
         tx.palette = palette.hash;
         const uint8_t* p = static_cast<const uint8_t*>(kernel::HostPtr(d.data));
@@ -2110,7 +2278,7 @@ ID3D12Resource* D3D12Backend::BindGuestTexture(const State& s, int stage, const 
         uint64_t sig = MemSig(d.data, total) ^ DirtyEpoch(d.data) ^ palette.hash;
         g_perf.sig += PerfMs(perf_t);
         const bool content_changed = sig != tx.sig || !same;
-        if (content_changed || selection_changed) {
+        if (content_changed || selection_changed || proof_needed) {
             PerfScope perf_up{g_perf.texup};
             g_perf.texups++;
             g_perf.texup_bytes += total;
@@ -2124,7 +2292,7 @@ ID3D12Resource* D3D12Backend::BindGuestTexture(const State& s, int stage, const 
             bool roled = fi.compressed && d.width <= kRoleMaxSize && d.height <= kRoleMaxSize;
             const bool photo = photo_policy_.Armed() && d.format == 0x0F && d.width == 256 && d.height == 256
                                && !d.cube && d.depth == 1;
-            if (replace || dump || roled || photo) name = pack::ContentHash(d, p, total, palette.hash);
+            if (replace || dump || roled || photo || packable) name = pack::ContentHash(d, p, total, palette.hash);
             if (!photo_capture::UploadWithIdentity(tx.photo_identity, name, [&]() -> bool {
                 auto img = replace ? pack::Find(name) : nullptr;
                 if (!(img && UploadReplacement(tx, *img))) {
@@ -2144,7 +2312,36 @@ ID3D12Resource* D3D12Backend::BindGuestTexture(const State& s, int stage, const 
             })) return nullptr;
             tx.pack_enabled = pack_enabled;
             tx.role = roled ? TextureRole(name) : kRoleNone;
+            if (content_changed) {
+                if (tx.pbr_nrm) CurrentFrame().garbage.push_back(std::move(tx.pbr_nrm));
+                if (tx.pbr_orm) CurrentFrame().garbage.push_back(std::move(tx.pbr_orm));
+                tx.pbr_hash = packable ? name : 0;
+                tx.pbr_done = !packable;
+                tx.pbr_has_height = false;
+                tx.pbr_draws = 0;
+            }
         }
+    }
+    stages.accepted_color[stage] = &tx;
+    if (stage == 0 && !tx.pbr_done && tx.pbr_hash != 0 && pack::PbrEnabled()) {
+        std::unique_ptr<pack::PbrMaps> maps;
+        const auto poll = pack::PollPbr(tx.pbr_hash, maps);
+        if (poll == pack::PbrPoll::None) {
+            tx.pbr_done = true;
+        } else if (poll == pack::PbrPoll::Ready && maps) {
+            tx.pbr_nrm = UploadPackImage(maps->nrm);
+            tx.pbr_orm = UploadPackImage(maps->orm);
+            tx.pbr_levels = uint32_t(maps->nrm.levels.size());
+            tx.pbr_has_height = maps->has_height;
+            tx.pbr_done = true;
+        }
+    }
+    if (stage == 0 && tx.pbr_nrm && tx.pbr_orm && app::Get().pbr.enabled) {
+        stages.pbr_nrm = tx.pbr_nrm.Get();
+        stages.pbr_orm = tx.pbr_orm.Get();
+        stages.pbr_levels = tx.pbr_levels;
+        stages.pbr_has_height = tx.pbr_has_height;
+        stages.pbr_tex = &tx;
     }
     FillTextureView(tx, d, stages.sv[stage]);
     stages.role[stage] = tx.role;
@@ -2174,12 +2371,12 @@ ID3D12Resource* D3D12Backend::BindTexture(const State& s, int stage, DrawTexture
     info.kind = TextureKind(d);
     info.rect = d.linear;
 
-    // rendered by the GPU: sample the target itself; DXT data loaded over a target's memory is not it
+    // rendered by the GPU: sample the target itself; DXT or P8 data loaded over a target's memory is not it
     uint64_t alt = 0;
     bool box = true;
     if (ext_) ext_->Sample(d.data, fi.depth, stage, alt, stages.k[stage], box);
     auto tit = targets_.find(SizedTargetKey(d.data, fi.depth, d.width, d.height) | alt);
-    if (tit != targets_.end() && !d.cube && d.depth == 1 && !fi.compressed) {
+    if (tit != targets_.end() && !d.cube && d.depth == 1 && CanBeTargetFormat(d.format, fi.compressed)) {
         return BindTargetTexture(s, stage, d, tit->second, box, stages);
     }
     if (video::Playing(d.data))
@@ -2206,6 +2403,8 @@ ID3D12Resource* D3D12Backend::BindMovie(const TextureDesc& d, int stage, DrawTex
                                                      nullptr, IID_PPV_ARGS(&res))))
                 return;
             if (tx.res) CurrentFrame().garbage.push_back(tx.res);
+    if (tx.pbr_nrm) CurrentFrame().garbage.push_back(tx.pbr_nrm);
+    if (tx.pbr_orm) CurrentFrame().garbage.push_back(tx.pbr_orm);
             tx.res = res;
             tx.fmt = kBgra;
             tx.levels = 1;
@@ -2217,6 +2416,26 @@ ID3D12Resource* D3D12Backend::BindMovie(const TextureDesc& d, int stage, DrawTex
         Transition(tx.res.Get(), st, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     });
     if (!ok || !tx.res) return nullptr;
+    if (stage == 0 && !tx.pbr_done && tx.pbr_hash != 0 && pack::PbrEnabled()) {
+        std::unique_ptr<pack::PbrMaps> maps;
+        const auto poll = pack::PollPbr(tx.pbr_hash, maps);
+        if (poll == pack::PbrPoll::None) {
+            tx.pbr_done = true;
+        } else if (poll == pack::PbrPoll::Ready && maps) {
+            tx.pbr_nrm = UploadPackImage(maps->nrm);
+            tx.pbr_orm = UploadPackImage(maps->orm);
+            tx.pbr_levels = uint32_t(maps->nrm.levels.size());
+            tx.pbr_has_height = maps->has_height;
+            tx.pbr_done = true;
+        }
+    }
+    if (stage == 0 && tx.pbr_nrm && tx.pbr_orm && app::Get().pbr.enabled) {
+        stages.pbr_nrm = tx.pbr_nrm.Get();
+        stages.pbr_orm = tx.pbr_orm.Get();
+        stages.pbr_levels = tx.pbr_levels;
+        stages.pbr_has_height = tx.pbr_has_height;
+        stages.pbr_tex = &tx;
+    }
     FillTextureView(tx, d, stages.sv[stage]);
     return tx.res.Get();
 }
@@ -2334,7 +2553,18 @@ uint64_t VertexKey(const State& s, const Assembled& a, const DrawShaders& sh) {
     return vkey;
 }
 
+// the enhanced car paint variant, apart from the program's plain shader
+constexpr uint64_t kCarPaintSalt = 0xCA9A1A7ull << 32;
+
+// enhanced car paint applies to the programs that light cars the console's way (gpu/car_paint.h); known per program
+bool CarLightingProgram(const State& s, const Assembled& a) {
+    if (s.vs->car_lighting < 0)
+        s.vs->car_lighting = car_paint::LightingProgram(VertexProgramHlsl(s.vs->program, a.regs, a.decode)) ? 1 : 0;
+    return s.vs->car_lighting > 0;
+}
+
 std::string VertexHlsl(const State& s, const Assembled& a, const DrawShaders& sh) {
+    if (sh.prog && sh.car_paint) return car_paint::VertexHlsl(VertexProgramHlsl(s.vs->program, a.regs, a.decode));
     if (sh.prog) return VertexProgramHlsl(s.vs->program, a.regs, a.decode);
     return FixedVertexHlsl(a.regs, a.pretransformed, a.decode, sh.fk);
 }
@@ -2365,6 +2595,13 @@ bool D3D12Backend::BindStageTexturesAndTargets(const State& s, DrawTextures& sta
 constexpr uint64_t kPixelKeySalt = 0x9E3779B97F4A7C15ull;
 
 // sets sh.ph and sh.ps_code, compiling the shader on a cache miss
+uint32_t CarPaintTargetMask(const PixelKey& pk) {
+    uint32_t m = 0;
+    for (int st = 0; st < 3; st++)
+        if (pk.tex[st].kind == kTex2D && (pk.tex[st].flags & kTexTarget)) m |= 1u << st;
+    return m;
+}
+
 void D3D12Backend::EnsurePixelShader(const PixelKey& pk, DrawShaders& sh) {
     // pixel shaders share the map with vertex shaders, the salt keeps their keys apart
     auto pit = shader_src_.find(sh.pkey ^ kPixelKeySalt);
@@ -2373,7 +2610,8 @@ void D3D12Backend::EnsurePixelShader(const PixelKey& pk, DrawShaders& sh) {
         sh.ph = pit->second;
         return;
     }
-    sh.ps_code = Compile(PixelHlsl(pk), "main", "ps_5_0", sh.ph);
+    sh.ps_code = Compile(pk.car_paint ? car_paint::PixelHlsl(PixelHlsl(pk), CarPaintTargetMask(pk)) : PixelHlsl(pk),
+                         "main", "ps_5_0", sh.ph);
     shader_src_[sh.pkey ^ kPixelKeySalt] = sh.ph;
 }
 
@@ -2649,7 +2887,7 @@ void FillLightConstants(const State& s, const FixedKey& fk, DrawConstants& c) {
 }
 
 void D3D12Backend::UploadConstants(const State& s, const DrawShaders& sh, const PsoKey& k, const DrawTextures& stages,
-                                   GuestExtent size, DrawConstants& c) {
+                                   GuestExtent size, DrawConstants& c, draw_evidence::Recorder* evidence) {
     Alloc vc = Upload(sizeof(s.vsc), 256);
     std::memcpy(vc.cpu, s.vsc.data(), sizeof(s.vsc));
     Alloc dc = Upload(sizeof(DrawConstants), 256);
@@ -2665,6 +2903,11 @@ void D3D12Backend::UploadConstants(const State& s, const DrawShaders& sh, const 
         FillLightConstants(s, sh.fk, c);
     }
     std::memcpy(dc.cpu, &c, sizeof(c));
+    // Copy the actual mapped bytes AFTER extension edits/fills. Do not retain upload-ring pointers.
+    if (evidence) {
+        evidence->VertexConstants(draw_evidence::Bytes(vc.cpu, sizeof(s.vsc)));
+        evidence->DrawConstantsUpload(draw_evidence::Bytes(dc.cpu, sizeof(c)));
+    }
     cl_->SetGraphicsRootConstantBufferView(0, vc.gpu);
     cl_->SetGraphicsRootConstantBufferView(1, dc.gpu);
 }
@@ -2676,11 +2919,13 @@ void D3D12Backend::CaptureTextures(const State& s, const DrawTextures& stages) {
         if (!s.textures[size_t(i)] || !Describe(s.textures[size_t(i)], d)) continue;
         bool tg = targets_.count(SizedTargetKey(d.data, Format(d.format).depth, d.width, d.height));
         const auto& t = s.tss[size_t(i)];
-        // address u v, filters min mag mip, and the stage's colour op (fixed function)
-        fprintf(cap_, " | t%d %08X fmt %X %ux%u%s%s addr %u%u filt %u%u%u cop %u%s", i, d.data, d.format, d.width,
-                d.height, tg ? " target" : "", res ? "" : " unbound", t[kTssAddressU], t[kTssAddressV],
-                t[kTssMinFilter], t[kTssMagFilter], t[kTssMipFilter], t[kTssColorOp],
-                stages.role[i] == kRoleNeon ? " neon" : "");
+        // address u v, filters min mag mip, and the stage's colour op (fixed function); then the texture pack
+        // content hash (0 when not packable) and coordinate index, the identity a PBR material assignment names
+        fprintf(cap_, " | t%d %08X fmt %X %ux%u%s%s addr %u%u filt %u%u%u cop %u%s hash %016llX tci %u", i, d.data,
+                d.format, d.width, d.height, tg ? " target" : "", res ? "" : " unbound", t[kTssAddressU],
+                t[kTssAddressV], t[kTssMinFilter], t[kTssMagFilter], t[kTssMipFilter], t[kTssColorOp],
+                stages.role[i] == kRoleNeon ? " neon" : "", (unsigned long long)stages.photo_identity[i].original_hash,
+                t[kTssTexCoordIndex]);
         if (res && !tg && stages.info[i].kind == kTex2D && cap_seen_.insert(d.data).second) {
             cap_tex_.push_back({res, stages.sv[i].Format, d.data, d.width, d.height});
         }
@@ -2749,6 +2994,19 @@ void D3D12Backend::CaptureRawVertices(const State& s, const Assembled& a, const 
         for (int row = 0; row < 4; row++)
             fprintf(cap_, " | %g %g %g %g", m[row * 4], m[row * 4 + 1], m[row * 4 + 2], m[row * 4 + 3]);
     }
+    // fixed function lighting: what the generated shader lights with (material sources are in its HLSL)
+    if (!s.rs[kRsLighting]) return;
+    auto rgba = [&](const char* name, const float* v) { fprintf(cap_, " %s(%.3f %.3f %.3f %.3f)", name, v[0], v[1], v[2], v[3]); };
+    fprintf(cap_, "\n     lighting colorvertex %u sources d%u s%u a%u e%u", s.rs[kRsColorVertex],
+            s.rs[kRsDiffuseMaterialSource], s.rs[kRsSpecularMaterialSource], s.rs[kRsAmbientMaterialSource],
+            s.rs[kRsEmissiveMaterialSource]);
+    rgba("mat_d", c.mat[0]); rgba("mat_a", c.mat[1]); rgba("mat_s", c.mat[2]); rgba("mat_e", c.mat[3]);
+    rgba("ambient", c.amb); rgba("normal", s.vattr[2].data());
+    for (int l = 0; l < 8; l++)
+        if ((s.light_enable >> l) & 1) {
+            fprintf(cap_, "\n     light%d type %u", l, s.lights[size_t(l)][0]);
+            rgba("d", c.lt[l][0]); rgba("a", c.lt[l][2]); rgba("dir", c.lt[l][4]);
+        }
 }
 
 void D3D12Backend::CaptureInputs(const State& s, const Assembled& a, const DrawConstants& c, bool fixed) {
@@ -2852,7 +3110,9 @@ void D3D12Backend::CaptureShader(const char* kind, uint64_t key, const std::stri
 void D3D12Backend::CaptureShaders(const State& s, const Assembled& a, const DrawShaders& sh, const PixelKey& pk) {
     std::string src = VertexHlsl(s, a, sh);
     CaptureShader("vs", sh.vkey, sh.quad ? QuadHlsl(std::move(src)) : src);
-    CaptureShader("ps", sh.pkey, PixelHlsl(pk));
+    CaptureShader("ps", sh.pkey, pk.car_paint ? car_paint::PixelHlsl(PixelHlsl(pk), CarPaintTargetMask(pk)) : PixelHlsl(pk));
+    // every draw's own keys, since the source files above are written once per key
+    fprintf(cap_, "     keys vs %016llX ps %016llX\n", (unsigned long long)sh.vkey, (unsigned long long)sh.pkey);
 }
 
 D3D12_SRV_DIMENSION NullViewDimension(uint8_t kind) {
@@ -2900,6 +3160,17 @@ void D3D12Backend::SetTextureViewsAndSamplers(const State& s, const Assembled& a
     cl_->SetGraphicsRootDescriptorTable(2, Gpu(srv_heap_.Get(), slot, srv_inc_));
     uint32_t samplers = EnsureStageSamplers(s, stages, UnitTexcoords(a));
     cl_->SetGraphicsRootDescriptorTable(3, Gpu(smp_heap_.Get(), samplers, smp_inc_));
+    if (stages.pbr_nrm && stages.pbr_orm) {
+        uint32_t pbr_slot = AllocSrvSlots(2);
+        D3D12_SHADER_RESOURCE_VIEW_DESC psv{};
+        psv.Format = kBgra;
+        psv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        psv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        psv.Texture2D.MipLevels = stages.pbr_levels;
+        dev_->CreateShaderResourceView(stages.pbr_nrm, &psv, Cpu(srv_heap_.Get(), pbr_slot, srv_inc_));
+        dev_->CreateShaderResourceView(stages.pbr_orm, &psv, Cpu(srv_heap_.Get(), pbr_slot + 1, srv_inc_));
+        cl_->SetGraphicsRootDescriptorTable(4, Gpu(srv_heap_.Get(), pbr_slot, srv_inc_));
+    }
 }
 
 // viewport covers the target, the guest viewport is in the shader; scissor clips to it
@@ -2940,30 +3211,34 @@ D3D_PRIMITIVE_TOPOLOGY PrimitiveTopology(const Assembled& a) {
     return a.strip ? D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP : D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 }
 
-void D3D12Backend::UploadVertexBuffers(const Assembled& a) {
+void D3D12Backend::UploadVertexBuffers(const Assembled& a, draw_evidence::Recorder* evidence) {
     D3D12_VERTEX_BUFFER_VIEW vbv[16];
     for (uint32_t i = 0; i < a.buffer_count; i++) {
         const VertexBuffer& b = a.buffers[i];
         Alloc vb = Upload(b.bytes, 16);
         std::memcpy(vb.cpu, b.src, b.bytes);
+        if (evidence) evidence->VertexStream(i, draw_evidence::Bytes(vb.cpu, b.bytes));
         vbv[i] = {vb.gpu, b.bytes, b.stride};
     }
     cl_->IASetVertexBuffers(0, a.buffer_count, vbv);
 }
 
-void D3D12Backend::DrawGeometry(const Assembled& a) {
-    UploadVertexBuffers(a);
+void D3D12Backend::DrawGeometry(const Assembled& a, draw_evidence::Recorder* evidence) {
+    UploadVertexBuffers(a, evidence);
     cl_->IASetPrimitiveTopology(PrimitiveTopology(a));
     if (a.index_count) {
         uint32_t ibytes = a.index_count * (a.index16 ? 2 : 4);
         Alloc ib = Upload(ibytes, 4);
         std::memcpy(ib.cpu, a.index_src, ibytes);
+        if (evidence) evidence->IndexUpload(draw_evidence::Bytes(ib.cpu, ibytes));
         D3D12_INDEX_BUFFER_VIEW ibv{ib.gpu, ibytes, a.index16 ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT};
         cl_->IASetIndexBuffer(&ibv);
         cl_->DrawIndexedInstanced(a.index_count, 1, 0, a.base_vertex, 0);
     } else {
         cl_->DrawInstanced(a.draw_count, 1, 0, 0);
     }
+    // This observes successful CPU command-list recording, never GPU execution/completion.
+    if (evidence) evidence->DrawWasRecorded();
 }
 
 // calls the extension's EndDraw on every return from Draw once made
@@ -3059,12 +3334,16 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
     // past the ring every upload is a buffer of its own: seconds lost on a frame that draws a whole level once
     if (CurrentFrame().used > kUploadSize - kUploadReserve) Submit(true);
     if (!BindTargets(s)) return;
+    if (!pbr_settings_) UpdatePbrSettings();
     if (ext_ && ext_->Bound(*this, s, bound_rt_, bound_ds_, a.pretransformed) && !BindTargets(s)) return;
 
     // vertex shader
     DrawShaders sh = ClassifyShaders(s, a, count);
     if (sh.prog) EnsureProgramHash(s);
     sh.vkey = VertexKey(s, a, sh);
+    const auto& graphics = app::Get().graphics;
+    sh.car_paint = graphics.car_paint && sh.prog && !sh.quad && !a.pretransformed && CarLightingProgram(s, a);
+    if (sh.car_paint) sh.vkey ^= kCarPaintSalt;
     EnsureVertexShader(s, a, sh);
 
     // stage textures, then the pixel shader made for them
@@ -3072,6 +3351,11 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
     if (!BindStageTexturesAndTargets(s, stages)) return;
     PixelKey pk = MakePixelKey(s, stages.info);
     pk.quad = sh.quad;
+    pk.car_paint = sh.car_paint;
+    // The old filename-companion shader has no approved assignment or physical scene bridge.
+    // Only the separate reviewed-material pipeline may consume the PBR preference.
+    pk.pbr = 0;
+    stages.pbr_nrm = stages.pbr_orm = nullptr;
     sh.pkey = Hash(&pk, sizeof(pk));
     EnsurePixelShader(pk, sh);
     if (!sh.vs_code || !sh.ps_code) return;
@@ -3091,11 +3375,56 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
     // constants
     GuestExtent size;
     SurfaceSize(bound_rt_ ? s.rt : s.zs, size.w, size.h);
+    if (TryPbrDraw(s, a, sh, pk, k, stages, size, pso)) return;
+    std::unique_ptr<draw_evidence::Recorder> evidence;
+    if (draw_evidence_selector_.enabled && draw_evidence_selector_.Claim(cap_ != nullptr, sh.vkey, sh.pkey, cap_i_)) {
+        try {
+            evidence = std::make_unique<draw_evidence::Recorder>();
+            draw_evidence::Identity id;
+            id.frame = frame_; id.presents = presents_; id.draw_ordinal = cap_i_;
+            id.vertex_key = sh.vkey; id.pixel_key = sh.pkey;
+            id.vertex_source_hash = sh.vh; id.pixel_source_hash = sh.ph;
+            id.guest_primitive = prim; id.guest_start = start; id.guest_count = count;
+            id.guest_width = size.w; id.guest_height = size.h;
+            const Target* target = bound_rt_ ? bound_rt_ : bound_ds_;
+            id.host_width = target ? target->w : 0; id.host_height = target ? target->h : 0;
+            id.flags = (sh.prog ? draw_evidence::ProgrammableVertex : 0) |
+                (sh.fixed_transform ? draw_evidence::FixedTransform : 0) |
+                (sh.quad ? draw_evidence::Quad : 0) | (k.blend ? draw_evidence::Blended : 0) |
+                (signed_op ? draw_evidence::MultiplePasses : 0) | (pk.programmable ? draw_evidence::ProgrammablePixel : 0);
+            // Explicit members only: never serialize compiler padding in PsoKey or State.
+            std::array<uint32_t, 41> words{};
+            size_t at = 0;
+            for (uint32_t v : {k.regs, k.topo, k.has_rt, k.has_ds}) words[at++] = v;
+            for (uint32_t v : k.elements) words[at++] = v;
+            for (uint32_t v : {k.blend, k.src, k.dst, k.op, k.wmask, k.zen, k.zwrite, k.zfunc, k.sten,
+                k.sfunc, k.smask, k.swmask, k.sfail, k.szfail, k.spass, k.cull, k.ccw, k.fill,
+                std::bit_cast<uint32_t>(k.zbias), std::bit_cast<uint32_t>(k.zslope), k.rtfmt}) words[at++] = v;
+            auto result = evidence->Begin(s, a, id,
+                draw_evidence::Bytes(sh.vs_code->GetBufferPointer(), sh.vs_code->GetBufferSize()),
+                draw_evidence::Bytes(sh.ps_code->GetBufferPointer(), sh.ps_code->GetBufferSize()), words);
+            if (result != draw_evidence::Error::None) {
+                LOGI("draw evidence: selected draw rejected (%s)", draw_evidence::ErrorText(result));
+                evidence.reset();
+            }
+        } catch (...) {
+            LOGI("draw evidence: selected diagnostic allocation failed; drawing continues");
+            evidence.reset();
+        }
+    }
     DrawConstants c{};
-    UploadConstants(s, sh, k, stages, size, c);
+    if (sh.car_paint) {
+        c.carpaint[0] = std::clamp(graphics.car_relight, 0.0f, 1.0f);
+        c.carpaint[1] = std::clamp(graphics.car_specular, 0.0f, 3.0f);
+        c.carpaint[2] = std::clamp(graphics.car_roughness, 0.05f, 0.8f);
+        c.carpaint[3] = std::clamp(graphics.car_reflection, 0.0f, 2.0f);
+    }
+    UploadConstants(s, sh, k, stages, size, c, evidence.get());
     auto reupload = [&] {
         Alloc dc = Upload(sizeof(DrawConstants), 256);
         std::memcpy(dc.cpu, &c, sizeof(c));
+        // Screen-effect corrections can replace b1; only the last bound copy belongs to this draw.
+        if (evidence) evidence->DrawConstantsUpload(draw_evidence::Bytes(dc.cpu, sizeof(c)));
         cl_->SetGraphicsRootConstantBufferView(1, dc.gpu);
     };
     // the game's screen effects scaled by the graphics settings: alpha by sblend.y, colour and alpha by sblend.z
@@ -3118,7 +3447,7 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
 
     // geometry, counted while the title runs a visibility test
     uint32_t query = BeginCountedDraw(s);
-    DrawGeometry(a);
+    DrawGeometry(a, evidence.get());
     if (signed_op) {
         k.op = kBlendOpRevSubtract;  // dst - src
         if (ID3D12PipelineState* sub = EnsurePipeline(k, sh.vs_code, sh.ps_code)) {
@@ -3129,6 +3458,17 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
         }
     }
     EndCountedDraw(query);
+    if (evidence) {
+        auto result = evidence->error();
+        if (result == draw_evidence::Error::None) {
+            wchar_t runtime_path[32768] = {};
+            DWORD n = GetModuleFileNameW(nullptr, runtime_path, static_cast<DWORD>(std::size(runtime_path)));
+            result = n && n < std::size(runtime_path)
+                ? draw_evidence::WriteNew(cap_dir_, evidence->record(), std::filesystem::path(runtime_path))
+                : draw_evidence::Error::IoFailure;
+        }
+        LOGI("draw evidence: selected draw result=%s (CPU inputs only)", draw_evidence::ErrorText(result));
+    }
     if (photo_policy_.Armed()) ObservePhotoDraw(s, a, k, sh, stages);
     bool snap_tex = false;
     if (cap_ && diag::CaptureSnapTexture())
@@ -3600,14 +3940,16 @@ void D3D12Backend::FinishCapture(const Surface& front) {
     fclose(cap_);
     cap_ = nullptr;
     cap_tex_.clear();
-    LOGI("d3d12: frame captured to %s", hostpath::Utf8(cap_dir_).c_str());
+    LOGR("d3d12: %s frame captured to %s", cap_auto_ ? "automatic" : "requested", hostpath::Utf8(cap_dir_).c_str());
+    capture::g_status.Finished(hostpath::Utf8(cap_dir_), cap_auto_);
 }
 
 void D3D12Backend::StartCapture() {
     std::error_code ec;
-    auto base = std::filesystem::weakly_canonical(app::ExeDir() / diag::CaptureDir(), ec);
+    auto base = std::filesystem::weakly_canonical(app::ExeDir() / CaptureBase(diag::CaptureDir()), ec);
     if (ec) {
         LOGE("capture: cannot resolve output directory: %s", ec.message().c_str());
+        capture::g_status.Failed("cannot resolve the captures folder: " + ec.message());
         return;
     }
     CaptureStamp stamp{frame_, presents_,
@@ -3619,11 +3961,13 @@ void D3D12Backend::StartCapture() {
     if (directory.error || !WriteCaptureMetadata(directory, stamp, ec)) {
         const auto error = directory.error ? directory.error : ec;
         LOGE("capture: cannot create new evidence session: %s", error.message().c_str());
+        capture::g_status.Failed("cannot create a capture folder: " + error.message());
         return;
     }
     FILE* stream = OpenCaptureFileNew(directory.path / "frame.txt");
     if (!stream) {
         LOGE("capture: cannot create new frame log (errno %d)", errno);
+        capture::g_status.Failed("cannot create frame.txt (errno " + std::to_string(errno) + ")");
         return;
     }
     cap_dir_ = std::move(directory.path);
@@ -3808,6 +4152,8 @@ void D3D12Backend::ReleaseOldTextures() {
     for (auto it = textures_.begin(); it != textures_.end();) {
         if (it->second.frame + kIdleFrames < presents_) {
             CurrentFrame().garbage.push_back(it->second.res);
+            if (it->second.pbr_nrm) CurrentFrame().garbage.push_back(it->second.pbr_nrm);
+            if (it->second.pbr_orm) CurrentFrame().garbage.push_back(it->second.pbr_orm);
             it = textures_.erase(it);
         } else {
             ++it;
@@ -3828,8 +4174,10 @@ void D3D12Backend::ResetFrame() {
         WaitFence(f.fence);
         g_perf.wait += PerfMs(perf_wait);
     }
+    CompletePbrFrame(f);
     CheckGpu(dev_.Get(), f.alloc->Reset(), "resetting the frame allocator");
     f.garbage.clear();
+    f.pbr_retained.clear();
     f.used = 0;
     f.srv = 0;
     CheckGpu(dev_.Get(), cl_->Reset(f.alloc.Get(), nullptr), "resetting the command list");
@@ -3883,12 +4231,37 @@ void LogPerf() {
     }
 }
 
+void LogPbrPerf() {
+    static PerfClock::time_point pbr_start = PerfClock::now();
+    PbrPerf& q = g_pbr_perf;
+    q.frames++;
+    if (PerfMs(pbr_start) >= 10000.0) {
+        const double n = double(q.frames);
+        if (q.attempts)
+            LOGR("perf: pbr per frame %.2f ms (mesh %.2f plan %.2f record %.2f other %.2f) for %.0f material draws, %.0f drawn",
+                 q.total / n, q.mesh / n, q.plan / n, q.record / n, (q.total - q.mesh - q.plan - q.record) / n,
+                 q.attempts / n, q.drawn / n);
+        q = PbrPerf{};
+        pbr_start = PerfClock::now();
+    }
+}
+
 void D3D12Backend::Present(const Surface& front) {
     PerfScope perf_present{g_perf.present};
     if (cap_) {
         FinishCapture(front);
-    } else if ((g_capture.exchange(false) || diag::CaptureFrame(frame_ + 1)) && CaptureOn()) {
-        StartCapture();
+    } else {
+        // F4 and XBE_CAPTURE_FRAME, the menu's delayed request, then the automatic mode (none while F1 is open)
+        const double now = capture::Now();
+        const bool menu = app::MenuOpen();
+        const auto& c = app::Get().capture;
+        const bool asked = g_capture.exchange(false) || diag::CaptureFrame(frame_ + 1) || capture::g_delayed.Take(now, menu);
+        const bool automatic = auto_capture_.Due(now, c.automatic, c.interval, capture::g_status.Automatic(), c.limit, menu);
+        if (asked || automatic) {
+            cap_auto_ = !asked;
+            if (automatic) auto_capture_.Taken(now);
+            StartCapture();
+        }
     }
     const auto photo = photo_policy_.FinishPresent();
     ResizeSwap();
@@ -3930,9 +4303,397 @@ void D3D12Backend::Present(const Surface& front) {
     ResetFrame();
     CountFps();
     if (diag::Perf()) LogPerf();
+    LogPbrPerf();
+    UpdatePbrSettings();
+    if (presents_ == 1 || presents_ % 30 == 0) PublishPbrTelemetry();
     ApplySettings();
 }
 
+void D3D12Backend::CompletePbrFrame(Frame& frame) {
+    if (frame.pbr_owner == pbr_library_.library && frame.pbr_pending_draws.size() == pbr_observed_.size()) {
+        for (size_t i = 0; i < frame.pbr_pending_draws.size(); ++i)
+            pbr_observed_[i].rendered_draws += frame.pbr_pending_draws[i];
+    }
+    frame.pbr_pending_draws.clear();
+    frame.pbr_owner.reset();
+}
+
+bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShaders& sh,const PixelKey& pk,
+                            const PsoKey& key,const DrawTextures& textures,GuestExtent size,
+                            ID3D12PipelineState* legacy_pso) {
+    namespace pc = pbr::controls;
+    namespace pp = pbr::pipeline;
+    if (!pbr_settings_ || !pbr_settings_->settings().enabled || !pbr_library_.library) return false;
+    const auto& library = *pbr_library_.library;
+    const auto& settings = pbr_settings_->settings();
+    // Candidates by the content hash of each bound stage's accepted colour, not a scan of every material.
+    size_t candidates[16];
+    size_t candidate_count = 0;
+    for (uint32_t stage = 0; stage < 4; ++stage) {
+        const Tex* bound = textures.accepted_color[stage];
+        if (!bound || !bound->photo_identity.original_hash) continue;
+        pbr::ForTexture(library, bound->photo_identity.original_hash, [&](uint32_t row) {
+            if (library.materials[row].assignment.stage == stage && candidate_count < std::size(candidates))
+                candidates[candidate_count++] = row;
+        });
+    }
+    for (size_t candidate = 0; candidate < candidate_count; ++candidate) {
+        const size_t row_index = candidates[candidate];
+        const auto& material = library.materials[row_index];
+        const auto& assignment = material.assignment;
+        if (assignment.stage >= 4 || (assignment.vertex_shader != pbr::kAnyShader && assignment.vertex_shader != sh.vkey) ||
+            (assignment.pixel_shader != pbr::kAnyShader && assignment.pixel_shader != sh.pkey)) continue;
+        Tex* color = textures.accepted_color[assignment.stage];
+        if (!color || color->photo_identity.original_hash != assignment.original_texture) continue;
+        // "any" UV set: the draw's own coordinate index. The mesh is built for that one.
+        pbr::Assignment mesh_assignment = assignment;
+        if (assignment.uv_set == pbr::kAnyUv) {
+            const uint32_t index = s.tss[assignment.stage][kTssTexCoordIndex];
+            if (index >= 4) continue;
+            mesh_assignment.uv_set = index;
+        }
+        auto& observed = pbr_observed_[row_index];
+        ++observed.observed_draws;
+        ++g_pbr_perf.attempts;
+        PerfScope perf_pbr{g_pbr_perf.total};
+        observed.reason = pc::Reason::UnsupportedDraw;
+        // The catalog reason is coarse; the log names the exact check, once per change per material.
+        const auto trace = [&](const std::string& why) {
+            if (pbr_trace_.size() < pbr_observed_.size()) pbr_trace_.resize(pbr_observed_.size());
+            // every distinct reason once per material: draws sharing a material may alternate between reasons
+            auto& seen = pbr_trace_[row_index];
+            if (seen.find("|" + why + "|") != std::string::npos) return;
+            seen += "|" + why + "|";
+            LOGR("pbr: material %zu texture %016llX: %s", row_index, (unsigned long long)assignment.original_texture,
+                 why.c_str());
+        };
+        const auto& info = textures.info[assignment.stage];
+        // Original coverage, pass effects, fog and programmable deformation cannot be silently dropped.
+        // Captures deliberately retain the original path until the evidence format also represents PBR draws.
+        const char* gate =
+            !bound_rt_ || bound_rt_->range != 1 ? "render target" : ext_ ? "renderer extension" : cap_ ? "capturing" :
+            photo_policy_.Armed() ? "photo capture armed" : sh.prog ? "vertex program" : sh.quad ? "screen quad" :
+            !sh.fixed_transform ? "not a fixed transform" : sh.car_paint ? "car paint" :
+            a.pretransformed ? "pretransformed" : !pbr::SimpleAlbedoSurface(s,pk,assignment.stage) ? "texture combiner" :
+            a.topology != Topology::Triangles ? "not triangles" : key.blend ? "blended" : !key.zen ? "depth test off" :
+            !key.zwrite ? "depth write off" :
+            // an enabled ALWAYS test never discards (the world's state), exactly as the legacy alphatest()
+            SimpleState(s,kMAlphaTestEnable) && Cmp(SimpleState(s,kMAlphaFunc)) != D3D12_COMPARISON_FUNC_ALWAYS ? "alpha test" :
+            pk.alphakill ? "alpha kill" : assignment.cutout ? "cutout" :
+            assignment.surface != pbr::SurfaceClass::World ? "not a world surface" :
+            textures.rt[assignment.stage] ? "texture is a render target" : info.kind != kTex2D ? "not a 2D texture" :
+            info.rect ? "rect texture" : info.shadow ? "shadow texture" : color->uploads > 4 ? "dynamic texture" :
+            textures.role[assignment.stage] == kRoleNeon ? "neon" : nullptr;
+        if (gate) {
+            std::string why = std::string("draw gate: ") + gate;
+            if (gate == std::string_view("texture combiner")) {
+                // the exact key the combiner check saw: stage 0/1 colour and alpha ops/args/result, stage 2 op
+                char detail[256];
+                const auto& f0 = pk.ff[0]; const auto& f1 = pk.ff[1];
+                snprintf(detail, sizeof(detail), " (s0 %u %u %u|%u %u %u r%u, s1 %u %u %u|%u %u %u r%u, s2 %u, "
+                         "tex %u/%u/%u/%u flags %u, flat %u two %u proj %u quad %u prog %u kill %u)",
+                         f0[0], f0[1], f0[2], f0[4], f0[5], f0[6], f0[8], f1[0], f1[1], f1[2], f1[4], f1[5], f1[6], f1[8],
+                         pk.ff[2][0], pk.tex[0].kind, pk.tex[1].kind, pk.tex[2].kind, pk.tex[3].kind, pk.tex[0].flags,
+                         pk.flat, pk.two_sided, pk.proj, pk.quad, pk.programmable, pk.alphakill);
+                why += detail;
+            } else if (gate == std::string_view("blended") || gate == std::string_view("alpha test")) {
+                char detail[128];
+                snprintf(detail, sizeof(detail), " (blend %u src %u dst %u op %u, alpha func %u ref %u, zwrite %u)",
+                         key.blend, key.src, key.dst, key.op, SimpleState(s, kMAlphaFunc), SimpleState(s, kMAlphaRef) & 0xFF,
+                         key.zwrite);
+                why += detail;
+            }
+            trace(why);
+            continue;
+        }
+        const auto* override = pbr_settings_->Find(assignment,library.manifest_sha256);
+        if (override && !override->enabled) { observed.reason=pc::Reason::MaterialDisabled; continue; }
+        auto parameters=override&&!override->use_global_parameters?override->parameters:settings.parameters;
+        pc::Sanitize(parameters);
+        // A height effect needs this material's height map: without one it draws with none, as the menu says.
+        // True displacement needs culling/depth/budget proofs this backend never establishes, so it is parallax.
+        if (parameters.height_mode!=pc::HeightMode::None&&!material.has_height) parameters.height_mode=pc::HeightMode::None;
+        if (parameters.height_mode==pc::HeightMode::Displacement) parameters.height_mode=pc::HeightMode::Parallax;
+        pbr::fixed_mesh::RasterTarget target{bound_rt_->w,bound_rt_->h,size.w,size.h};
+        const uint64_t index_bytes=uint64_t(a.index_count)*(a.index16?2:4);
+        if (index_bytes > pp::kMaxMeshIndices*4ull || (index_bytes && !a.index_src)) continue;
+        // Fixed-function API semantics establish registers0/2/3/9+uv as object position/authored normal/
+        // diffuse/UV. World streams have no register 2: those shade with the triangle's own plane. LIGHTING
+        // off forwards register 3 to oD0, which the baked mode carries. The bridge independently checks the
+        // actual declaration/FVF, layout, decoding and same-draw spans.
+        const bool lit=s.rs[kRsLighting]!=0,authored_normals=((a.regs>>2)&1)!=0;
+        pbr::fixed_mesh::FixedProof fixed;
+        fixed.kind=pbr::fixed_mesh::DrawKind::ObjectSpaceFixedFunction;
+        fixed.authored_normals=authored_normals;fixed.face_normals=!authored_normals;fixed.assigned_uv=true;
+        fixed.vertex_diffuse=!lit;
+        // SimpleAlbedoSurface admitted stage 1 only as a CURRENT*TFACTOR tint; the baked mode folds the factor in.
+        const bool factor_stage=pk.ff[1][0]>1;
+        if (factor_stage && lit) { trace("lit draw with a texture factor stage"); continue; }
+        if (factor_stage) {
+            const uint32_t f=s.rs[kRsTextureFactor];
+            const bool factor_alpha=pk.ff[1][4]==4; // TextureFactorStage: MODULATE CURRENT*TFACTOR, else keeps CURRENT
+            fixed.diffuse_factor={float((f>>16)&255)/255.0f,float((f>>8)&255)/255.0f,float(f&255)/255.0f,
+                                  factor_alpha?float(f>>24)/255.0f:1.0f};
+        }
+        // SimpleAlbedoSurface: stage-0 alpha is the texture's, or texture*diffuse
+        fixed.alpha_from_diffuse=pk.ff[0][4]==4;
+        observed.reason=pc::Reason::MissingGeometry;
+        auto perf_mesh_t=PerfClock::now();
+        // Static scenery repeats its exact bytes every frame: build each mesh once, then refresh it.
+        uint64_t mesh_key=MixHash(&row_index,sizeof(row_index),sh.vkey^(uint64_t(mesh_assignment.uv_set)<<56));
+        {
+            const uint64_t words[]={a.vertex_count,a.index_count,a.draw_count,uint64_t(a.index16),uint64_t(int64_t(a.base_vertex)),
+                uint64_t(a.strip),uint64_t(a.topology),uint64_t(a.regs),a.decode,a.buffer_count,uint64_t(a.pretransformed),
+                s.vs_handle,uint64_t(fixed.authored_normals),uint64_t(fixed.vertex_diffuse),uint64_t(fixed.alpha_from_diffuse),
+                std::bit_cast<uint32_t>(fixed.diffuse_factor[0]),std::bit_cast<uint32_t>(fixed.diffuse_factor[1]),
+                std::bit_cast<uint32_t>(fixed.diffuse_factor[2]),std::bit_cast<uint32_t>(fixed.diffuse_factor[3])};
+            mesh_key=MixHash(words,sizeof(words),mesh_key);
+            mesh_key=MixHash(a.elements.data(),sizeof(a.elements),mesh_key);
+            for (uint32_t i=0;i<a.buffer_count&&i<a.buffers.size();++i) {
+                const auto& b=a.buffers[i];const uint32_t layout[2]={b.bytes,b.stride};
+                mesh_key=MixHash(layout,sizeof(layout),mesh_key);
+                if (b.src) mesh_key=MixHash(b.src,b.bytes,mesh_key);
+            }
+            if (index_bytes) mesh_key=MixHash(a.index_src,size_t(index_bytes),mesh_key);
+            if (s.vs) {
+                mesh_key=MixHash(s.vs->inputs.data(),sizeof(s.vs->inputs),mesh_key);
+                mesh_key=MixHash(s.vs->stream_stride.data(),sizeof(s.vs->stream_stride),mesh_key);
+            }
+            for (const auto& stream:s.streams){const uint32_t stride=stream.stride;mesh_key=MixHash(&stride,sizeof(stride),mesh_key);}
+        }
+        auto cached=pbr_mesh_cache_.find(mesh_key);
+        pbr::fixed_mesh::Status mesh_status;std::string mesh_detail;
+        if (cached!=pbr_mesh_cache_.end()&&cached->second.status!=pbr::fixed_mesh::Status::Ready) {
+            mesh_status=cached->second.status;mesh_detail=cached->second.detail;
+        } else if (cached!=pbr_mesh_cache_.end()) {
+            mesh_status=pbr::fixed_mesh::Refresh(s,a,mesh_assignment,fixed,target,cached->second.mesh);
+            if (mesh_status!=pbr::fixed_mesh::Status::Ready) {pbr_mesh_cache_.erase(cached);cached=pbr_mesh_cache_.end();}
+        } else {
+            PbrMeshEntry entry;
+            mesh_status=entry.status=pbr::fixed_mesh::Build(s,a,mesh_assignment,fixed,target,
+                {static_cast<const uint8_t*>(a.index_src),size_t(index_bytes)},entry.mesh,{},&entry.detail);
+            mesh_detail=entry.detail;
+            // Failures that depend only on the bytes are kept; state/transform ones are retried every draw.
+            using MS=pbr::fixed_mesh::Status;
+            const bool keep=mesh_status==MS::Ready||mesh_status==MS::InvalidMesh||mesh_status==MS::InvalidIndex||
+                            mesh_status==MS::InvalidBuffer||mesh_status==MS::UnsupportedFormat||mesh_status==MS::MissingInput;
+            if (keep) {
+                if (pbr_mesh_cache_.size()>=kPbrMeshCacheEntries) pbr_mesh_cache_.clear();
+                cached=pbr_mesh_cache_.emplace(mesh_key,std::move(entry)).first;
+            }
+        }
+        g_pbr_perf.mesh+=PerfMs(perf_mesh_t);
+        if (const auto st=mesh_status; st!=pbr::fixed_mesh::Status::Ready) {
+            trace(std::string("mesh: ")+pbr::fixed_mesh::StatusText(st)+(mesh_detail.empty()?"":" ("+mesh_detail+")"));continue;
+        }
+        const auto& mesh=cached->second.mesh;
+        pp::SceneConstants scene;
+        observed.reason=pc::Reason::MissingLinearLighting;
+        if (!lit) {
+            pbr::scene::BakedProof baked;
+            baked.immutable_draw_proven=true; // This State/assembly/stream snapshot, consumed above in one call.
+            baked.fixed_world_source_proven=sh.fixed_transform&&!sh.prog;
+            baked.vertex_diffuse_stream_proven=true; // Build bound and decoded register 3.
+            baked.vertex_diffuse_forwarded_proven=true; // FixedVertexHlsl LIGHTING off: oD0 = v3.
+            baked.vertex_specular_zero_proven=((a.regs>>4)&1)==0; // ... and oD1 = v4, absent = 0.
+            baked.albedo_diffuse_combiner_proven=true; // SimpleAlbedoSurface above; Build rechecks the cascade.
+            baked.vertex_diffuse_alpha_one_proven=mesh.vertex_diffuse_alpha_one;
+            baked.texture_factor_applied=factor_stage; // The packed mesh colours already carry the factor.
+            baked.combiner_alpha_packed=true; // ... and the cascade's alpha factors, written times albedo alpha.
+            baked.rigid_view_proven=mesh.height_units_proven;
+            baked.perspective_camera_proven=true; // Build rechecks the SAME actual projection numerically.
+            baked.opaque_no_cutout_proven=true;
+            baked.coefficient_colors_linear=true; // Declared policy; the shader decodes like the albedo.
+            baked.output_policy_proven=bound_rt_->fmt==kBgra;
+            baked.fog_reproduced=true; // Same fogfactor/fog colour/order as the legacy fixed pipeline.
+            if (const auto st=pbr::scene::BuildBakedVertexDiffuse(s,baked,pp::OutputPolicy::ToneMappedSrgb,scene);
+                st!=pbr::scene::Status::Ready) {
+                std::string why=std::string("baked scene: ")+pbr::scene::StatusText(st);
+                if (st==pbr::scene::Status::UnsupportedBakedCombiner) {
+                    char detail[192];const auto& t0=s.tss[0];const auto& t1=s.tss[1];
+                    snprintf(detail,sizeof(detail)," (s0 alpha %u %u %u, s1 %u %u %u|%u %u %u r%u, s2 %u arg %u tex1 %d tex2 %d, tfactor %08X, vertex alpha one %d)",
+                             t0[kTssAlphaOp],t0[kTssAlphaArg1],t0[kTssAlphaArg2],t1[kTssColorOp],t1[kTssColorArg1],t1[kTssColorArg2],
+                             t1[kTssAlphaOp],t1[kTssAlphaArg1],t1[kTssAlphaArg2],t1[kTssResultArg],s.tss[2][kTssColorOp],
+                             s.tss[2][kTssColorArg1],s.textures[1]!=0,s.textures[2]!=0,s.rs[kRsTextureFactor],int(mesh.vertex_diffuse_alpha_one));
+                    why+=detail;
+                }
+                trace(why);continue;
+            }
+        } else {
+            const auto lights=s.pbr_light_proof.Snapshot(s.light_enable,true);
+            pbr::scene::Proof scene_proof;
+            scene_proof.light_writes_after_success=lights.light_writes_after_success;
+            scene_proof.light_index_coverage=lights.light_index_coverage;
+            scene_proof.stateblock_valid=lights.stateblock_valid&&s.pbr_active_light_records_verified;
+            scene_proof.fixed_function_lighting_proven=sh.fixed_transform&&s.rs[kRsLighting];
+            scene_proof.rigid_view_proven=mesh.height_units_proven;
+            scene_proof.perspective_camera_proven=true; // Build rechecks the SAME actual projection numerically.
+            scene_proof.opaque_no_cutout_proven=true; // Exact original states checked above.
+            // Explicit normalized-linear compatibility interpretation of actual D3DLIGHT8 coefficients.
+            // It is not calibrated lumens/metres, inferred image lighting, or a claim of a full HDR framebuffer.
+            scene_proof.api_colors_linear=true;
+            scene_proof.output_policy_proven=bound_rt_->fmt==kBgra;
+            scene_proof.fog_reproduced=true;
+            if (const auto st=pbr::scene::Build(s,scene_proof,pp::OutputPolicy::ToneMappedSrgb,scene);
+                st!=pbr::scene::Status::Ready) {trace(std::string("lit scene: ")+pbr::scene::StatusText(st));continue;}
+        }
+        pbr::SurfaceEvidence surface;
+        surface.assignment=assignment;surface.color_width=color->pbr_color.width;surface.color_height=color->pbr_color.height;
+        surface.current_alpha_sha256=color->pbr_color.alpha_sha256;
+        surface.texture_2d=true;surface.geometric_position=true;surface.geometric_normal=true;
+        surface.tangent_basis=true;surface.linear_lighting=true;
+        observed.reason=pc::Reason::UnsupportedDraw;
+        // Initial slice preserves target alpha at EVERY accepted mip/filter sample. Level-zero alpha
+        // equality alone cannot prove arbitrary authored mip coverage; those materials stay legacy.
+        // ... unless no texture alpha can reach the target: blending is off, the alpha test is ALWAYS (gates above)
+        // and the baked cascade multiplies the written alpha by a zero TFACTOR alpha (the world's state).
+        const bool alpha_unused=!lit&&fixed.diffuse_factor[3]==0;
+        // A game albedo is the original texture itself: its coverage is the original's at every mip.
+        if (!material.game_albedo&&!color->pbr_color.constant_alpha&&!alpha_unused) {trace("texture alpha is not constant at every mip");continue;}
+        observed.reason=pc::Reason::AlphaMismatch;
+        if (pbr::Select(library,surface).reason!=pbr::SelectionReason::Ready) {trace("selection: size or alpha differs from the pack");continue;}
+        pp::MaterialConstants factors;
+        if (const auto st=pp::BuildMaterial(parameters,material.normal_convention,material.has_height,material.has_emission,false,0,factors);
+            st!=pp::Status::Ready) {trace(std::string("material constants: ")+pp::StatusText(st));continue;}
+        pp::Evidence evidence;
+        // This is an intended draw plan; GPU success/readiness is never inferred from these CPU facts.
+        evidence.enabled=evidence.approved_assignment=true;
+        evidence.texture=evidence.expected_texture=assignment.original_texture;
+        evidence.vertex_shader=evidence.expected_vertex_shader=assignment.vertex_shader;
+        evidence.pixel_shader=evidence.expected_pixel_shader=assignment.pixel_shader;
+        evidence.fixed_transform=evidence.triangle_list=evidence.opaque=true;
+        evidence.packed_mesh_validated=evidence.original_normal_uv_proven=evidence.affine_bridge_proven=true;
+        evidence.view_projection_proven=evidence.linear_lights_proven=evidence.output_policy_proven=true;
+        evidence.all_five_bindings=true; // Device preflights and binds all five exact/neutral resources atomically.
+        evidence.height_map=material.has_height;evidence.height_units_proven=mesh.height_units_proven;
+        // No culling/depth/multipass/edge proofs are implied by a valid normal/UV triangle mesh.
+        // True displacement stays ineligible until those separate source-backed obligations are met.
+        evidence.shared_edges_and_uv_continuity_proven=mesh.shared_edges_and_uv_continuity_proven;
+        evidence.displacement_bounds_and_culling_proven=mesh.displacement_bounds_and_culling_proven;
+        evidence.displacement_depth_and_multipass_proven=mesh.displacement_depth_and_multipass_proven;
+        evidence.displacement_budget_proven=mesh.displacement_budget_proven;
+        pbr::device::Input input;
+        input.library=pbr_library_.library;input.key=observed.key;input.surface=std::move(surface);input.evidence=evidence;
+        input.vertices=mesh.vertices;input.indices=mesh.indices;input.geometry=mesh.geometry;input.material=factors;input.scene=scene;
+        if (material.game_albedo) {input.game_albedo=color->res.Get();input.geometry.options[2]=1;}
+        FillPipelineDesc(key,sh.vs_code,sh.ps_code,input.original_opaque_state);
+        const auto& graphics=app::Get();
+        input.actual_sampler=StageSampler(s,int(assignment.stage),textures,UnitTexcoords(a),graphics.aniso,graphics.graphics.texture_detail);
+        input.actual_sampler.MaxAnisotropy=std::max(1u,input.actual_sampler.MaxAnisotropy);
+        input.actual_sampler.ComparisonFunc=D3D12_COMPARISON_FUNC_ALWAYS;
+        input.coverage_policy_proven=true;input.actual_alpha_cutoff=0; // Opaque/no-test subset only.
+        pbr::device::Plan plan;
+        observed.reason=parameters.height_mode==pc::HeightMode::Displacement?pc::Reason::DisplacementUnavailable:pc::Reason::RendererBindingsUnavailable;
+        auto perf_plan_t=PerfClock::now();
+        const auto plan_status=pbr::device::PlanDraw(input,{},plan);
+        g_pbr_perf.plan+=PerfMs(perf_plan_t);
+        if (const auto st=plan_status; st!=pbr::device::Status::Planned) {
+            trace(std::string("plan: ")+pbr::device::StatusText(st));continue;
+        }
+        Frame& frame=CurrentFrame();
+        if (!frame.pbr_owner) {frame.pbr_pending_draws.assign(pbr_observed_.size(),0);frame.pbr_owner=input.library;}
+        if (frame.pbr_owner!=input.library) continue;
+        pbr::device::Context context;
+        context.device=dev_.Get();context.list=cl_.Get();context.queue_identity=queue_.Get();
+        context.allocate_upload=[this](uint64_t bytes,uint64_t alignment){
+            auto a=Upload(bytes,alignment);return pbr::device::UploadAllocation{a.cpu,a.gpu,a.res,a.off,bytes};
+        };
+        context.retain=[&frame](std::span<IUnknown* const> objects){
+            frame.pbr_retained.reserve(frame.pbr_retained.size()+objects.size());
+            for(IUnknown* object:objects){if(!object)return false;frame.pbr_retained.emplace_back(object);}return true;
+        };
+        SetViewportScissor(s,size.w);SetBlendFactorStencilRef(s);
+        const uint32_t query=BeginCountedDraw(s);
+        auto perf_record_t=PerfClock::now();
+        const auto result=pbr_device_.RecordDraw(context,input,plan);
+        g_pbr_perf.record+=PerfMs(perf_record_t);
+        EndCountedDraw(query);
+        if (result.legacy_bindings_invalidated) {
+            ID3D12DescriptorHeap* heaps[]={srv_heap_.Get(),smp_heap_.Get()};
+            cl_->SetDescriptorHeaps(2,heaps);cl_->SetGraphicsRootSignature(root_.Get());cl_->SetPipelineState(legacy_pso);
+            // On fallback the following legacy UploadConstants/texture/view/geometry calls rebind every root/IA slot.
+            // On success the next Draw does the same. No legacy binding cache is trusted across this change.
+        }
+        if(result.draw_call_recorded&&result.status!=pbr::device::Status::Recorded) {
+            CheckGpu(dev_.Get(),FAILED(result.error)?result.error:E_FAIL,"recording the dedicated PBR draw");
+        }
+        if(result.status!=pbr::device::Status::Recorded||!result.draw_call_recorded) {
+            trace(std::string("record: ")+pbr::device::StatusText(result.status));continue;
+        }
+        trace("drawing through the dedicated path");
+        ++g_pbr_perf.drawn;
+        ++frame.pbr_pending_draws[row_index];
+        observed.reason=pc::Reason::Ready;
+        pbr_capabilities_={.pipeline=true,.geometry=true,.view=true,.lighting=true,.linear_output=true,.material_bindings=true,
+                           .parallax=true,.height_units=mesh.height_units_proven};
+        return true;
+    }
+    return false;
+}
+
+void D3D12Backend::UpdatePbrSettings() {
+    namespace pc = pbr::controls;
+    {
+        std::lock_guard lock(app::UiLock());
+        const auto& current = app::Get().pbr;
+        if (!pbr_settings_ || !pbr::SameSettings(pbr_settings_->settings(), current))
+            pbr_settings_ = std::make_unique<pc::PreparedSettings>(current);
+    }
+    const auto& settings = pbr_settings_->settings();
+    std::filesystem::path root;
+    if (settings.enabled && pc::ValidPackPath(settings.pack_path) && pc::ValidDigest(settings.approved_manifest_sha256)) {
+        root = hostpath::FromUtf8(settings.pack_path);
+        if (root.is_relative()) root = app::ExeDir() / root;
+    }
+    // One CPU-only loader, no filename scans/automatic approval or parallel GPU workers.
+    pbr_library_cache_.Request(settings.enabled, root, settings.approved_manifest_sha256);
+    auto next = pbr_library_cache_.Snapshot();
+    if (next.library != pbr_library_.library) {
+        if (next.library) {
+            // Changing the immutable material owner must never recycle descriptors/maps still in flight.
+            Flush();
+            pbr_device_.ResetGpuIdle();
+            ++pbr_proof_epoch_;
+        }
+        pbr_observed_.clear();
+        pbr_trace_.clear();
+        pbr_mesh_cache_.clear();
+        pbr_capabilities_ = {};
+        if (next.library) for (const auto& m : next.library->materials) {
+            pc::CatalogMaterial row;
+            row.key = pc::ExactKey(m.assignment, next.library->manifest_sha256);
+            row.has_height = m.has_height; row.has_emission = m.has_emission;
+            row.reason = pc::Reason::RendererBindingsUnavailable;
+            pbr_observed_.push_back(std::move(row));
+        }
+    }
+    pbr_library_ = std::move(next);
+    pbr::observation::RequestGuestProof(settings.enabled && pbr_library_.library != nullptr);
+}
+
+void D3D12Backend::PublishPbrTelemetry() {
+    namespace pc = pbr::controls;
+    pc::CatalogSnapshot snap;
+    snap.revision = presents_;
+    snap.message = pbr_library_.message;
+    switch (pbr_library_.status) {
+    case pbr::CacheStatus::Disabled: snap.status = pc::RuntimeStatus::Disabled; break;
+    case pbr::CacheStatus::WaitingForApproval: snap.status = pc::RuntimeStatus::WaitingForPack; break;
+    case pbr::CacheStatus::Loading: snap.status = pc::RuntimeStatus::Loading; break;
+    case pbr::CacheStatus::Rejected: snap.status = pc::RuntimeStatus::PackRejected; break;
+    case pbr::CacheStatus::Ready:
+        snap.status = pc::RuntimeStatus::BindingsUnavailable;
+        snap.message = "Approved materials loaded; unsupported or unproved draws retain original rendering.";
+        if (pbr_library_.library) snap.manifest_sha256 = pbr_library_.library->manifest_sha256;
+        snap.materials = pbr_observed_;
+        snap.capabilities = pbr_capabilities_;
+        for (const auto& row : snap.materials) if (row.rendered_draws && row.reason == pc::Reason::Ready) {
+            snap.status = pc::RuntimeStatus::Ready; break;
+        }
+        break;
+    }
+    pc::PublishCatalog(std::move(snap));
+}
 void D3D12Backend::ApplySettings() {
     std::lock_guard lock(app::UiLock());
     app::Mode scene = app::RenderResolution();

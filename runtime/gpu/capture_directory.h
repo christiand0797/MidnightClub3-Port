@@ -27,6 +27,12 @@ inline std::string CaptureDirectoryName(const CaptureStamp& stamp, uint32_t atte
            "-pid" + std::to_string(stamp.process_id) + "-" + std::to_string(attempt);
 }
 
+// where a requested frame is saved: XBE_CAPTURE_DIR when set, else the executable's captures folder (a relative
+// path is taken from the executable's directory)
+inline std::filesystem::path CaptureBase(const std::filesystem::path& configured) {
+    return configured.empty() ? std::filesystem::path("captures") : configured;
+}
+
 inline CaptureDirectory CreateUniqueCaptureDirectory(const std::filesystem::path& base, const CaptureStamp& stamp,
                                                        uint32_t max_attempts = 64) {
     CaptureDirectory result;

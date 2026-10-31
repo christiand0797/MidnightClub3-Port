@@ -10,6 +10,7 @@
 
 #include "audio/audio.h"
 #include "audio/modulation.h"
+#include "audio/stream_status.h"
 #include "audio/voice3d.h"
 #include "xbe/xbe.h"
 #include "xdk/hle.h"
@@ -146,6 +147,8 @@ struct Voice {
     bool sync = false;  // held until IDirectSound_SynchPlayback
     bool active = false, ending = false;  // stream: took a packet since it went quiet, quiet again once they run out
     bool hold = false;  // stream: DSSTREAMPAUSE_PAUSENOACTIVATE, packets queue without the voice starting
+    bool stopping = false;  // stream: FlushEx released its envelope, it ends with the release or its last packet
+    int64_t starved_at = -1;  // stream: steady ms its packets ran out with no Discontinuity, -1 while fed
     double pos = 0;  // frames
     uint32_t freq = 0;
     int32_t pitch = 0;
@@ -313,9 +316,16 @@ void Levels(Voice& v, float g[2][2]) {
     }
 }
 
+int64_t NowMs() {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+}
+
 // a stream goes quiet: the synch hold ends, a started one loses its pause as well
 void Deactivate(Voice& v) {
     v.sync = false;
+    v.starved_at = -1;
+    v.stopping = false;
     if (v.active) v.active = v.paused = v.ending = false;
 }
 
@@ -332,9 +342,36 @@ void ReleaseEnded(Voice& v) {
     Deactivate(v);
 }
 
+// Two stereo streams (the format of every song) fed and audible together for longer than a crossfade is two songs
+// at once. Logged once per episode so a run can be checked without listening.
+void WatchOverlap() {
+    static int64_t since = -1;
+    static bool reported = false;
+    static std::atomic<unsigned> episodes{0};
+    uint32_t ids[2]{}, n = 0;
+    for (const auto& entry : g_voices) {
+        const Voice& v = entry.second;
+        if (v.stream && v.channels == 2 && v.active && !v.hold && !v.paused && !v.sync && !v.packets.empty() &&
+            !v.stopping && v.volume > 0.01f && n < 2)
+            ids[n++] = v.obj;
+    }
+    if (n < 2) {
+        since = -1;
+        reported = false;
+        return;
+    }
+    const int64_t now = NowMs();
+    if (since < 0) since = now;
+    if (!reported && now - since > 3000) {
+        reported = true;
+        if (episodes.fetch_add(1) < 16) LOGR("dsound: stereo streams %08X and %08X both playing for over 3 s", ids[0], ids[1]);
+    }
+}
+
 void Render(float* out, uint32_t frames) {
     std::memset(out, 0, frames * 2 * sizeof(float));
     std::lock_guard<std::recursive_mutex> lock(g_lock);
+    WatchOverlap();
     for (auto& entry : g_voices) {
         Voice& v = entry.second;  // a plain reference, the lambdas below capture it
         if (v.paused || v.sync || v.hold || (!v.stream && !v.playing)) continue;
@@ -372,7 +409,15 @@ void Render(float* out, uint32_t frames) {
                 }
                 if (v.packets.empty()) {
                     v.pos = 0;
-                    if (v.ending) Deactivate(v);
+                    // a stopping stream out of data is done: its release cannot run on, and it must not wait for a
+                    // refill as a stalled song does
+                    if (v.ending || v.stopping) Deactivate(v);
+                    else if (v.starved_at < 0) {
+                        v.starved_at = NowMs();
+                        static std::atomic<unsigned> reported{0};  // release builds keep LOGR, not LOG_FIRST
+                        if (reported.fetch_add(1) < 16)
+                            LOGR("dsound: stream %08X ran out of packets mid-wave, still PLAYING for its refill", v.obj);
+                    }
                     break;
                 }
                 Packet& pk = v.packets.front();
@@ -420,11 +465,6 @@ void Render(float* out, uint32_t frames) {
         if (off) ReleaseEnded(v);
     }
     for (uint32_t i = 0; i < frames * 2; i++) out[i] = std::clamp(out[i], -1.0f, 1.0f);
-}
-
-int64_t NowMs() {
-    using namespace std::chrono;
-    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
 }
 
 void Run(X86Context& ctx, const std::vector<Done>& done) {
@@ -1071,17 +1111,18 @@ STREAM(GetInfo, 2) {
     W32(info + 12, 0);
     return 0;
 }
-// As 0x3C4FA9: DSSTREAMSTATUS_READY (XMEDIASTATUS_ACCEPT_INPUT) with a free packet slot; a running voice adds
-// PLAYING, or PAUSED when paused, synch-held or starved, STARVED as well with no packets. A held stream is not running.
-// A stream releasing under FlushEx keeps PLAYING until its release ends, which XACT and the music player wait on.
+// audio::StreamStatus has the bits, and why a starved stream short of its Discontinuity still says PLAYING. A stream
+// releasing under FlushEx keeps PLAYING until its release ends, which XACT and the music player wait on.
 STREAM(GetStatus, 2) {
-    uint32_t status = v.packets.size() < v.max_packets ? 1u : 0u;
-    if (v.active && !v.hold) {
-        if (v.packets.empty()) status |= 0x60000;  // PAUSED | STARVED
-        else if (v.paused || v.sync) status |= 0x20000;
-        else status |= 0x10000;
-    }
-    W32(a[1], status);
+    audio::StreamState s;
+    s.free_slot = v.packets.size() < v.max_packets;
+    s.running = v.active && !v.hold;
+    s.has_packets = !v.packets.empty();
+    s.paused = v.paused || v.sync;
+    s.ending = v.ending;
+    s.stopping = v.stopping;
+    s.starved_ms = v.starved_at < 0 ? -1 : NowMs() - v.starved_at;
+    W32(a[1], audio::StreamStatus(s));
     return 0;
 }
 STREAM(Process, 3) {
@@ -1091,10 +1132,15 @@ STREAM(Process, 3) {
     if (pk.completed_ptr) W32(pk.completed_ptr, 0);
     if (pk.status_ptr) W32(pk.status_ptr, kPacketPending);
     v.packets.push_back(pk);
+    if (v.stopping) {
+        static std::atomic<unsigned> reported{0};
+        if (reported.fetch_add(1) < 16) LOGR("dsound: stream %08X refilled while stopping", v.obj);
+    }
     // the stream's voice comes on with its first packet, not again at packet boundaries, nor while held
     if (!v.active && !v.hold) v.mod.On();
     v.active = true;
     v.ending = false;
+    v.starved_at = -1;
     return 0;
 }
 STREAM(Discontinuity, 1) {
@@ -1113,7 +1159,10 @@ STREAM(FlushEx, 4) {
     if (a[3] && !v.active) return 0;
     if (a[3] & 4) {
         v.mod.Release();
-        if (!v.mod.Instant()) return 0;
+        if (!v.mod.Instant()) {
+            v.stopping = true;
+            return 0;
+        }
     }
     FlushStream(v);
     return 0;

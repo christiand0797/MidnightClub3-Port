@@ -7,6 +7,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <atomic>
@@ -19,8 +20,12 @@
 
 #include "app/app.h"
 #include "app/tuning_profiles.h"
+#include "app/pbr_menu.h"
+#include "core/diag.h"
 #include "core/input.h"
 #include "core/log.h"
+#include "gpu/capture_control.h"
+#include "gpu/capture_directory.h"
 
 namespace app {
 
@@ -306,6 +311,18 @@ void Quality(Settings& s) {
            "The light the headlights throw on the road: 0 off, 1 as the console.");
     Slider("Neon brightness", &s.graphics.neon, 0, 4, "%.2f",
            "Car neon underglow: 0 off, 1 as the console, 2 (default) twice as bright.");
+    ImGui::TextDisabled("Car paint");
+    Check("Enhanced car paint", &s.graphics.car_paint,
+          "Per-pixel lighting and clearcoat highlights from the game's own car lights. Off is the console's look.");
+    ImGui::BeginDisabled(!s.graphics.car_paint);
+    Slider("Smooth lighting", &s.graphics.car_relight, 0, 1, "%.2f",
+           "0 keeps the console's per-vertex lighting, 1 recomputes it for every pixel (no faceting on low-poly bodies).");
+    Slider("Clearcoat highlights", &s.graphics.car_specular, 0, 3, "%.2f", "Highlights of the car lights on the paint.");
+    Slider("Clearcoat roughness", &s.graphics.car_roughness, 0.05f, 0.8f, "%.2f",
+           "Low: small sharp highlights, glossy. High: broad soft highlights, satin.");
+    Slider("Clearcoat reflection", &s.graphics.car_reflection, 0, 2, "%.2f",
+           "Reflection of the surroundings in the clearcoat, stronger at glancing angles (Fresnel).");
+    ImGui::EndDisabled();
     Slider("Level of detail", &s.graphics.lod, 0.5f, 4, "x%.2f",
            "How far cars, people and props keep their detail and stay drawn. Above 1 also pushes the far clip out "
            "(up to x2) from the next race or free roam.");
@@ -343,6 +360,85 @@ void Input(Settings& s) {
     ImGui::Separator();
     ImGui::TextWrapped("Keyboard: Enter Start, Space A, Escape B, Backspace Back. Arrows navigate; "
                        "W/S accelerate/brake, A/D steer. Q/E are black/white; X/Y are the face buttons.");
+}
+
+// where captures go: XBE_CAPTURE_DIR, else captures beside the executable (gpu::CaptureBase)
+std::filesystem::path CaptureFolder() { return ExeDir() / gpu::CaptureBase(diag::CaptureDir()); }
+
+// frame captures: one on request, or automatically while playing (gpu/capture_control.h, d3d12.cpp Present)
+void Capture(Settings& s) {
+    namespace fs = std::filesystem;
+    namespace cap = gpu::capture;
+    ImGui::TextWrapped("A capture saves one frame: every draw, texture, shader and render target, for diagnosing "
+                       "rendering problems. Each one takes about 30-80 MB.");
+    const fs::path folder = CaptureFolder();
+    // the folder's capture count, read at most every two seconds while this tab is shown
+    static double counted_at = -10;
+    static size_t count = 0;
+    static uint64_t measured_bytes = 0;
+    static bool measured = false;
+    if (cap::Now() - counted_at > 2) {
+        counted_at = cap::Now();
+        count = 0;
+        std::error_code ec;
+        for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec))
+            count += it->is_directory(ec);
+    }
+    ImGui::TextDisabled("Folder: %s", folder.string().c_str());
+    if (measured) ImGui::Text("%zu captures, %.1f GB", count, measured_bytes / 1e9);
+    else ImGui::Text("%zu captures", count);
+    if (ImGui::Button("Open captures folder")) {
+        std::error_code ec;
+        fs::create_directories(folder, ec);
+        ShellExecuteW(nullptr, L"open", folder.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Measure size")) {
+        measured_bytes = 0;
+        std::error_code ec;
+        for (fs::recursive_directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec))
+            if (it->is_regular_file(ec)) measured_bytes += it->file_size(ec);
+        measured = true;
+    }
+
+    ImGui::Separator();
+    ImGui::TextDisabled("Capture now");
+    const bool pending = cap::g_delayed.Pending();
+    ImGui::BeginDisabled(pending);
+    if (ImGui::Button("Capture 3 seconds after closing")) cap::g_delayed.Request(cap::Now(), 3);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Close this menu and line up the shot: the frame is captured 3 seconds later.");
+    ImGui::EndDisabled();
+    if (pending) {
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) cap::g_delayed.Cancel();
+        ImGui::TextDisabled("Waiting: close the menu.");
+    }
+    ImGui::TextDisabled("F4 in game captures the next frame at any time.");
+
+    ImGui::Separator();
+    ImGui::TextDisabled("Automatic");
+    auto& c = s.capture;
+    Check("Capture automatically while playing", &c.automatic,
+          "Saves a frame every interval while you play. Paused while this menu is open; stops at the session limit.");
+    ImGui::BeginDisabled(!c.automatic);
+    Slider("Every", &c.interval, cap::kMinInterval, cap::kMaxInterval, "%.0f s", nullptr);
+    int limit = int(c.limit);
+    if (ImGui::SliderInt("Stop after", &limit, 1, int(cap::kMaxPerSession), "%d captures", ImGuiSliderFlags_AlwaysClamp)) {
+        c.limit = uint32_t(limit);
+        g_dirty = true;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Automatic captures per run of the game, to bound disk use.");
+    ImGui::EndDisabled();
+
+    const auto status = cap::g_status.Snapshot();
+    ImGui::Text("This session: %u automatic, %u requested", status.automatic, status.manual);
+    if (c.automatic) {
+        if (status.automatic >= c.limit) ImGui::TextColored({1, 0.75f, 0.2f, 1}, "Automatic capture stopped: session limit reached.");
+        else ImGui::TextDisabled("Next automatic capture after this menu closes, every %.0f s of play.", c.interval);
+    }
+    if (!status.last.empty()) ImGui::TextWrapped("Last: %s", fs::path(status.last).filename().string().c_str());
+    if (!status.error.empty()) ImGui::TextColored({1, 0.4f, 0.4f, 1}, "Capture failed: %s", status.error.c_str());
 }
 
 // the controller drives ImGui's navigation while the menu is open
@@ -557,6 +653,14 @@ void DrawSettingsMenu(float fps) {
         }
         if (ImGui::BeginTabItem("Picture")) {
             Picture(s);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Capture")) {
+            Capture(s);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("PBR")) {
+            g_dirty |= DrawPbrSettings(s);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Info")) {

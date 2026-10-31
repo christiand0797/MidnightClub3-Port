@@ -5,6 +5,7 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <vector>
@@ -15,6 +16,7 @@
 #define X86_WEAK_FUNC(name, impl)
 #include "x86_recomp.14.cpp"
 #include "x86_recomp.27.cpp"
+#include "wheel_camber.h"
 
 namespace {
 std::vector<uint8_t> guest(0x600000);
@@ -84,7 +86,16 @@ float PointX(const Wheel& w,float x) {return w.matrix[9]+w.matrix[0]*x;}
 // Exact original matrix routines; the only unavailable surrounding-world queries are explicit boundaries.
 extern "C" void sub_00085930(X86Context& c,uint8_t* b) {__imp__sub_00085930(c,b);}
 extern "C" void sub_00086900(X86Context& c,uint8_t* b) {__imp__sub_00086900(c,b);}
-extern "C" void sub_000869D0(X86Context& c,uint8_t* b) {__imp__sub_000869D0(c,b);}
+// As production wheel_camber.cpp: the two F7170 camber calls take the rigid tilt unless a check asks for the original.
+bool original_camber=false;
+extern "C" void sub_000869D0(X86Context& c,uint8_t* b) {
+    const uint32_t caller=W(c.esp);
+    std::array<float,6> rows;std::memcpy(rows.data(),b+c.ecx,24);
+    if(!original_camber&&(caller==0xF7719||caller==0xF7D3E)&&wheel_camber::Rotate(rows,F(c.esp+4))) {
+        std::memcpy(b+c.ecx,rows.data(),24);c.esp+=8;return;
+    }
+    __imp__sub_000869D0(c,b);
+}
 extern "C" void sub_00087860(X86Context& c,uint8_t* b) {__imp__sub_00087860(c,b);}
 extern "C" void sub_000898C0(X86Context& c,uint8_t* b) {__imp__sub_000898C0(c,b);}
 extern "C" void sub_00120A80(X86Context& c,uint8_t*) {assert(c.ecx==body);c.eax=sim;c.esp+=4;}
@@ -93,6 +104,9 @@ extern "C" void sub_002DC452(X86Context&,uint8_t*) {assert(false&&"wheel spin in
 void x86_icall(X86Context&,uint8_t*,uint32_t) {assert(false&&"unexpected virtual call");}
 
 int main() {
+#ifdef _WIN32
+    _set_abort_behavior(0,_WRITE_ABORT_MSG|_CALL_REPORTFAULT);  // a failed assert exits instead of waiting on a dialog
+#endif
     Setup();
     assert(Near(RetailOffset(.195f,true),0));assert(Near(RetailOffset(.755f,true),-.2175f));
     assert(Near(RetailOffset(.755f,false),-.2375f));
@@ -118,6 +132,43 @@ int main() {
                         -(PointX(b[i],-.25f)-PointX(a[i],-.25f))));
         }
     }
+    // Camber tilts the scaled tire rigidly: axle and vertical axes stay perpendicular and keep 2*width and the
+    // diameter, on both sides, while the original rotation of the already-scaled rows shears them.
+    auto Dot=[](const Wheel& w){return w.matrix[0]*w.matrix[3]+w.matrix[1]*w.matrix[4]+w.matrix[2]*w.matrix[5];};
+    auto Len=[](const Wheel& w,int r){const float* m=w.matrix.data()+3*r;return std::sqrt(m[0]*m[0]+m[1]*m[1]+m[2]*m[2]);};
+    auto Cos=[&](const Wheel& a,const Wheel& b,int r){const float* p=a.matrix.data()+3*r;const float* q=b.matrix.data()+3*r;
+        return (p[0]*q[0]+p[1]*q[1]+p[2]*q[2])/(Len(a,r)*Len(b,r));};
+    // F75F1 cambers the rear only when the rear tune's +0x28 is non-zero.
+    F(rear_tune+0x28,1);
+    const auto flat=Render(.755f,.655f,true,0,0,0,0);
+    for(float camber:{-30.f,20.f}) {
+        auto tilted=Render(.755f,.655f,true,0,0,camber,camber);
+        const float expect_cos=std::cos(camber*.01744999922811985f);
+        for(unsigned i=0;i<4;++i) {
+            const float width=2*(i%2?.655f:.755f);
+            assert(Near(Dot(tilted[i])/(Len(tilted[i],0)*Len(tilted[i],1)),0,.0001f));
+            assert(Near(Len(tilted[i],0),width,.0001f)&&Near(Len(tilted[i],1),.8f,.0001f));
+            // the axle turned by exactly the camber away from its untilted direction
+            if(!Near(Cos(tilted[i],flat[i],0),expect_cos,.0001f)) {
+                std::cerr<<"camber "<<camber<<" wheel "<<i<<" cos "<<Cos(tilted[i],flat[i],0)<<" expected "<<expect_cos<<"\n flat";
+                for(float v:flat[i].matrix)std::cerr<<' '<<v;
+                std::cerr<<"\n tilted";
+                for(float v:tilted[i].matrix)std::cerr<<' '<<v;
+                std::cerr<<'\n';
+                assert(false);
+            }
+        }
+        original_camber=true;
+        auto sheared=Render(.755f,.655f,true,0,0,camber,camber);
+        original_camber=false;
+        for(unsigned i=0;i<4;++i) assert(std::fabs(Dot(sheared[i])/(Len(sheared[i],0)*Len(sheared[i],1)))>.1f);
+    }
+    // At the stock -2.5 degrees with unit-length rows the tilt is the original rotation.
+    std::array<float,6> unit={1,0,0,0,1,0},stock=unit;
+    wheel_camber::Rotate(unit,-2.5f*.01744999922811985f);
+    wheel_camber::RotateOriginal(stock,-2.5f*.01744999922811985f);
+    for(unsigned i=0;i<6;++i) assert(Near(unit[i],stock[i],1e-6f));
     std::cout<<"actual FB4E0/F7170 width pivot: four-wheel outer-edge anchoring reproduced; "
-        "width-independent centre yields two-sided growth for both axles/camber/explicit-offset sweeps: PASS\n";
+        "width-independent centre yields two-sided growth for both axles/camber/explicit-offset sweeps; "
+        "camber tilts the scaled tire rigidly where the original sheared it: PASS\n";
 }

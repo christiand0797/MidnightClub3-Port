@@ -18,6 +18,8 @@
 #include "gpu/backend.h"
 #include "gpu/texture.h"
 #include "gpu/vertex.h"
+#include "gpu/pbr_light_snapshot.h"
+#include "gpu/pbr_observation.h"
 #include "xdk/d3d8.h"
 #include "xdk/hle.h"
 #include "xdk/layout.h"
@@ -485,6 +487,7 @@ HLE_STDCALL(Direct3D_CreateDevice, 6) {
         if (kRenderThread) g_backend = gpu::CreateThreadedBackend(std::move(g_backend));
     }
     g_state = gpu::State{};
+    g_state.pbr_light_proof.DeviceReset(); // This host device creation just established the empty light shadow/device.
     ResetProgramSlots();
     g_state.viewport = {0, 0, w, h, 0.0f, 1.0f};
     SetDev(kDevRenderTarget, g_buffers[1]);
@@ -911,20 +914,38 @@ HLE_STDCALL(D3DDevice_SetMaterial, 1) {
     return 0;
 }
 
-// the XDK keeps its own light lists, the renderer gets a copy
-HLE_WRAP(D3DDevice_SetLight, 2) {
-    uint32_t i = a[0], l = a[1];
+// Preserve the legacy before-original shadow. PBR also observes the REAL original outcome afterward;
+// a failed original allocation or implicit LightEnable default must never certify physical scene input.
+HLE_ABI_(hle_abi_D3DDevice_SetLight, hle_args_D3DDevice_SetLight, "D3DDevice_SetLight", ::hle::Map{},
+         !hle_abi_D3DDevice_SetLight::map.mapped || hle_abi_D3DDevice_SetLight::map.n == 2)
+X86_EXTERN_FUNC(GUEST_ORIG(D3DDevice_SetLight));
+X86_FUNC(GUEST(D3DDevice_SetLight)) {
+    const hle_args_D3DDevice_SetLight args{ctx};
+    const uint32_t i = args[0], l = args[1];
+    std::lock_guard<std::recursive_mutex> lock(g_lock);
+    bool copied = false;
     if (i < 8 && l) {
-        std::lock_guard<std::recursive_mutex> lock(g_lock);
         std::memcpy(g_state.lights[i].data(), HostPtr(l), 26 * 4);
+        copied = true;
     }
+    g_state.pbr_active_light_records_verified = false;
+    GUEST_ORIG(D3DDevice_SetLight)(ctx, base);
+    g_state.pbr_light_proof.SetLightResult(i, copied, ctx.eax);
 }
-HLE_WRAP(D3DDevice_LightEnable, 2) {
-    uint32_t i = a[0], on = a[1];
+HLE_ABI_(hle_abi_D3DDevice_LightEnable, hle_args_D3DDevice_LightEnable, "D3DDevice_LightEnable", ::hle::Map{},
+         !hle_abi_D3DDevice_LightEnable::map.mapped || hle_abi_D3DDevice_LightEnable::map.n == 2)
+X86_EXTERN_FUNC(GUEST_ORIG(D3DDevice_LightEnable));
+X86_FUNC(GUEST(D3DDevice_LightEnable)) {
+    const hle_args_D3DDevice_LightEnable args{ctx};
+    const uint32_t i = args[0], on = args[1];
+    std::lock_guard<std::recursive_mutex> lock(g_lock);
     if (i < 8) {
-        std::lock_guard<std::recursive_mutex> lock(g_lock);
         g_state.light_enable = on ? g_state.light_enable | 1u << i : g_state.light_enable & ~(1u << i);
     }
+    g_state.pbr_active_light_records_verified = false;
+    g_state.pbr_light_proof.BeginEnable(i);
+    GUEST_ORIG(D3DDevice_LightEnable)(ctx, base);
+    g_state.pbr_light_proof.EnableResult(i, on, ctx.eax);
 }
 
 // resources in use
@@ -1180,25 +1201,41 @@ HLE_STDCALL(D3DDevice_SetShaderConstantMode, 1) {
     return 0;
 }
 
+// the XDK's pixel shader object (0x415A90): reference count, owned, the definition's address and its copy. Guest
+// code reads it: the state-block capture adds a reference (0x416A63) and its release goes through DeletePixelShader.
+constexpr uint32_t kPsRefCount = 0, kPsOwned = 4, kPsDefinition = 8, kPsCopy = 0xC;
+constexpr uint32_t kPsObjectSize = kPsCopy + sizeof(gpu::PixelShader::def);
+
 HLE_STDCALL(D3DDevice_CreatePixelShader, 2) {
     std::lock_guard<std::recursive_mutex> lock(g_lock);
     auto ps = std::make_shared<gpu::PixelShader>();
     std::memcpy(ps->def, HostPtr(a[0]), sizeof(ps->def));
-    uint32_t rec = mem::AllocSystem(16, 16);
+    uint32_t rec = mem::AllocSystem(kPsObjectSize, 16);
+    W32(rec + kPsRefCount, 1);
+    W32(rec + kPsOwned, 1);
+    W32(rec + kPsDefinition, rec + kPsCopy);
+    std::memcpy(HostPtr(rec + kPsCopy), ps->def, sizeof(ps->def));
     ps->handle = rec;
     g_ps[rec] = ps;
     W32(a[1], rec);
     return 0;
 }
 
+// a release: the object goes with its last reference, as the XDK's
 HLE_STDCALL(D3DDevice_DeletePixelShader, 1) {
     std::lock_guard<std::recursive_mutex> lock(g_lock);
-    if (g_ps.erase(a[0])) mem::FreeSystem(a[0]);
+    if (!g_ps.count(a[0])) return 0;
+    const uint32_t refs = R32(a[0] + kPsRefCount) - 1;
+    W32(a[0] + kPsRefCount, refs);
+    if (!refs && g_ps.erase(a[0])) mem::FreeSystem(a[0]);
     return 0;
 }
 
 HLE_STDCALL(D3DDevice_SetPixelShader, 1) {
     std::lock_guard<std::recursive_mutex> lock(g_lock);
+    // the device keeps the current one like the XDK's: state-block capture (0x4169D0) copies it, and D3DX records
+    // every pass's PixelShader into a state block; left 0, each replay set no shader
+    if (XDK_CDevice_PixelShader != xdk::kUnknown) SetDev(XDK_CDevice_PixelShader, a[0]);
     g_state.ps = nullptr;
     if (!a[0]) return 0;
     auto it = g_ps.find(a[0]);
@@ -1252,11 +1289,45 @@ HLE_STDCALL(D3DDevice_SetPixelShaderConstant, 3) {
 
 // drawing
 
+// This observation is tied to the exact 5849 image whose original SetLight/LightEnable instructions
+// establish these fields. Other images remain unsupported; no generic guessed device layout is read.
+bool PbrCommitted(uint32_t address, uint32_t bytes) {
+    const uint64_t end = uint64_t(address) + bytes;
+    if (!bytes || address < 0x10000 || end > (uint64_t(1) << 32)) return false;
+    for (uint64_t page = address & ~uint64_t(mem::kPage - 1); page < end; page += mem::kPage)
+        if (!mem::IsCommitted(uint32_t(page))) return false;
+    return true;
+}
+void ObservePbrActiveLights() {
+    g_state.pbr_active_light_records_verified = false;
+    if (!gpu::pbr::observation::GuestProofRequested()) return;
+    const auto proof = g_state.pbr_light_proof.Snapshot(g_state.light_enable, true);
+    if (!proof.light_writes_after_success || !proof.light_index_coverage || !proof.stateblock_valid) return;
+    if (kDevice != 0x422D80 || kDevicePtr != 0x422D78 ||
+        SYM(D3DDevice_SetLight) != 0x411FB0 || SYM(D3DDevice_LightEnable) != 0x412270 ||
+        !PbrCommitted(kDevicePtr, 4) || R32(kDevicePtr) != kDevice || !PbrCommitted(kDevice + 0x7A4, 0x2C)) return;
+    // A light-table match alone cannot establish material/transform equivalence after an original
+    // stateblock replay. SetTransform mirrors these exact device matrices; SetMaterial historically
+    // only updates the host shadow, so a mismatch deliberately stays on the legacy path.
+    if (XDK_CDevice_Transforms != 0xC60 || !PbrCommitted(kDevice + 0xC60, 10 * 64) ||
+        !PbrCommitted(kDevice + 0xF00, 17 * 4)) return;
+    if (std::memcmp(HostPtr(kDevice + 0xF00), g_state.material.data(), 17 * 4)) return;
+    for (const auto [original, host] : {std::pair{0u,2u},std::pair{1u,3u},std::pair{6u,256u}})
+        if (std::memcmp(HostPtr(kDevice + 0xC60 + original * 64), g_state.transforms[host].data(), 64)) return;
+    gpu::pbr::light_snapshot::Table table;
+    table.base = R32(kDevice + 0x7A4); table.capacity = R32(kDevice + 0x7A8);
+    table.packed_slot_types = R32(kDevice + 0x7CC);
+    for (unsigned slot = 0; slot < 8; ++slot) table.active[slot] = R32(kDevice + 0x7AC + slot * 4);
+    g_state.pbr_active_light_records_verified = gpu::pbr::light_snapshot::Matches(
+        table, g_state.lights, g_state.light_enable, PbrCommitted, [](uint32_t p) { return R32(p); });
+}
+
 HLE_STDCALL(D3DDevice_DrawVertices, 3) {
     std::lock_guard<std::recursive_mutex> lock(g_lock);
     Walk(Dev(kDevPush));  // a visibility test begun since the last draw counts this one
     SyncProgram();
     SyncDeferred();
+    ObservePbrActiveLights();
     if (g_backend) g_backend->Draw(g_state, a[0], a[1], a[2], nullptr);
     return 0;
 }
@@ -1266,6 +1337,7 @@ HLE_STDCALL(D3DDevice_DrawIndexedVertices, 3) {
     Walk(Dev(kDevPush));
     SyncProgram();
     SyncDeferred();
+    ObservePbrActiveLights();
     const uint8_t* indices = a[2] ? static_cast<const uint8_t*>(HostPtr(a[2])) : nullptr;
     if (g_backend) g_backend->Draw(g_state, a[0], 0, a[1], indices);
     return 0;
@@ -1302,6 +1374,7 @@ uint32_t UpVertices(const void* src, uint32_t bytes) {
 void DrawUp(uint32_t prim, uint32_t count, const void* vertices, uint32_t stride) {
     if (!g_backend || !count || !stride) return;
     SyncDeferred();
+    ObservePbrActiveLights();
     auto stream = g_state.streams[0];
     g_state.streams[0] = {UpVertices(vertices, count * stride), stride};
     g_backend->Draw(g_state, prim, 0, count, nullptr);

@@ -6,7 +6,57 @@ The latest user request authorizes PBR code/material-system development in paral
 New offline PBR asset generation still follows the media pass and a verified full backup. The renderer
 remains on its current path until a real PBR integration is implemented and validated.
 
-## Latest checkpoint — 2026-10-28, installed feature controls
+## Latest checkpoint — 2026-10-30, PBR for all four cities, replays, songs (Claude session)
+
+- **PBR is drawing in game.** Dedicated path active for baked world scenery in San Diego, Atlanta and Tokyo, ~60 fps
+  (path ~3-8 ms for 300-760 material draws). Fixes on the way, each exact against the legacy shader and tested:
+  strip expansion, face normals, baked vertex-diffuse mode + fog, the world's stage-1 TFACTOR stage, ended cascades,
+  ALWAYS alpha test, packed output alpha, frame-less triangles, height fallback per material.
+- **Whole-city pack without captures** (`tools/pbr/test_pack.py --cities --install` -> `pbr-cities`): materials name
+  the texture alone (`"any"` shaders/UV set) and use the game's own albedo (`albedo = "game"`), so colour and coverage
+  are the original's and no albedo copy is stored. Maps generated for every city texture (Detroit/San Diego/Atlanta/
+  Tokyo, 3,259 of 3,260; set `tools/pbr/sets/cities_missing.json`). Loader 4096 materials / 1.5 GB; device 4096 /
+  40960 SRVs. Native, full pack: San Diego, Atlanta and Tokyo all a steady 60 fps (path 3.3-7.6 ms).
+- **Perf:** mesh cache (`fixed_mesh::Refresh`), memoized `ValidateMesh`, plan once per draw, texture-indexed lookups;
+  `perf: pbr per frame ...` logged every 10 s. `TryPbrDraw` logs the exact gate each material stops at.
+- **Captures** now record per-draw `keys vs/ps` and per-stage `hash/tci` (used by `test_pack.py` capture mode).
+- **Replays:** player car transform recorded per frame and restored on playback; replays play to the end, Restart
+  Replay is identical (notes/replays.md). **Songs:** stopping streams no longer get the starved grace (no overlap
+  seen across song changes; `dsound:` overlap/refill lines watch for it). Camber is a rigid tilt (10-28).
+- **Not done:** Detroit is locked on this save ("roadtrip" did not add it to Arcade; unlocks are career progress
+  rules, `tune/progress/dlunlockingrules.csv`). Blended/alpha-tested/programmable/multi-texture draws stay legacy.
+- All 58 CTest checks and the two `tools/pbr` unittest suites pass. Nothing committed.
+
+## Earlier checkpoint — 2026-10-29 afternoon, PBR face normals, baked mode and fog (Claude session)
+
+- Codex's 8:06 AM `scene::BuildBakedVertexDiffuse` called a `pipeline::BuildBakedScene` that did not exist, so the
+  tree did not build; that pipeline half now exists to the contract its test fixes (`info = {0, policy, 1, 0}`).
+- Landed (uncommitted): face normals for normal-less world streams, the baked vertex-diffuse shader path
+  (`Vertex::color`, 48-byte layout), and legacy-exact fog (`SceneConstants::fog/fog_color`, 704 bytes, per-vertex
+  `fogfactor`, b2 visible to all stages), plus zero-area triangle dropping. `TryPbrDraw` now routes LIGHTING-off
+  draws to the baked mode and no longer rejects fog. Contract details: the reachability note, steps 2–4.
+- Census with those gates lifted: 8,824 of 71,920 captured draws pass every capture-visible gate (was 0).
+- All 58 CTest checks pass (new face-normal/diffuse/zero-area, baked/fog constant, face-normal mesh and scene fog
+  cases); mc3.exe rebuilt 2026-10-29 16:02. Not run on a GPU: no approved pack exists for a candidate class yet.
+- Build note: `vswhere -latest` picks VS 18 Community, which has no VC toolset; load VsDevCmd from
+  `vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64` (VS 18 BuildTools).
+
+## Earlier checkpoint — 2026-10-29 morning, PBR draw reachability (Claude session)
+
+- The current working tree (including the uncommitted dedicated PBR device/scene/surface files) builds into
+  `templates/game/out/native/mc3.exe` and all 58 CTest checks pass. Nothing was committed or installed.
+- Read-only census of the 40 latest captures (71,920 draws): 60,295 fixed-transform draws, **12 triangle lists,
+  0 with an authored normal, 0 with fixed-function lighting**. Lifting strip/lighting gates leaves 856 normal-carrying
+  draws, all blended. The dedicated path therefore cannot activate on city content even with an approved pack.
+  Details and the required next steps: [pbr_reachability_20261029.md](notes/pbr_reachability_20261029.md).
+- New read-only tool `tools/pbr/draw_census.py` (+3 unittest checks, `test_draw_census.py`).
+- First unblocking step landed (uncommitted): strip expansion in `pbr_fixed_mesh.cpp` (rasterizer parity rule,
+  degenerate joins dropped) and the `a.strip` gate removed from `TryPbrDraw`; `Strips()` added to
+  `pbr_fixed_mesh_test.cpp`. All 58 CTest checks pass; mc3.exe rebuilt. Next: geometric normals for normal-less
+  world streams, then a baked vertex-colour irradiance scene mode, then fog (see the note).
+- Camber shear and song-skip fixes from 2026-10-28 late are built but not verified in game (HANDOFF section 0).
+
+## Earlier checkpoint — 2026-10-28, installed feature controls
 
 - Tested source `1b414bc7fd9a84a80b0f0c7eac53134adf28ec84` is pushed. Its exact
   `d3879439428a58d1eb06937cda3476462f70fdf8ddbd0825820c66a462258258` EXE

@@ -1,0 +1,15 @@
+if(WIN32)
+    add_executable(pbr_legacy_quarantine_test
+        "${CMAKE_CURRENT_LIST_DIR}/pbr_legacy_quarantine_test.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/../runtime/gpu/texture_pack.cpp")
+    target_include_directories(pbr_legacy_quarantine_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../runtime")
+    target_compile_features(pbr_legacy_quarantine_test PRIVATE cxx_std_20)
+    target_compile_definitions(pbr_legacy_quarantine_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    if(MSVC)
+        target_compile_options(pbr_legacy_quarantine_test PRIVATE /O2 /UNDEBUG)
+    else()
+        target_compile_options(pbr_legacy_quarantine_test PRIVATE -O2 -UNDEBUG)
+    endif()
+    target_link_libraries(pbr_legacy_quarantine_test PRIVATE windowscodecs ole32 uuid)
+    add_test(NAME pbr_legacy_quarantine COMMAND pbr_legacy_quarantine_test)
+endif()
