@@ -6,7 +6,7 @@ Download the Windows x64 portable ZIP from [GitHub Releases](https://github.com/
 2. Double-click `mc3.exe`.
 3. For a complete-content release, setup downloads and verifies the matching game, texture and movie content automatically. For a small own-disc release, select your original Xbox **Midnight Club 3: DUB Edition Remix (USA)** ISO when the file picker opens.
 
-The same executable completes setup and starts the game. It remembers the selected disc, creates a **Midnight Club 3 Remix (Native)** desktop shortcut, and creates save/settings folders automatically. Administrator rights, Python, a compiler, an emulator and a separate installer are unnecessary.
+The same executable completes setup and starts the game. It remembers the selected disc, creates a **Midnight Club 3 Remix (Native)** desktop shortcut, and creates save/settings folders automatically. On the first launch it also builds the game's code from your disc with the bundled `compiler` folder (a progress window, a few minutes, once; later launches start directly). Administrator rights, Python, an emulator and a separate installer are unnecessary; keep the `compiler` folder next to `mc3.exe`.
 
 Keep the supplied DLLs next to `mc3.exe`. Run from the extracted folder, rather than inside the ZIP. Use Windows 10/11 x64 with a Direct3D 12 capable GPU. Windows N editions need Microsoft's [Media Feature Pack](https://support.microsoft.com/en-us/windows/experience/platform-variants/media-feature-pack-for-windows-n) for Media Foundation movie playback.
 

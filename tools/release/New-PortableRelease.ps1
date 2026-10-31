@@ -1,6 +1,8 @@
 <#
 .SYNOPSIS
-Packages a freshly built native EXE and its app-local runtime. Game files, saves, personal settings and media stay out.
+Packages a freshly built native EXE, its app-local runtime and the compiler folder that builds the game code DLL from
+the player's own disc on first launch (runtime/app/game_code.cpp). The recompiled game code (mc3.dll), game files,
+saves, personal settings and media stay out.
 .EXAMPLE
 .\tools\release\New-PortableRelease.ps1 -Executable .\templates\game\out\native\mc3.exe -Version 0.2.0-dev.1 -SourceRevision abc1234
 #>
@@ -38,6 +40,24 @@ if ((Test-Path -LiteralPath $stage) -or (Test-Path -LiteralPath $zip)) { throw "
 [void][IO.Directory]::CreateDirectory($stage)
 Copy-Item -LiteralPath $exe.FullName -Destination (Join-Path $stage 'mc3.exe')
 foreach ($dll in $crtDlls) { Copy-Item -LiteralPath $dll.FullName -Destination (Join-Path $stage $dll.Name) }
+# the compiler folder the build put beside mc3.exe: the recompiler, clang, lld, the game's configs, XDK layouts and the
+# headers the generated code includes, plus mc3.lib (the executable's exports). Never the work folder or PDBs.
+$compilerSource = Join-Path $exe.DirectoryName 'compiler'
+foreach ($required in @('xbe_recomp.exe', 'clang.exe', 'lld-link.exe', 'mc3.lib', 'config/game.toml')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $compilerSource $required) -PathType Leaf)) { throw "The build's compiler folder is missing $required. Rebuild before packaging." }
+}
+$compilerStage = Join-Path $stage 'compiler'
+Get-ChildItem -LiteralPath $compilerSource -Recurse -File | Where-Object {
+    $_.Extension -ne '.pdb' -and $_.FullName.Substring($compilerSource.Length + 1) -notmatch '^work[\\/]'
+} | ForEach-Object {
+    $relative = $_.FullName.Substring($compilerSource.Length + 1)
+    $target = Join-Path $compilerStage $relative
+    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $target))
+    Copy-Item -LiteralPath $_.FullName -Destination $target
+}
+# xbe_recomp.exe needs the C++ runtime beside it
+foreach ($dll in $crtDlls) { Copy-Item -LiteralPath $dll.FullName -Destination (Join-Path $compilerStage $dll.Name) }
+if (Get-ChildItem -LiteralPath $stage -Recurse -File -Filter 'mc3.dll') { throw 'mc3.dll (recompiled game code) must not be packaged.' }
 foreach ($name in @('LICENSE', 'THIRD_PARTY.txt')) { Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination (Join-Path $stage $name) }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/INSTALL.md') -Destination (Join-Path $stage 'INSTALL.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/PLAYER_GUIDE.md') -Destination (Join-Path $stage 'PLAYER_GUIDE.md')
@@ -65,9 +85,10 @@ Midnight Club 3: DUB Edition Remix - native Windows PC development build
 $setupInstructions
 
 The game checks the disc, remembers its location, creates a desktop shortcut, and starts.
-No emulator, Python, compiler, administrator rights, or separate setup app is needed.
+The first launch builds the game's code from your disc with the bundled compiler folder (a few minutes, once).
+No emulator, Python, administrator rights, or separate setup app is needed.
 Use F1 (or controller Back + Y) for PC graphics and tuning settings.
-Keep every DLL next to mc3.exe. Full instructions: INSTALL.md.
+Keep every DLL and the compiler folder next to mc3.exe. Full instructions: INSTALL.md.
 Controls, F1/F2 menus, customization and troubleshooting: PLAYER_GUIDE.md.
 
 Version: $Version
@@ -77,6 +98,7 @@ This is a development release; see the GitHub release notes for tested features 
 "@, $utf8)
 
 $files = @(Get-ChildItem -LiteralPath $stage -File)
+$allFiles = @(Get-ChildItem -LiteralPath $stage -Recurse -File)
 foreach ($file in $files | Where-Object Extension -In '.exe', '.dll') {
     $binary = Get-PortablePEInfo -Path $file.FullName
     foreach ($dependency in $binary.Imports) {
@@ -85,8 +107,9 @@ foreach ($file in $files | Where-Object Extension -In '.exe', '.dll') {
         }
     }
 }
-$manifestFiles = @($files | Sort-Object Name | ForEach-Object {
-    [ordered]@{ path = $_.Name; size = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+$manifestFiles = @($allFiles | ForEach-Object { $_ | Add-Member -NotePropertyName Relative -NotePropertyValue ($_.FullName.Substring($stage.Length + 1) -replace '\\', '/') -PassThru } |
+    Sort-Object Relative | ForEach-Object {
+    [ordered]@{ path = $_.Relative; size = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
 })
 $manifest = [ordered]@{
     format = 1
