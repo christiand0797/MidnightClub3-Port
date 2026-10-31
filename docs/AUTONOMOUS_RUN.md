@@ -23,8 +23,9 @@ remains on its current path until a real PBR integration is implemented and vali
 - **Replays:** player car transform recorded per frame and restored on playback; replays play to the end, Restart
   Replay is identical (notes/replays.md). **Songs:** stopping streams no longer get the starved grace (no overlap
   seen across song changes; `dsound:` overlap/refill lines watch for it). Camber is a rigid tilt (10-28).
-- **Not done:** Detroit is locked on this save ("roadtrip" did not add it to Arcade; unlocks are career progress
-  rules, `tune/progress/dlunlockingrules.csv`). Blended/alpha-tested/programmable/multi-texture draws stay legacy.
+- **Not done:** Detroit is locked on this save. It opens after the hookmen Muscle_2_part_2 plus Culture_2_part_1 or
+  Chopper_2_part_1 (`tune/progress/unlockingrules.csv`). Forcing it in Arcade alone crashes, and forcing it at profile
+  load also opens it in the career (HANDOFF, 2026-11-01). Blended/alpha-tested/programmable/multi-texture draws stay legacy.
 - All 58 CTest checks and the two `tools/pbr` unittest suites pass. Nothing committed.
 
 ## Earlier checkpoint — 2026-10-29 afternoon, PBR face normals, baked mode and fog (Claude session)

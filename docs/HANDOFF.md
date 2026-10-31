@@ -10,6 +10,23 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-11-01 (Detroit unlock: mapped, deliberately not shipped):**
+- **The rule.** `tune/progress/unlockingrules.csv` (in assets_x.dat) has `C,Detroit,H,Muscle_2_part_2,H,Culture_2_part_1`
+  (or `Chopper_2_part_1`). Detroit opens after those career hookmen, evaluated by `mcPgUnlockingRulesEval`
+  (load 0x28C3E0, rule ids 0x28B510, conditions 0x28B850).
+- **The queries.**
+  - `sub_00292CD0(this, type, id, flag)` answers "unlocked". Cities are type 5: 0 SD, 1 Atlanta, 2 Detroit, 3 Tokyo.
+  - `sub_00289CC0(city)` wraps it and honours the unlock-everything switch `0x53F2ED` (set with `0x53F2EC` by three
+    cheat strings in `sub_001923B0`).
+  - Arcade asks from 0x13B751 (cycling), 0x13B9CC, 0x13C467 and 0x15FB15 (counting cities).
+  - The profile load asks through `sub_0028A310` (return 0x28A3D1).
+- **Why it isn't shipped.** Answering "unlocked" only for the Arcade callers crashes on entering Arcade:
+  `sub_0013BA60` builds the city row text from per-city tables (`[0x557EE4] + city*0x50`, modes at `+0x20`). Those
+  are filled only for cities unlocked at profile load, so Detroit's name pointer is garbage. Opening Detroit
+  properly means answering "unlocked" at the profile-load query too. That also serves the career: Detroit
+  becomes travelable, and its unlock scene and races would fire out of order on a 10% career. Left for the user to
+  decide; reverted completely.
+
 **2026-11-01 later (fine surface grain):** baked city surfaces add two octaves of gradient noise to the normal-map
 slope (`PbrDetail` in `pbr_pipeline_shader.h`). It runs at two grains per texel of the surface's own texture, so it
 follows the art rather than the tiling, scaled by normal strength. It fades out once a grain nears the pixel
