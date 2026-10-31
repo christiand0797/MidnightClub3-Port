@@ -1,6 +1,7 @@
 #include "gpu/pbr_pipeline.h"
 #include "gpu/pbr_brdf_shader.h"
 #include "gpu/pbr_pipeline_shader.h"
+#include "gpu/fast_hash.h"
 
 #include <algorithm>
 #include <bit>
@@ -167,11 +168,7 @@ Status ValidateConstants(const GeometryConstants& g,const MaterialConstants& m,c
                       s.irradiance_exposure[3],OutputPolicy(s.info[1]),sc);
 }
 namespace {
-uint64_t MeshHash(const void* data,size_t n,uint64_t h) {
-    constexpr uint64_t m=0x9E3779B97F4A7C15ull;const auto* p=static_cast<const uint8_t*>(data);
-    for(;n>=8;p+=8,n-=8){uint64_t v;std::memcpy(&v,p,8);h=(h^v)*m;h^=h>>32;}
-    uint64_t v=0;std::memcpy(&v,p,n);h=(h^v^n)*m;return h^(h>>29);
-}
+uint64_t MeshHash(const void* data,size_t n,uint64_t h) {return gpu::FastHash(data,n,h);}
 Status ValidateMeshNow(std::span<const Vertex>,std::span<const uint32_t>,NormalSource,std::string*);
 }
 // The same bytes validate the same way: the backend builds a mesh once and replans it every frame, and the device

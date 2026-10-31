@@ -39,6 +39,7 @@
 #include "gpu/backend.h"
 #include "gpu/d3d12_diagnostics.h"
 #include "gpu/ext.h"
+#include "gpu/fast_hash.h"
 #include "gpu/shader_cache.h"
 #include "gpu/shaders.h"
 #include "gpu/skinning_capture.h"
@@ -147,20 +148,7 @@ struct PbrPerf {
 PbrPerf g_pbr_perf;
 // 64-bit content hash for the PBR mesh cache key: eight bytes a step, so hashing a draw's vertex bytes costs about
 // what copying them does
-uint64_t MixHash(const void* data, size_t n, uint64_t h) {
-    constexpr uint64_t m = 0x9E3779B97F4A7C15ull;
-    const auto* p = static_cast<const uint8_t*>(data);
-    for (; n >= 8; p += 8, n -= 8) {
-        uint64_t v;
-        std::memcpy(&v, p, 8);
-        h = (h ^ v) * m;
-        h ^= h >> 32;
-    }
-    uint64_t v = 0;
-    std::memcpy(&v, p, n);
-    h = (h ^ v ^ n) * m;
-    return h ^ (h >> 29);
-}
+uint64_t MixHash(const void* data, size_t n, uint64_t h) { return FastHash(data, n, h); }
 struct PerfScope {
     double& acc;
     bool on = diag::Perf();
