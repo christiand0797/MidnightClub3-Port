@@ -1,7 +1,10 @@
 #include "app/app.h"
 #include "app/tuning_profiles.h"
 
-namespace mc3 { bool DrawGameplaySettingsTabs(); }
+namespace mc3 {
+bool DrawGameplaySettingsTabs();
+void ArrowDriving(int port, input::Pad& pad);  // arrow keys steer while driving (src/game/arrow_driving.cpp)
+}
 namespace {
 void LoadCarPreferences(const void*) { app::tuning_profiles::Load(); }
 void SaveCarPreferences() { app::tuning_profiles::Save(); }
@@ -25,7 +28,7 @@ const app::GameInfo app::kGame = {
     .window = nullptr,                    // the game window is up
     .message = nullptr,                   // window messages first; true takes one
     .ui = nullptr,                        // ImGui drawing each frame
-    .pad = nullptr,                       // changes a polled pad
+    .pad = mc3::ArrowDriving,             // changes a polled pad
     .rumble = nullptr,                    // changes a rumble before it is set
     .settings_tabs = mc3::DrawGameplaySettingsTabs,
     .save_aux = SaveCarPreferences,

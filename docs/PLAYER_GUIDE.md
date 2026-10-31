@@ -178,7 +178,7 @@ Keyboard game controls are separate from PC menu navigation:
 | Space | A / confirm |
 | Escape | B / back |
 | Backspace | Back |
-| Arrow keys | D-pad |
+| Arrow keys | D-pad in menus. While you drive: left / right steer, up accelerates, down brakes (a controller's D-pad still changes the song) |
 | W / S | Accelerate / brake |
 | A / D | Steer left / right |
 | X / Y | Corresponding face buttons |
@@ -328,6 +328,7 @@ handles purchased parts, career progress and per-car garage setups.
 | Setup interrupted / checksum error | Start the same extracted `mc3.exe` again. Keep parts from the same content release. Setup can resume/repair; do not mix manifests or manually edit its marker. |
 | Instant Replay ends after a moment or the car wanders | Replays now keep your car on the path you drove and play to the end; traffic is re-simulated and can differ slightly. The "view a replay?" prompt defaults to **No**. |
 | PBR shows no change | Check the **PBR** tab: **Enable PBR** on, a pack folder and its approved digest set (see the PBR section). "Materials with rendered PBR evidence" counts what is drawing; most changes are subtle shading on city walls and roads. |
+| Song skips to the next one on a sharp turn | Fixed in the 2026-10-31 build: the arrow keys were the D-pad while driving, and the D-pad changes the song. They now steer while you drive and are the D-pad in menus and the pause menu. The log says `input: arrow keys drive` / `are the D-pad` as it switches. A brief silence during a heavy load is the game refilling the music late: `dsound: stream ... silent N ms until its refill`. |
 | Songs play over each other | Fixed in the 2026-10-29 build (a stopping song that ran dry during a load was kept alive). Report it with `logs/mc3.log`: lines `dsound: stereo streams ... both playing` show it. |
 | Windows asks for network permission | Handle the Windows dialog yourself. Local setup and offline gameplay do not require allowing public inbound network connections. OS prompts depend on your Windows configuration. |
 | ISO drive moved | Use `mc3.exe --choose-disc`, or see INSTALL for `--disc`. |

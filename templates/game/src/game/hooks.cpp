@@ -7,6 +7,7 @@
 //     __imp__sub_00012345(ctx, base);  // the original
 // }
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -140,6 +141,11 @@ X86_FUNC(sub_0020B6F0) {
     ApplyEconomyCommands();
     mc3::world::Apply(ctx, base);
 
+    // a frame far past its field: loads and hitches, set against the audio log's starved streams
+    if (measured > 0.1) {
+        static std::atomic<unsigned> long_frames{0};
+        if (long_frames.fetch_add(1) < 300) LOGR("timing: a frame took %.0f ms", measured * 1000);
+    }
     g_real += measured;
     g_game += F32(kFrameTime);
     g_frames++;

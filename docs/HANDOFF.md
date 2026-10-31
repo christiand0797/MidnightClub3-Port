@@ -10,6 +10,23 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-10-31 later (songs skipping on hard turns: the arrow keys):**
+- **Cause.** The keyboard fallback maps the arrows to the D-pad, and while driving D-pad left/right changes the song.
+  Each arrow-key turn started a new music stream; W/A/D steering never did. Reproduced in the San Diego cruise: a new
+  `text: "music_..."` key appeared on the first right-arrow turn.
+- **Fix.** `templates/game/src/game/arrow_driving.cpp` (`GameInfo::pad`): while the player drives, the held arrows
+  are steer, gas and brake, and their D-pad bits are cleared. A controller's own D-pad is untouched.
+- **Driving signal.** The human car controller's per-frame update renews a 150 ms lease. That update is vtable
+  `0x47684C` method 8, `0x2C8BC0`; methods 2, 7 and 14 behave the same. Probed at 60 calls/s while in control,
+  standing still included, and 0 under the pause menu. Frame time, the time scale (`0x4B2D6C`) and the player car
+  pointer all stay live while paused, so none of them work. `0x2C9260` (the replay pad read) is not called in a cruise.
+- **Verified.** Eight arrow-key hard turns, no song change. The pause menu navigates with the arrows. The profile and
+  main menus too.
+- **Load stalls.** `hooks.cpp` logs `timing: a frame took N ms` past 100 ms. In 70 s of hard turns: no stall, and
+  music gaps of 20–25 ms. One 330–350 ms stall right after a cruise loads gives an audible gap; a separate issue.
+- **Side effect to tell the user about.** A menu script early this session pressed Enter on "Create Profile". The
+  save now has a **Player 2 (0% – San Diego)** profile. Player 1 is untouched. Not deleted: that is the user's call.
+
 **2026-10-31 (upstream SDK merged: 36 commits of TGP482/Joshhhuaaa through "add nightfire"):**
 - The recompiled code now builds into `mc3.dll` beside `mc3.exe` (delay loaded). `add_xbe_image` takes the exe name as
   a sixth argument, `game.toml` has `library = "mc3.dll"`, and the `mc3` target builds both. The exe's post-build
