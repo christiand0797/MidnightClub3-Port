@@ -39,6 +39,7 @@
 #include "gpu/backend.h"
 #include "gpu/d3d12_diagnostics.h"
 #include "gpu/ext.h"
+#include "gpu/shader_cache.h"
 #include "gpu/shaders.h"
 #include "gpu/skinning_capture.h"
 #include "gpu/capture_directory.h"
@@ -493,6 +494,8 @@ struct Tex {
     uint64_t palette = 0;  // hash of the colours a P8 texture was decoded with
     uint8_t flags = 0;  // Extension::Decoded's
     bool replaced = false;  // showing a texture pack image, not the console's pixels
+    uint64_t pack_pending = 0;     // the pack image for these bytes is still decoding (pack::PollImage)
+    uint64_t pack_poll_frame = 0;  // the frame it was last asked for
     bool pack_enabled = false;  // selection used for the cached pixels; settings can change without guest writes
     uint32_t uploads = 0;   // times its bytes changed: past a few it is video or drawn to, never packed
     uint8_t role = 0;       // TexRole: a texture the graphics settings scale the draws of
@@ -1067,6 +1070,7 @@ private:
 
 bool D3D12Backend::Init(uint32_t width, uint32_t height) {
     InitPhotoCapture();
+    shader_cache::SetDirectory(app::ExeDir() / "shadercache");  // compiled shaders kept across runs
     g_reversed_depth = true;
     guest_w_ = width;
     guest_h_ = height;
@@ -1864,8 +1868,7 @@ ID3DBlob* D3D12Backend::Compile(const std::string& src, const char* entry, const
     ComPtr<ID3DBlob> err;
     PerfScope perf_compile{g_perf.compile};
     g_perf.shaders++;
-    HRESULT hr = D3DCompile(src.data(), src.size(), nullptr, nullptr, nullptr, entry, profile,
-                            D3DCOMPILE_OPTIMIZATION_LEVEL1, 0, &code, &err);
+    HRESULT hr = shader_cache::Compile(src, entry, profile, D3DCOMPILE_OPTIMIZATION_LEVEL1, code, &err);
     if (FAILED(hr)) {
         LOGE("d3d12: %s compile failed: %s", profile, err ? static_cast<const char*>(err->GetBufferPointer()) : "?");
         LOGE("%s", src.c_str());
@@ -2401,7 +2404,10 @@ ID3D12Resource* D3D12Backend::BindGuestTexture(const State& s, int stage, const 
                                && !d.cube && d.depth == 1;
             if (replace || dump || roled || photo || packable) name = pack::ContentHash(d, p, total, palette.hash);
             if (!photo_capture::UploadWithIdentity(tx.photo_identity, name, [&]() -> bool {
-                auto img = replace ? pack::Find(name) : nullptr;
+                // the pack image decodes off this thread: the console's texture draws until it is ready
+                std::unique_ptr<pack::Image> img;
+                const pack::PbrPoll poll = replace ? pack::PollImage(name, img) : pack::PbrPoll::None;
+                tx.pack_pending = poll == pack::PbrPoll::Pending ? name : 0;
                 if (!(img && UploadReplacement(tx, *img))) {
                     if (tx.replaced) {
                         // its bytes changed to a texture the pack has no image for: back to the console's own
@@ -2428,6 +2434,17 @@ ID3D12Resource* D3D12Backend::BindGuestTexture(const State& s, int stage, const 
                 tx.pbr_has_height = false;
                 tx.pbr_draws = 0;
             }
+        }
+    }
+    // a pack image that was still decoding: asked again once a frame, swapped in when it has arrived
+    if (tx.pack_pending && tx.pack_poll_frame != presents_ + 1) {
+        tx.pack_poll_frame = presents_ + 1;
+        std::unique_ptr<pack::Image> img;
+        const pack::PbrPoll poll = app::Get().graphics.texture_pack ? pack::PollImage(tx.pack_pending, img)
+                                                                    : pack::PbrPoll::None;
+        if (poll != pack::PbrPoll::Pending) {
+            tx.pack_pending = 0;
+            if (img) UploadReplacement(tx, *img);
         }
     }
     stages.accepted_color[stage] = &tx;

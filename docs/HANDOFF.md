@@ -10,6 +10,20 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-11-01 (frame stalls: shader cache, background texture-pack decoding):**
+- **Shader compile stall.** `XBE_PERF=1 XBE_VERBOSE=1` showed the 344 ms stall at a cruise's start as 6.14 ms/frame
+  of `D3DCompile`. `gpu/shader_cache.{h,cpp}` keeps compiled blobs in `shadercache\` beside the exe: named by an FNV
+  hash of source/entry/profile/flags, a second independent hash checked on read, atomic writes, a version stamp.
+  Both `D3D12Backend::Compile` and the PBR device's five shaders use it. Second run: compile ~0.01 ms/frame.
+- **Texture-pack stall.** The 2.2 s mid-drive stall was HD pack images decoded synchronously in
+  `BindGuestTexture` (upload 30-42 ms/frame). `pack::PollImage` decodes on three workers. The console's texture draws
+  until the image is ready, then a once-a-frame poll (`Tex::pack_pending`) swaps it in. A 30 s drive: no frame
+  over 100 ms.
+- **What remains.** The music stream is refilled on the game's own frame thread (probed: same thread id), so a long
+  main-thread frame silences it for exactly that long. That is left at the game's loads, done in one frame: 2-4 s at
+  the title backdrop, about 1.6 s at a cruise's start, behind loading screens. The renderer is idle there
+  (host ~2 ms/frame); shortening them means speeding up the game's own load code.
+
 **2026-10-31 late (road markings and overlays through PBR; what stays legacy):**
 - **Program.** The world's blend-layer pixel shader (combiner count 0x11103, rgb_in C8C40000/C9C40000/1DCDCC3D,
   no final combiner) computes r0 = t0*v0, r1 = t1*v0, `r0.rgb = r1.rgb*r1.a + r0.rgb*(1 - r1.a)`. It draws road

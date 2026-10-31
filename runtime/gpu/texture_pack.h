@@ -43,6 +43,11 @@ uint64_t ContentHash(const TextureDesc& d, const uint8_t* guest, uint32_t bytes,
 // the replacement for this hash; the caller owns decoded pixels until they have been copied to its upload buffer
 // and can then release them. Null without one; only the file index and used hashes are retained by the pack.
 std::unique_ptr<Image> Find(uint64_t hash);
+// Find off the render thread: the first ask queues the decode on background workers and answers Pending (the caller
+// draws the console's texture meanwhile and asks again on a later frame); Ready moves the image into out, once;
+// None without a replacement or when its file did not decode. Decoding a pack image on the render thread stalled
+// whole frames, and the game thread behind them, when a new area brought dozens at once.
+PbrPoll PollImage(uint64_t hash, std::unique_ptr<Image>& out);
 
 // Preserved legacy API: quarantined to null/None before indexing, I/O, decoding or queuing work.
 std::unique_ptr<PbrMaps> FindPbr(uint64_t hash);

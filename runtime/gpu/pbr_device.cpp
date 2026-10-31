@@ -1,4 +1,5 @@
 #include "gpu/pbr_device.h"
+#include "gpu/shader_cache.h"
 
 #include <d3dcompiler.h>
 #include <wrl/client.h>
@@ -169,8 +170,9 @@ struct Device::Impl {
         materials.reserve(limits.materials);samplers.reserve(limits.samplers);psos.reserve(limits.psos);
         const std::string source[]={pipeline::VertexHlsl(),pipeline::VertexHlsl(true),pipeline::PixelHlsl(),pipeline::HullHlsl(),pipeline::DomainHlsl()};
         const char* targets[]={"vs_5_0","vs_5_0","ps_5_0","hs_5_0","ds_5_0"};
-        for(unsigned i=0;i<5;++i){ComPtr<ID3DBlob> errors;Check(D3DCompile(source[i].data(),source[i].size(),"mc3-dedicated-pbr",nullptr,nullptr,"main",targets[i],
-            D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_WARNINGS_ARE_ERRORS|D3DCOMPILE_OPTIMIZATION_LEVEL3,0,&shaders[i],&errors),Status::ShaderFailure);}
+        // the disk cache keeps these five out of the first PBR frame after the first run
+        for(unsigned i=0;i<5;++i){ComPtr<ID3DBlob> errors;Check(shader_cache::Compile(source[i],"main",targets[i],
+            D3DCOMPILE_ENABLE_STRICTNESS|D3DCOMPILE_WARNINGS_ARE_ERRORS|D3DCOMPILE_OPTIMIZATION_LEVEL3,shaders[i],&errors),Status::ShaderFailure);}
         pipeline::RootLayout layout;auto desc=layout.Describe();ComPtr<ID3DBlob> bytes,errors;
         Check(D3D12SerializeRootSignature(&desc,D3D_ROOT_SIGNATURE_VERSION_1,&bytes,&errors));
         Check(device->CreateRootSignature(0,bytes->GetBufferPointer(),bytes->GetBufferSize(),IID_PPV_ARGS(&root)));

@@ -8,6 +8,7 @@ if(WIN32)
     add_executable(pbr_device_test
         "${CMAKE_CURRENT_LIST_DIR}/pbr_device_test.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/../runtime/gpu/pbr_device.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/../runtime/gpu/shader_cache.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/../runtime/gpu/pbr_pipeline.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/../runtime/gpu/pbr_geometry.cpp"
         "${CMAKE_CURRENT_LIST_DIR}/../runtime/gpu/pbr_material.cpp")

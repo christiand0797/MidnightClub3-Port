@@ -1,0 +1,15 @@
+if(WIN32)
+    add_executable(shader_cache_test
+        "${CMAKE_CURRENT_LIST_DIR}/shader_cache_test.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/../runtime/gpu/shader_cache.cpp")
+    target_include_directories(shader_cache_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../runtime")
+    target_compile_features(shader_cache_test PRIVATE cxx_std_20)
+    target_link_libraries(shader_cache_test PRIVATE d3dcompiler)
+    if(MSVC)
+        target_compile_options(shader_cache_test PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(shader_cache_test PRIVATE -UNDEBUG)
+    endif()
+    add_test(NAME shader_cache COMMAND shader_cache_test)
+    set_tests_properties(shader_cache PROPERTIES TIMEOUT 30)
+endif()

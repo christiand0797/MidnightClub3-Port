@@ -53,6 +53,14 @@ std::deque<std::pair<uint64_t, fs::path>> g_pbr_queue;
 uint32_t g_pbr_workers = 0;
 constexpr uint32_t kMaxPbrWorkers = 2;
 
+// replacement images decoded off the render thread (PollImage)
+std::unordered_set<uint64_t> g_image_failed;
+std::unordered_set<uint64_t> g_image_pending;
+std::unordered_map<uint64_t, std::unique_ptr<Image>> g_image_ready;
+std::deque<std::pair<uint64_t, fs::path>> g_image_queue;
+uint32_t g_image_workers = 0;
+constexpr uint32_t kMaxImageWorkers = 3;
+
 fs::path Root() { return app::ExeDir() / "textures"; }
 
 fs::path PbrDir() {
@@ -286,6 +294,37 @@ fs::path LookupPbrPathLocked(uint64_t hash) {
     return {};
 }
 
+std::unique_ptr<Image> Load(const fs::path& path);
+
+void ImageWorker() {
+    for (;;) {
+        uint64_t hash = 0;
+        fs::path path;
+        {
+            std::lock_guard<std::mutex> lock(g_lock);
+            if (g_image_queue.empty()) {
+                --g_image_workers;
+                return;
+            }
+            hash = g_image_queue.front().first;
+            path = std::move(g_image_queue.front().second);
+            g_image_queue.pop_front();
+        }
+        std::unique_ptr<Image> img = Load(path);
+        if (!img) LOGE("textures: could not read %s", hostpath::Utf8(path).c_str());
+        std::lock_guard<std::mutex> lock(g_lock);
+        g_image_pending.erase(hash);
+        if (!img) {
+            g_image_failed.insert(hash);
+            continue;
+        }
+        if (g_used_hashes.insert(hash).second)
+            LOGI("textures: %016llX from %s, %ux%u", (unsigned long long)hash, hostpath::Utf8(path.filename()).c_str(),
+                 img->width, img->height);
+        g_image_ready[hash] = std::move(img);
+    }
+}
+
 void PbrWorker() {
     for (;;) {
         uint64_t hash = 0;
@@ -436,6 +475,28 @@ std::unique_ptr<Image> Find(uint64_t hash) {
                  img->width, img->height);
     }
     return img;
+}
+
+PbrPoll PollImage(uint64_t hash, std::unique_ptr<Image>& out) {
+    out.reset();
+    std::lock_guard<std::mutex> lock(g_lock);
+    Index();
+    if (auto ready = g_image_ready.find(hash); ready != g_image_ready.end()) {
+        out = std::move(ready->second);
+        g_image_ready.erase(ready);
+        return PbrPoll::Ready;
+    }
+    if (g_image_failed.contains(hash)) return PbrPoll::None;
+    if (g_image_pending.contains(hash)) return PbrPoll::Pending;
+    auto at = g_index.find(hash);
+    if (at == g_index.end()) return PbrPoll::None;
+    g_image_pending.insert(hash);
+    g_image_queue.emplace_back(hash, at->second);
+    if (g_image_workers < kMaxImageWorkers) {
+        ++g_image_workers;
+        std::thread(ImageWorker).detach();
+    }
+    return PbrPoll::Pending;
 }
 
 std::unique_ptr<PbrMaps> FindPbr(uint64_t hash) {
