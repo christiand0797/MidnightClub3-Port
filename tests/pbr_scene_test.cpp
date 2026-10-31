@@ -172,6 +172,20 @@ void BakedCoefficientProof() {
     f=BakedFixture{};f.proof.exposure=2;assert(f.Build(pipeline::OutputPolicy::LinearHdr)==Status::Ready);
     Near(f.scene.irradiance_exposure[3],2);assert(f.scene.info[1]==0&&f.scene.info[2]==1);
 }
+void BakedWindowLayer() {
+    BakedFixture f;
+    const auto windows=[](State& s){
+        s.textures[1]=0x5678;
+        {auto& t=s.tss[0];t[kTssColorOp]=4;t[kTssColorArg1]=2;t[kTssColorArg2]=0;t[kTssAlphaOp]=2;t[kTssAlphaArg1]=2;t[kTssResultArg]=5;}
+        {auto& t=s.tss[1];t[kTssColorOp]=4;t[kTssColorArg1]=2;t[kTssColorArg2]=3;t[kTssAlphaOp]=2;t[kTssAlphaArg1]=2;t[kTssResultArg]=1;}
+        {auto& t=s.tss[2];t[kTssColorOp]=18;t[kTssColorArg1]=5;t[kTssColorArg2]=1;t[kTssAlphaOp]=2;t[kTssAlphaArg1]=5;t[kTssResultArg]=1;}
+        s.tss[3][kTssColorOp]=1;};
+    windows(f.state);f.Expect(Status::UnsupportedBakedCombiner); // a second texture without the layer proof
+    f.proof.window_layer_kept=true;f.Expect(Status::Ready);
+    f.state.tss[2][kTssColorArg1]=1;f.state.tss[2][kTssColorArg2]=5;f.Expect(Status::UnsupportedBakedCombiner);
+    f=BakedFixture{};windows(f.state);f.proof.window_layer_kept=true;f.state.textures[2]=0x9ABC;f.Expect(Status::UnsupportedBakedCombiner);
+    f=BakedFixture{};f.proof.window_layer_kept=true;f.Expect(Status::UnsupportedBakedCombiner); // the proof is for that cascade only
+}
 void BakedDrawAndCombiner() {
     BakedFixture f;
     for(auto field:{kRsLighting,kRsFogEnable,kRsVertexBlend,kRsTwoSidedLighting}) {
@@ -260,6 +274,6 @@ void TextureFactorStage() {
 }
 }
 int main() {
-    ProofAndOutput();DrawAndMaterialGuards();ViewAndCamera();ActualLightRules();BakedCoefficientProof();BakedDrawAndCombiner();Fog();TextureFactorStage();
+    ProofAndOutput();DrawAndMaterialGuards();ViewAndCamera();ActualLightRules();BakedCoefficientProof();BakedDrawAndCombiner();BakedWindowLayer();Fog();TextureFactorStage();
     std::cout<<"PBR scene: strict typed/view lights plus explicit baked vertex-diffuse coefficient mode, no invented lights, exact combiner/alpha/proof guards passed\n";
 }

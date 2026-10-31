@@ -78,6 +78,21 @@ bool BakedCombiner(const State& s,bool alpha_one,bool factor_applied,bool alpha_
     const bool product_alpha=t[kTssAlphaOp]==modulate&&product(t[kTssAlphaArg1],t[kTssAlphaArg2])&&(alpha_one||alpha_packed);
     return texture_alpha||product_alpha;
 }
+// The window-layer cascade (pbr::WindowLayerSurface) on the actual state: stage 0 texture*diffuse to TEMP with the
+// texture's alpha, stage 1 texture*TFACTOR, stage 2 MODULATEALPHA_ADDCOLOR(TEMP, CURRENT) with TEMP's alpha, then ended.
+bool WindowLayerCombiner(const State& s) {
+    constexpr uint32_t disable=1,select_arg1=2,modulate=4,add=18,diffuse=0,current=1,texture=2,tfactor=3,temp=5;
+    if(s.ps||!s.textures[0]||!s.textures[1]||s.textures[2])return false;
+    const auto pair=[](uint32_t a,uint32_t b,uint32_t x,uint32_t y){return (a==x&&b==y)||(a==y&&b==x);};
+    const auto& t0=s.tss[0];const auto& t1=s.tss[1];const auto& t2=s.tss[2];const auto& t3=s.tss[3];
+    return t0[kTssColorOp]==modulate&&pair(t0[kTssColorArg1],t0[kTssColorArg2],texture,diffuse)&&
+           t0[kTssAlphaOp]==select_arg1&&t0[kTssAlphaArg1]==texture&&t0[kTssResultArg]==temp&&
+           t1[kTssColorOp]==modulate&&pair(t1[kTssColorArg1],t1[kTssColorArg2],texture,tfactor)&&
+           t1[kTssAlphaOp]==select_arg1&&t1[kTssAlphaArg1]==texture&&t1[kTssResultArg]==current&&
+           t2[kTssColorOp]==add&&t2[kTssColorArg1]==temp&&t2[kTssColorArg2]==current&&
+           t2[kTssAlphaOp]==select_arg1&&t2[kTssAlphaArg1]==temp&&t2[kTssResultArg]==current&&
+           (t3[kTssColorOp]<=disable||(!s.textures[3]&&(t3[kTssColorArg1]&0xF)==texture));
+}
 // The fixed-function (no vertex program) half of FillFogConstants, packed after the scene is built.
 Status PackFog(const State& s,pipeline::SceneConstants& result) {
     if(!s.rs[kRsFogEnable])return Status::Ready;
@@ -189,7 +204,8 @@ Status BuildBakedVertexDiffuse(const State& s,const BakedProof& proof,pipeline::
     for(const auto& t:s.tss)if(t[kTssColorSign]||t[kTssColorKeyOp]||t[kTssAlphaKill])return Status::UnsupportedDraw;
     if(!RigidView(s.transforms[kView]))return Status::InvalidView;
     if(!Perspective(s.transforms[kProjection]))return Status::InvalidProjection;
-    if(!BakedCombiner(s,proof.vertex_diffuse_alpha_one_proven,proof.texture_factor_applied,proof.combiner_alpha_packed))
+    if(!(proof.window_layer_kept?WindowLayerCombiner(s):
+         BakedCombiner(s,proof.vertex_diffuse_alpha_one_proven,proof.texture_factor_applied,proof.combiner_alpha_packed)))
         return Status::UnsupportedBakedCombiner;
     // BuildBakedScene packs a mode, not a uniform white light/irradiance approximation. Actual bounded
     // coefficients are supplied per vertex by the independently validated geometry/stream bridge.

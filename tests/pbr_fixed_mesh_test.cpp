@@ -313,7 +313,7 @@ void Refreshed() {
 } // namespace
 
 int main() {
-    static_assert(sizeof(pp::Vertex)==48);
+    static_assert(sizeof(pp::Vertex)==56);
     Formats();ExactConstants();Fvf();Guards();Indices();Strips();FaceNormalsAndDiffuse();Refreshed();
     std::cout<<"Fixed mesh raw/converted source decoding, exact clip order, bounds and explicit proof gates passed\n";
 }

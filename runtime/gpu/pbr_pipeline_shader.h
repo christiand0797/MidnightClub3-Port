@@ -45,6 +45,7 @@ struct PbrVertex {
     float3 model_normal : NORMAL0;
     float2 uv : TEXCOORD0;
     float4 color : COLOR0;
+    float2 uv1 : TEXCOORD1;
 };
 struct PbrRaster {
     float4 clip_position : SV_Position;
@@ -53,12 +54,14 @@ struct PbrRaster {
     float2 uv : TEXCOORD2;
     float4 color : TEXCOORD3;
     float fog : TEXCOORD4;
+    float2 uv1 : TEXCOORD5;
 };
 struct PbrControl {
     float3 view_position : POSITION0;
     float3 view_normal : NORMAL0;
     float2 uv : TEXCOORD0;
     float4 color : COLOR0;
+    float2 uv1 : TEXCOORD1;
 };
 float4 PbrProject(float3 view_position) {
     return mul(float4(view_position,1),pbr_view_to_clip);
@@ -93,14 +96,14 @@ PbrRaster main(PbrVertex i) {
     // Preserve the original renderer's already-composed matrix and operation order for ordinary raster depth.
     float4 cp=mul(float4(i.model_position,1),pbr_model_to_clip);
     o.fog=PbrFogFactor(abs(cp.z));
-    o.clip_position=PbrReversedDepth(PbrFixedEdgeCorrection(cp));o.uv=i.uv;o.color=i.color;return o;
+    o.clip_position=PbrReversedDepth(PbrFixedEdgeCorrection(cp));o.uv=i.uv;o.color=i.color;o.uv1=i.uv1;return o;
 }
 )HLSL";
 inline constexpr std::string_view kPatchVertex=R"HLSL(
 PbrControl main(PbrVertex i) {
     PbrControl o=(PbrControl)0;
     PbrGeoPosition(i.model_position,pbr_model_to_view,o.view_position);
-    PbrGeoNormal(i.model_normal,pbr_normal_to_view,o.view_normal);o.uv=i.uv;o.color=i.color;return o;
+    PbrGeoNormal(i.model_normal,pbr_normal_to_view,o.view_normal);o.uv=i.uv;o.color=i.color;o.uv1=i.uv1;return o;
 }
 )HLSL";
 inline constexpr std::string_view kHull=R"HLSL(
@@ -143,6 +146,7 @@ PbrRaster main(PbrPatch patch,float3 bary : SV_DomainLocation,const OutputPatch<
     PbrGeoUnit(n,o.view_normal);
     o.uv=p[0].uv*bary.x+p[1].uv*bary.y+p[2].uv*bary.z;
     o.color=p[0].color*bary.x+p[1].color*bary.y+p[2].color*bary.z;
+    o.uv1=p[0].uv1*bary.x+p[1].uv1*bary.y+p[2].uv1*bary.z;
     if(pbr_options.w==2&&pbr_maps.z!=0) {
         float height=pbr_height_map.SampleLevel(pbr_sampler,o.uv,0);
         // This changes actual geometry, depth and silhouette. It is distinct from the PS UV-only parallax path.
@@ -280,6 +284,12 @@ float4 main(PbrRaster i) : SV_Target0 {
     radiance=max(radiance,0)*pbr_irradiance_exposure.w;
     // The original combiner saturates rather than tone maps; the baked mode keeps that.
     if(pbr_scene_info.y==1)radiance=PbrLinearToSrgb(pbr_scene_info.z==1?saturate(radiance):radiance/(1+radiance));
+    // The window layer as the original cascade adds it, in display values: saturate(tex1*TFACTOR) times the base's
+    // alpha (the window mask), over the encoded surface and before fog.
+    if(pbr_scene_info.z==1&&pbr_geometry_options.w==1) {
+        float3 glow=saturate(pbr_emission.SampleGrad(pbr_sampler,i.uv1,ddx(i.uv1),ddy(i.uv1)).rgb*pbr_emission_color.rgb);
+        radiance=saturate(radiance+glow*saturate(albedo.a));
+    }
     // Legacy order: the fog colour is blended over the final colour with saturate(fogfactor).
     if(pbr_fog.w!=0)radiance=lerp(pbr_fog_color.rgb,radiance,saturate(i.fog));
     // Baked: the vertex alpha carries the cascade's diffuse/TFACTOR alpha factors, as the original writes them.

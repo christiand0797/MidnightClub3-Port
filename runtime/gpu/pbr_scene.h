@@ -51,6 +51,9 @@ struct BakedProof {
     // The dedicated pipeline keeps the draw's coverage: a GREATER/GEQUAL alpha test as the same clip on the same
     // (packed) alpha, and its blend state as it is (pipeline::KeepsLegacyBlend). Cutouts then need no opaque state.
     bool coverage_kept = false;
+    // The pipeline adds the cascade's stage 1 (texture*TFACTOR) as the window layer over the encoded surface, times the
+    // base's alpha, and writes that alpha: the facades' MODULATEALPHA_ADDCOLOR cascade instead of a one-stage albedo.
+    bool window_layer_kept = false;
     bool coefficient_colors_linear = false;
     bool output_policy_proven = false;
     // The dedicated shader reproduces the legacy fixed-function fog from the same draw's fog states.

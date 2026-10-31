@@ -7,7 +7,8 @@ to 128) and samples the game's own texture as albedo. In baked mode the light ha
 as falling from above the surface toward the viewer: the normal map shades relative to the surface's own normal
 (relief, exactly 1 for a flat map) and a GGX lobe of the same light adds gloss scaled by 1 - roughness (none at 1). Cutouts (GREATER/GEQUAL alpha tests,
 SRC_ALPHA/INV_SRC_ALPHA or ONE/ZERO blending) keep their coverage: same clip on the same packed alpha, the draw's own
-blend state (`KeepsLegacyBlend`). How draws reach the path, the gates and the
+blend state (`KeepsLegacyBlend`). Facades with lit night windows draw their stage-1 window texture as a layer on a
+second UV set, added in display values after the PBR surface is encoded (`WindowLayerSurface`, `options[3]`). How draws reach the path, the gates and the
 remaining legacy cases are in [pbr_reachability_20261029.md](pbr_reachability_20261029.md). The sections below are the
 original design record.
 

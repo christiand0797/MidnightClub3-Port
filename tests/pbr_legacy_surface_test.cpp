@@ -26,4 +26,18 @@ int main() {
     changed=p;changed.ff[0][4]=4;changed.ff[0][6]=0;assert(pbr::SimpleAlbedoSurface(s,changed,0));
     s.tss[0][kTssColorSign]=1;assert(!pbr::SimpleAlbedoSurface(s,p,0));
     s={};p.flat=1;assert(!pbr::SimpleAlbedoSurface(s,p,0));
+    // The facades' night-window cascade, exactly as captured: s0 4 2 0|2 2 r5, s1 4 2 3|2 2 r1, s2 18 5 1|2 5 r1.
+    PixelKey w;w.tex[0].kind=w.tex[1].kind=kTex2D;
+    {auto* f=w.ff[0];f[0]=4;f[1]=2;f[2]=0;f[4]=2;f[5]=2;f[8]=5;}
+    {auto* f=w.ff[1];f[0]=4;f[1]=2;f[2]=3;f[4]=2;f[5]=2;f[8]=1;}
+    {auto* f=w.ff[2];f[0]=18;f[1]=5;f[2]=1;f[4]=2;f[5]=5;f[8]=1;}
+    s={};assert(pbr::WindowLayerSurface(s,w,0)&&!pbr::WindowLayerSurface(s,w,1)&&!pbr::SimpleAlbedoSurface(s,w,0));
+    auto v=w;v.ff[2][1]=1;v.ff[2][2]=5;assert(!pbr::WindowLayerSurface(s,v,0)); // CURRENT + TEMP*CURRENT.a: not the windows
+    v=w;v.ff[0][8]=1;assert(!pbr::WindowLayerSurface(s,v,0));
+    v=w;v.ff[1][2]=0;assert(!pbr::WindowLayerSurface(s,v,0)); // a diffuse-lit second texture
+    v=w;v.ff[2][5]=2;assert(!pbr::WindowLayerSurface(s,v,0)); // alpha other than the window mask
+    v=w;v.ff[3][0]=4;assert(!pbr::WindowLayerSurface(s,v,0));
+    v=w;v.tex[1].kind=kTexNone;assert(!pbr::WindowLayerSurface(s,v,0));
+    v=w;v.tex[2].kind=kTex2D;assert(!pbr::WindowLayerSurface(s,v,0));
+    v=w;v.alphakill=1;assert(!pbr::WindowLayerSurface(s,v,0));
 }

@@ -121,7 +121,7 @@ Status PlanDraw(const Input& in,const Limits& limits,Plan& result){
     if(!ValidSampler(in.actual_sampler))return Status::InvalidSampler;
     const auto& m=*selected.material;
     if(!controls::ValidDigest(m.review_sha256)||(!m.game_albedo&&!controls::ValidDigest(m.baseline_alpha_sha256))||
-       in.geometry.options[2]!=(m.game_albedo?1u:0u)||
+       in.geometry.options[2]!=(m.game_albedo?1u:0u)||(in.geometry.options[3]==1)!=(in.game_layer!=nullptr)||
        in.material.maps[2]!=(m.has_height?1u:0u)||in.material.maps[3]!=(m.has_emission?1u:0u)||in.material.coverage[0]!=((m.assignment.cutout||in.draw_alpha_test)?1u:0u)||
        in.material.options[0]!=(m.normal_convention==NormalConvention::DirectX?1u:0u))return Status::MaterialRejected;
     Plan plan;plan.owner=in.library;plan.material=&m;plan.height_mode=mode;
@@ -153,7 +153,10 @@ struct Device::Impl {
     // A game albedo table is the material's own maps with the draw's game texture in slot 0, appended again whenever
     // that texture resource changes (append-only heap: never rewrite a table commands may still use).
     struct MaterialEntry {controls::ExactMaterialKey key;std::array<Texture,5> textures;uint32_t srv_start=0;bool uploaded=false;
-        ComPtr<ID3D12Resource> game;uint32_t game_srv_start=UINT32_MAX;};
+        // every (game albedo, window layer) pair this material has drawn with: facades sharing a base texture take
+        // several window textures, and alternating between them must not append a table each time
+        struct GameTable {ComPtr<ID3D12Resource> game,layer;uint32_t srv_start=0;};
+        std::vector<GameTable> game_tables;};
     struct SamplerEntry {std::vector<uint32_t> key;uint32_t slot=0;};
     struct PsoEntry {std::vector<uint32_t> key;ComPtr<ID3D12PipelineState> pso;};
     std::vector<MaterialEntry> materials;
@@ -202,16 +205,20 @@ struct Device::Impl {
         view.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;view.Texture2D.MipLevels=levels;
         device->CreateShaderResourceView(resource,&view,cpu);
     }
-    // The table for this draw: the material's own, or a game albedo table for the draw's actual texture resource.
-    uint32_t Table(MaterialEntry& entry,ID3D12Resource* game){
-        if(!game)return entry.srv_start;
-        if(entry.game.Get()==game&&entry.game_srv_start!=UINT32_MAX)return entry.game_srv_start;
-        const auto d=game->GetDesc();
-        Require(d.Dimension==D3D12_RESOURCE_DIMENSION_TEXTURE2D&&d.DepthOrArraySize==1&&d.MipLevels&&
-                d.Format!=DXGI_FORMAT_UNKNOWN&&srv_next<=limits.srv_descriptors-5,Status::BudgetExceeded);
-        WriteSrv(srv_next,game,d.Format,d.MipLevels);
-        for(unsigned i=1;i<5;++i)WriteSrv(srv_next+i,entry.textures[i].resource.Get(),entry.textures[i].plan.format,entry.textures[i].plan.levels);
-        entry.game=game;entry.game_srv_start=srv_next;srv_next+=5;return entry.game_srv_start;
+    // The table for this draw: the material's own, or one with the draw's actual game textures (albedo in slot 0, a
+    // window layer in slot 4), appended again whenever either resource changes.
+    uint32_t Table(MaterialEntry& entry,ID3D12Resource* game,ID3D12Resource* layer){
+        if(!game&&!layer)return entry.srv_start;
+        for(const auto& t:entry.game_tables)if(t.game.Get()==game&&t.layer.Get()==layer)return t.srv_start;
+        const auto usable=[](ID3D12Resource* r){const auto d=r->GetDesc();
+            return d.Dimension==D3D12_RESOURCE_DIMENSION_TEXTURE2D&&d.DepthOrArraySize==1&&d.MipLevels&&d.Format!=DXGI_FORMAT_UNKNOWN;};
+        Require((!game||usable(game))&&(!layer||usable(layer))&&srv_next<=limits.srv_descriptors-5,Status::BudgetExceeded);
+        for(unsigned i=0;i<5;++i) {
+            ID3D12Resource* own=i==0&&game?game:i==4&&layer?layer:nullptr;
+            if(own){const auto d=own->GetDesc();WriteSrv(srv_next+i,own,d.Format,d.MipLevels);}
+            else WriteSrv(srv_next+i,entry.textures[i].resource.Get(),entry.textures[i].plan.format,entry.textures[i].plan.levels);
+        }
+        entry.game_tables.push_back({game,layer,srv_next});srv_next+=5;return entry.game_tables.back().srv_start;
     }
     MaterialEntry& MaterialResources(const Input& in,const Plan& plan){
         if(const auto it=material_rows.find(in.key.assignment.original_texture);it!=material_rows.end())
@@ -298,8 +305,9 @@ Result Device::RecordDraw(const Context& context,const Input& input,const Plan& 
             c.owner->manifest_sha256==plan.owner->manifest_sha256,Status::OwnershipChanged);
         Require(limits==c.limits,Status::OwnershipChanged);
         Require(plan.material->game_albedo==(input.game_albedo!=nullptr),Status::MaterialRejected);
+        Require((input.geometry.options[3]==1)==(input.game_layer!=nullptr),Status::MaterialRejected);
         auto pso=c.Pso(input,plan.height_mode);uint32_t sampler=c.Sampler(input.actual_sampler);auto& material=c.MaterialResources(input,plan);
-        const uint32_t table=c.Table(material,input.game_albedo);
+        const uint32_t table=c.Table(material,input.game_albedo,input.game_layer);
         result.resident_bytes=c.resident;
         std::vector<StagedTexture> textures;uint64_t upload_bytes=plan.geometry_upload_bytes;
         if(!material.uploaded){textures.reserve(5);for(auto& t:material.textures){textures.push_back(StageTexture(context,t.plan,t.resource.Get()));upload_bytes+=t.plan.upload_bytes;}}
@@ -312,6 +320,7 @@ Result Device::RecordDraw(const Context& context,const Input& input,const Plan& 
         auto scene=Allocate(context,Align(sizeof(input.scene),256),256);std::memcpy(scene.cpu,&input.scene,sizeof(input.scene));
         std::vector<IUnknown*> retained{c.root.Get(),pso,c.srv_heap.Get(),c.sampler_heap.Get(),vertices.resource,geometry.resource,factors.resource,scene.resource};
         if(input.game_albedo)retained.push_back(input.game_albedo);
+        if(input.game_layer)retained.push_back(input.game_layer);
         if(indices.resource)retained.push_back(indices.resource);for(auto& t:material.textures)retained.push_back(t.resource.Get());for(auto& t:textures)retained.push_back(t.upload.resource);
         Require(context.retain(retained),Status::RetentionFailure);
         // No fallible allocations, callbacks or object creation occur after the first command is recorded.

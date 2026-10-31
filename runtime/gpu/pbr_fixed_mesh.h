@@ -23,6 +23,8 @@ struct FixedProof {
     std::array<float,4> diffuse_factor{1,1,1,1};
     // Whether the cascade's alpha reads the vertex diffuse alpha (else only the factor alpha is packed).
     bool alpha_from_diffuse = true;
+    // The window layer's coordinate set (stage 1's texcoord index), decoded into Vertex::uv1; -1 without a layer.
+    int32_t layer_uv = -1;
 };
 struct RasterTarget {
     uint32_t width = 0, height = 0, guest_width = 0, guest_height = 0;

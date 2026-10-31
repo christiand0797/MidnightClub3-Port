@@ -163,6 +163,9 @@ Status Gate(const State& state,const Assembled& draw,const Assignment& assignmen
        (!(state.vs_handle&1)&&(state.vs_handle&0xE)!=0x2))return Status::UnsupportedDraw;
     const uint32_t coordinates=state.tss[assignment.stage][kTssTexCoordIndex];
     if(coordinates!=assignment.uv_set||state.tss[assignment.stage][kTssTextureTransformFlags])return Status::UnsupportedDraw;
+    if(proof.layer_uv>=4||proof.layer_uv<-1)return Status::UnprovenDraw;
+    if(proof.layer_uv>=0&&(state.tss[1][kTssTexCoordIndex]!=uint32_t(proof.layer_uv)||state.tss[1][kTssTextureTransformFlags]))
+        return Status::UnsupportedDraw;
     return Status::Ready;
 }
 // The actual float32 shader operations and perspective/far-edge coordinates must stay finite.
@@ -181,7 +184,7 @@ Status BuildImpl(const State& state,const Assembled& draw,const Assignment& assi
         return Status::BudgetExceeded;
     if(!draw.buffer_count||draw.buffer_count>draw.buffers.size())return Status::InvalidBuffer;
     const uint16_t required=uint16_t((1u<<0)|(proof.authored_normals?1u<<2:0)|(proof.vertex_diffuse?1u<<3:0)|
-                                     (1u<<(9+assignment.uv_set)));
+                                     (1u<<(9+assignment.uv_set))|(proof.layer_uv>=0?1u<<(9+proof.layer_uv):0u));
     if((draw.regs&required)!=required)return Status::MissingInput;
     // A face-normal claim on a stream that HAS a normal would silently discard the authored one.
     if(proof.face_normals&&((draw.regs>>2)&1))return Status::UnprovenDraw;
@@ -195,11 +198,13 @@ Status BuildImpl(const State& state,const Assembled& draw,const Assignment& assi
     VertexShader fvf;
     if(!(state.vs_handle&1))FvfInputs(state.vs_handle,fvf);
     const auto& layout=(state.vs_handle&1)?*state.vs:fvf;
-    Attribute position,normal,uv,diffuse;const bool converted=!draw.vertices.empty();
+    Attribute position,normal,uv,diffuse,layer;const bool converted=!draw.vertices.empty();
     for(auto [reg,attribute]:{std::pair{0u,&position},std::pair{2u,&normal},std::pair{3u,&diffuse},std::pair{9u+assignment.uv_set,&uv}}) {
         if((reg==2&&!proof.authored_normals)||(reg==3&&!proof.vertex_diffuse))continue;
         const auto status=Bind(state,layout,draw,reg,converted,*attribute);if(status!=Status::Ready)return status;
     }
+    if(proof.layer_uv>=0)
+        if(const auto status=Bind(state,layout,draw,9u+uint32_t(proof.layer_uv),converted,layer);status!=Status::Ready)return status;
     auto status=Constants(state,target,out.geometry,out.height_units_proven);if(status!=Status::Ready)return status;
     out.vertices.resize(draw.vertex_count);
     std::vector<uint32_t> source(count);
@@ -209,8 +214,9 @@ Status BuildImpl(const State& state,const Assembled& draw,const Assignment& assi
         auto d=proof.vertex_diffuse?Decode(diffuse,i):std::array<float,4>{1,1,1,1};
         for(unsigned c=0;c<3;++c)d[c]*=proof.diffuse_factor[c];
         d[3]=(proof.alpha_from_diffuse?d[3]:1.0f)*proof.diffuse_factor[3];
-        if(!Finite(p)||!Finite(n)||!Finite(t)||!Finite(d))return Status::InvalidMesh;
-        out.vertices[i]={{p[0],p[1],p[2]},{n[0],n[1],n[2]},{t[0],t[1]},d};
+        const auto t1=proof.layer_uv>=0?Decode(layer,i):std::array<float,4>{0,0,0,0};
+        if(!Finite(p)||!Finite(n)||!Finite(t)||!Finite(d)||!Finite(t1))return Status::InvalidMesh;
+        out.vertices[i]={{p[0],p[1],p[2]},{n[0],n[1],n[2]},{t[0],t[1]},d,{t1[0],t1[1]}};
         if(!Projectable(out.vertices[i].model_position,out.geometry,target))return Status::InvalidTransform;
     }
     for(uint32_t i=0;i<count;++i) {

@@ -189,7 +189,8 @@ void ShaderContracts(){
     D3D11_SHADER_INPUT_BIND_DESC b{};assert(SUCCEEDED(dr->GetResourceBindingDescByName("pbr_height_map",&b))&&b.BindPoint==3);
     D3D11_SHADER_DESC h{},d{};assert(SUCCEEDED(hr->GetDesc(&h))&&h.cControlPoints==3&&h.TessellatorDomain==D3D_TESSELLATOR_DOMAIN_TRI);
     assert(SUCCEEDED(dr->GetDesc(&d))&&d.TessellatorDomain==D3D_TESSELLATOR_DOMAIN_TRI);
-    D3D11_SHADER_DESC vd{};assert(SUCCEEDED(vr->GetDesc(&vd))&&vd.InputParameters==4);
+    D3D11_SHADER_DESC vd{};assert(SUCCEEDED(vr->GetDesc(&vd))&&vd.InputParameters==5); // position, normal, uv, colour, window-layer uv1
+    assert(InputLayout().size()==5&&InputLayout()[4].AlignedByteOffset==48);
     RootLayout root;auto desc=root.Describe();assert(desc.NumParameters==5&&desc.pParameters==root.parameters.data());
     assert(root.parameters[2].ShaderVisibility==D3D12_SHADER_VISIBILITY_ALL&&root.parameters[3].ShaderVisibility==D3D12_SHADER_VISIBILITY_ALL);
     assert(root.ranges[0].NumDescriptors==5&&root.ranges[1].NumDescriptors==1);
@@ -203,7 +204,7 @@ void ShaderContracts(){
     auto fake_root=reinterpret_cast<ID3D12RootSignature*>(uintptr_t(1));
     ShaderSet shaders{byte(vs.Get()),byte(ps.Get())};
     assert(DescribePipeline(legacy,fake_root,shaders,controls::HeightMode::None,pso)==Status::Ready);
-    assert(pso.pRootSignature==fake_root&&pso.InputLayout.NumElements==4&&pso.DepthStencilState.DepthFunc==D3D12_COMPARISON_FUNC_EQUAL&&pso.RasterizerState.FrontCounterClockwise);
+    assert(pso.pRootSignature==fake_root&&pso.InputLayout.NumElements==5&&pso.DepthStencilState.DepthFunc==D3D12_COMPARISON_FUNC_EQUAL&&pso.RasterizerState.FrontCounterClockwise);
     assert(pso.PrimitiveTopologyType==D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE&&!pso.HS.pShaderBytecode);
     shaders={byte(patch.Get()),byte(ps.Get()),byte(hs.Get()),byte(ds.Get())};
     assert(DescribePipeline(legacy,fake_root,shaders,controls::HeightMode::Displacement,pso)==Status::Ready&&pso.PrimitiveTopologyType==D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH);

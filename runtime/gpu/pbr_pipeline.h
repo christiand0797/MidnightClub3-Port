@@ -34,8 +34,10 @@ const char* StatusText(Status value);
 // Backend packs actual decoded fixed-function inputs into this layout. No guest register inference.
 // color is the actual decoded register-3 diffuse (r,g,b,a); streams without one keep white. Only the
 // baked scene mode consumes it.
-struct Vertex { Vec3 model_position, model_normal; geometry::Vec2 uv; std::array<float,4> color{1,1,1,1}; };
-static_assert(sizeof(Vertex)==48 && offsetof(Vertex,model_normal)==12 && offsetof(Vertex,uv)==24 && offsetof(Vertex,color)==32);
+// uv1: the window layer's own coordinates (GeometryConstants::options[3]), zero otherwise.
+struct Vertex { Vec3 model_position, model_normal; geometry::Vec2 uv; std::array<float,4> color{1,1,1,1}; geometry::Vec2 uv1{}; };
+static_assert(sizeof(Vertex)==56 && offsetof(Vertex,model_normal)==12 && offsetof(Vertex,uv)==24 && offsetof(Vertex,color)==32 &&
+              offsetof(Vertex,uv1)==48);
 // Authored: register-2 normals. Face: the stream has none; the pixel shader shades with the geometric
 // normal of the rasterized triangle and packed vertex normals only orient/interpolate.
 enum class NormalSource : uint32_t { Authored, Face };
@@ -46,7 +48,9 @@ struct alignas(16) GeometryConstants {
     std::array<float,4> raster{0,0,16,0};
     std::array<float,4> surface{}; // Actual guest surface width/height; remaining words zero.
     // TessellationPolicy, NormalSource, albedo gamma encoded (1: the game's own UNORM texture, decoded in the shader
-    // exactly as the legacy path filters it); the fourth word must be zero. Camera is view-space origin.
+    // exactly as the legacy path filters it), window layer (1: the game's stage-1 texture on uv1, times the material's
+    // emission colour and the albedo alpha, added after encoding: the facades' lit night windows). Camera is
+    // view-space origin.
     std::array<uint32_t,4> options{};
     // Reversed depth as the legacy draw stores it (ReversedDepthHlsl's zparams): a w buffer's scale (0 for a z
     // buffer), its far w, the polygon offset; the fourth word 1 when depth is reversed, else 0 and the rest unused.

@@ -10,6 +10,19 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-10-31 night (facade night windows through PBR):**
+- **The cascade.** Captured from the facades: s0 `tmp = tex0*diffuse`, `tmp.a = tex0.a`; s1 `cur = tex1*TFACTOR` on
+  texcoord set 1; s2 MODULATEALPHA_ADDCOLOR `tmp.rgb + cur.rgb*tmp.a`, alpha `tmp.a`. `pbr::WindowLayerSurface` (pixel
+  key) and `scene::WindowLayerCombiner` (raw state, with `BakedProof::window_layer_kept`) match exactly that.
+- **Vertex.** The PBR vertex is 56 bytes. `uv1` holds the layer's coordinates, read by `FixedProof::layer_uv`; `Gate`
+  rechecks stage 1's index on refresh.
+- **Binding and shader.** `GeometryConstants::options[3] = 1` marks a layer. `device::Input::game_layer` binds the
+  stage-1 texture as t4, and `emission_color` = TFACTOR. The baked shader adds
+  `saturate(tex1*TFACTOR)*albedo.a` after encoding and before fog. Alpha stays `albedo.a` (no diffuse alpha packed).
+- **Descriptor tables.** One per (albedo, layer) pair (`MaterialEntry::game_tables`). Facades sharing a base texture
+  alternate window textures, and one cached pair had exhausted the append-only heap ("budget exceeded").
+- **Result.** Title backdrop: 333 materials, 471 draws a frame through the path, 60 fps. Windows look as before.
+
 **2026-10-31 evening (cutouts through PBR):**
 - **What draws now.** Trees, fences, railings and sign edges draw through the dedicated path. These are draws with a
   GREATER/GEQUAL alpha test, optionally blended SRC_ALPHA/INV_SRC_ALPHA, plus ONE/ZERO blending (opaque).

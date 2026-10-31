@@ -129,7 +129,7 @@ Status SetFog(uint32_t mode,float start,float end,float density,std::array<float
 }
 Status ValidateConstants(const GeometryConstants& g,const MaterialConstants& m,const SceneConstants& s) {
     geometry::AffineBridge a;a.model_to_view=g.model_to_view;a.normal_to_view=g.normal_to_view;a.ready=true;GeometryConstants checked;
-    if(g.options[1]>1||g.options[2]>1||g.options[3]||!Range(g.raster[0],1,16384)||!Range(g.raster[1],1,16384)||
+    if(g.options[1]>1||g.options[2]>1||g.options[3]>1||!Range(g.raster[0],1,16384)||!Range(g.raster[1],1,16384)||
        !Range(g.surface[0],1,16384)||!Range(g.surface[1],1,16384)||g.surface[2]!=0||g.surface[3]!=0||
        !(g.depth[3]==0||g.depth[3]==1)||!std::isfinite(g.depth[0])||!std::isfinite(g.depth[1])||!std::isfinite(g.depth[2])||
        std::floor(g.raster[0])!=g.raster[0]||std::floor(g.raster[1])!=g.raster[1]||g.raster[3]!=0||
@@ -191,7 +191,7 @@ Status ValidateMeshNow(std::span<const Vertex> vertices,std::span<const uint32_t
     if(vertices.empty()||vertices.size()>kMaxMeshVertices||indices.size()>kMaxMeshIndices||uint32_t(source)>1)return fail("size/source");
     const size_t n=indices.empty()?vertices.size():indices.size();if(n<3||n%3)return fail("index count");
     for(size_t i=0;i<vertices.size();++i){const auto& v=vertices[i];Vec3 normal;
-        if(!Finite(v.model_position)||!Unit(v.model_normal,normal)||!Finite(v.uv.x)||!Finite(v.uv.y)||
+        if(!Finite(v.model_position)||!Unit(v.model_normal,normal)||!Finite(v.uv.x)||!Finite(v.uv.y)||!Finite(v.uv1.x)||!Finite(v.uv1.y)||
         !FiniteArray(v.color)||!std::all_of(v.color.begin(),v.color.end(),[](float c){return c>=0&&c<=1;}))
             return fail("vertex "+std::to_string(i)+": position/normal/UV/colour");}
     // A triangle without a tangent frame (collinear UVs, a near-zero-area sliver) still rasterizes in the original;
@@ -260,7 +260,8 @@ std::span<const D3D12_INPUT_ELEMENT_DESC> InputLayout() {
         {"POSITION",0,DXGI_FORMAT_R32G32B32_FLOAT,0,0,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0},
         {"NORMAL",0,DXGI_FORMAT_R32G32B32_FLOAT,0,12,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0},
         {"TEXCOORD",0,DXGI_FORMAT_R32G32_FLOAT,0,24,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0},
-        {"COLOR",0,DXGI_FORMAT_R32G32B32A32_FLOAT,0,32,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0}};
+        {"COLOR",0,DXGI_FORMAT_R32G32B32A32_FLOAT,0,32,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0},
+        {"TEXCOORD",1,DXGI_FORMAT_R32G32_FLOAT,0,48,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0}};
     return layout;
 }
 D3D_PRIMITIVE_TOPOLOGY DrawTopology(controls::HeightMode mode) {
