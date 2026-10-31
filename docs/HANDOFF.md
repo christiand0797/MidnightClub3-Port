@@ -10,6 +10,26 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-10-31 (upstream SDK merged: 36 commits of TGP482/Joshhhuaaa through "add nightfire"):**
+- The recompiled code now builds into `mc3.dll` beside `mc3.exe` (delay loaded). `add_xbe_image` takes the exe name as
+  a sixth argument, `game.toml` has `library = "mc3.dll"`, and the `mc3` target builds both. The exe's post-build
+  touches the DLL: `runtime/app/game_code.cpp` rebuilds a DLL older than the exe at startup, which takes minutes.
+- Depth is reversed in a D32 float buffer (`g_reversed_depth`). The PBR path takes the legacy draw's
+  `FillDepthConstants` zparams in `GeometryConstants::depth` (now 320 bytes) and applies the same ReversedClip.
+  Its PSO already copies the legacy depth format and comparison.
+- Upstream's per-draw bind cache (`binds_`) is reset after every dedicated PBR draw, and the signed-blend second
+  pipeline updates it. The constant re-upload for screen effects keeps `last_dc_`/`binds_.dc` in step.
+- Kept our `dsound.cpp` mixer: upstream's rewrite (DSP image, 3D ear delay, bins) would have dropped the song-overlap
+  fix, SetEG/SetLFO envelopes and Set3DVoiceData. `dsp_image.cpp` compiles but is unused; porting it is a follow-up.
+- Kept our vertex program slots (WriteSlots/SelectProgram/SyncProgram: the vinyl fix) over upstream's StoreProgram.
+  We took upstream's push walk split (ApplyImmediate) and `SetFrameBuffers`/Reset.
+- Upstream's texture dumper/replacer (`textures\replacement\`) runs beside our texture pack and does nothing unless that
+  folder has images. Car paint now anchors on the sblend line, since `alphatest()` is emitted only when alpha
+  testing is enabled.
+- A stream refilled after starving logs `dsound: stream X (N ch) silent M ms until its refill`: songs reported to skip
+  on hard turns.
+- Verified: 58/58 CTest checks, 8 tools/pbr tests, the menu world at 60 fps with 425 PBR draws a frame.
+
 **2026-10-30 final (all four cities converted, built in):** maps generated for every city texture (3,259 of
 3,260; the one left is an 8x8 "skip"); `pbr-cities` holds 3,259 materials, loads in ~10 s and is installed in
 settings.toml (parallax 0.04). Native 20-s drives, PBR on, no other load: San Diego 60 fps (211 draws through the path,

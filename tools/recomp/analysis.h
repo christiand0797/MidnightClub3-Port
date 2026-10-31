@@ -27,6 +27,7 @@ struct Config {
     uint32_t title = 0, entry = 0;  // the image xbe_symbols wrote the config for, 0 = unchecked
     std::set<uint32_t> trace;       // functions whose calls and results are logged
     std::string out_dir;
+    std::string library;  // the game code DLL, named in the generated exports.def
     std::vector<std::string> code_sections;
     std::vector<std::string> code_prefixes;
     uint32_t partitions = 128;
@@ -65,6 +66,11 @@ public:
     void Run();
 
     bool IsCode(uint32_t va) const { return va >= lo_ && va < hi_ && code_[va - lo_]; }
+    // past a section's file data, in the zeros the loader adds up to its virtual size
+    bool InTail(uint32_t va) const {
+        const xbe::Section* s = img.SectionAt(va);
+        return s && va >= s->va + s->rsize;
+    }
     bool Decode(uint32_t va, ZydisDecodedInstruction& insn, ZydisDecodedOperand* ops) const;
     const Insn* InsnAt(uint32_t va) const {
         auto it = insns_.find(va);

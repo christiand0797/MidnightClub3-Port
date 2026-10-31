@@ -12,6 +12,7 @@
 #include <smmintrin.h>
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
@@ -25,6 +26,7 @@
 #include "core/diag.h"
 #include "core/log.h"
 #include "gpu/backend.h"
+#include "gpu/simple_dirty.h"
 #include "kernel/kernel.h"
 #include "kernel/memory.h"
 
@@ -69,7 +71,7 @@ size_t At(const State& s, const void* p) { return size_t(static_cast<const uint8
 std::vector<Range> StateRanges() {
     static const State s;
     return {
-        {At(s, &s.simple), At(s, &s.textures) - At(s, &s.simple)},
+        {At(s, &s.rs), At(s, &s.textures) - At(s, &s.rs)},  // simple goes by SendSimple
         {At(s, &s.index_buffer), At(s, &s.vs) - At(s, &s.index_buffer)},
         {At(s, &s.vsc), At(s, &s.rt) - At(s, &s.vsc)},
         {At(s, &s.scissor_count), At(s, &s.transforms) - At(s, &s.scissor_count)},
@@ -184,8 +186,11 @@ public:
         Use(front.header);
         uint64_t id = Submit();
         g_perf_capture_ns += Ns(t);
-        // the title records one frame while the one before it draws
+        // the title records one frame while the one before it draws, on the GPU too: a GPU bound frame rate then paces
+        // the game like a frame rate cap, and the frame times the game measures match the frames shown
         Wait(last_present_, WaitFor::Frame, nullptr);
+        if (presents_) inner_->WaitGpuFrame(presents_ - 1);
+        presents_++;
         last_present_ = id;
     }
 
@@ -307,14 +312,34 @@ private:
         std::memcpy(cur_->bytes.data() + at + 8, value, n);
     }
 
+    void DeltaRange(const Range& r, const uint8_t* now) {
+        for (size_t off = r.off, end = r.off + r.len; off < end; off += 64)
+            Delta(reinterpret_cast<const uint8_t*>(&sent_) + off, now + off, std::min<size_t>(64, end - off));
+    }
+
+    // simple whole, or only the pieces the title marked when its Direct3D layer marks every write
+    void SendSimple(const State& s) {
+        static_assert(sizeof(State::simple) == sizeof(g_simple_dirty) * 8 * kSimplePiece * sizeof(uint32_t));
+        if (!g_simple_tracked) {
+            DeltaRange({At(s, &s.simple), sizeof(s.simple)}, reinterpret_cast<const uint8_t*>(&s));
+            return;
+        }
+        for (size_t w = 0; w < g_simple_dirty.size(); w++) {
+            for (uint64_t bits = g_simple_dirty[w]; bits; bits &= bits - 1) {
+                size_t first = (w * 64 + size_t(std::countr_zero(bits))) * kSimplePiece;
+                Delta(&sent_.simple[first], &s.simple[first], kSimplePiece * sizeof(uint32_t));
+            }
+            g_simple_dirty[w] = 0;
+        }
+    }
+
     // what changed since the last command, in 64 byte pieces
     void SendState(const State& s) {
         const uint8_t* now = reinterpret_cast<const uint8_t*>(&s);
         Cmd c{Op::State};
         size_t first = cur_->bytes.size();
-        for (const Range& r : ranges_)
-            for (size_t off = r.off, end = r.off + r.len; off < end; off += 64)
-                Delta(reinterpret_cast<const uint8_t*>(&sent_) + off, now + off, std::min<size_t>(64, end - off));
+        SendSimple(s);
+        for (const Range& r : ranges_) DeltaRange(r, now);
         std::array<uint32_t, 4> textures;
         for (size_t i = 0; i < 4; i++) textures[i] = Header(s.textures[i]);
         Delta(&sent_.textures, &textures, sizeof(textures));
@@ -470,6 +495,7 @@ private:
     std::unordered_set<uint32_t> written_;  // surfaces drawn since their last read-back, by data address
     std::unordered_set<uint64_t> logged_;   // perf diagnostic: read-backs named once, by address and kind
     uint64_t next_id_ = 0, last_present_ = 0;
+    uint64_t presents_ = 0;
 
     // the render thread
     State state_;

@@ -48,6 +48,9 @@ struct alignas(16) GeometryConstants {
     // TessellationPolicy, NormalSource, albedo gamma encoded (1: the game's own UNORM texture, decoded in the shader
     // exactly as the legacy path filters it); the fourth word must be zero. Camera is view-space origin.
     std::array<uint32_t,4> options{};
+    // Reversed depth as the legacy draw stores it (ReversedDepthHlsl's zparams): a w buffer's scale (0 for a z
+    // buffer), its far w, the polygon offset; the fourth word 1 when depth is reversed, else 0 and the rest unused.
+    std::array<float,4> depth{};
 };
 struct alignas(16) MaterialConstants {
     std::array<float,4> base_color{1,1,1,1}; // Alpha is always one: never change accepted coverage.
@@ -78,7 +81,7 @@ struct alignas(16) SceneConstants {
     std::array<float,4> fog{};
     std::array<float,4> fog_color{};
 };
-static_assert(sizeof(GeometryConstants)==304 && sizeof(MaterialConstants)==128 && sizeof(LightConstants)==80);
+static_assert(sizeof(GeometryConstants)==320 && sizeof(MaterialConstants)==128 && sizeof(LightConstants)==80);
 static_assert(sizeof(SceneConstants)==704 && offsetof(SceneConstants,lights)==32 && offsetof(SceneConstants,fog)==672);
 
 struct Light {

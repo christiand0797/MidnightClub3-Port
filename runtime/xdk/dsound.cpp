@@ -1,4 +1,4 @@
-// DirectSound (XDK 5849) on a host software mixer. Buffers and streams are read from guest memory as they play.
+// DirectSound (XDK 4831 and 5849) on a host software mixer. Buffers and streams are read from guest memory as they play.
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -1138,6 +1138,13 @@ STREAM(Process, 3) {
     }
     // the stream's voice comes on with its first packet, not again at packet boundaries, nor while held
     if (!v.active && !v.hold) v.mod.On();
+    // how long a starved stream was silent: a song that skips is a stereo stream refilled late, the log says when
+    if (v.starved_at >= 0) {
+        const int64_t silent = NowMs() - v.starved_at;
+        static std::atomic<unsigned> gaps{0};
+        if (silent >= 20 && gaps.fetch_add(1) < 400)
+            LOGR("dsound: stream %08X (%u ch) silent %lld ms until its refill", v.obj, v.channels, (long long)silent);
+    }
     v.active = true;
     v.ending = false;
     v.starved_at = -1;

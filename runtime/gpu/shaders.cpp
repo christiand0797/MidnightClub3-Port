@@ -62,6 +62,7 @@ const char* kCommonTail = R"(    float4 spread[4];
     float4 carpaint;
     float4 pbr;
     float4 pbr2;
+    float4 zparams;
 };
 )";
 
@@ -551,10 +552,11 @@ bool PixelKey::operator==(const PixelKey& o) const { return std::memcmp(this, &o
 std::string ShaderHooks::Constants() const { return "    float4 ext;\n"; }
 
 std::string ShaderHooks::Shadow() const {
+    std::string r = g_reversed_depth ? "1 - clamp(z, 0, mx) / mx" : "clamp(z, 0, mx) / mx";
     return R"(// the sampler compares, a linear filter blends the four results like the console does
 float4 shadow(Texture2D<float> t, SamplerComparisonState s, float2 uv, float z, int fmt, float2 px, float2 size) {
     float mx = fmt == 2 ? 65535.0 : 16777215.0;
-    return t.SampleCmpLevelZero(s, uv, clamp(z, 0, mx) / mx).xxxx;
+    return t.SampleCmpLevelZero(s, uv, )" + r + R"().xxxx;
 }
 )";
 }
@@ -590,6 +592,45 @@ uint64_t Hash(const void* p, size_t n, uint64_t h) {
     return mix(seed ^ k0, uint64_t(n) ^ k1);
 }
 
+namespace {
+
+// D3DTOP and D3DTA values PixelKey::ff holds
+constexpr uint32_t kTopSelectArg1 = 2;
+constexpr uint32_t kTopSelectArg2 = 3;
+constexpr uint32_t kTopBlendTextureAlpha = 14;
+constexpr uint32_t kTopBlendTextureAlphaPm = 16;
+constexpr uint32_t kTopModulateAlphaAddColor = 18;
+constexpr uint32_t kTopModulateInvColorAddAlpha = 21;
+constexpr uint32_t kTopMultiplyAdd = 23;
+constexpr uint32_t kTopLerp = 24;
+constexpr uint32_t kTaCurrent = 1;
+constexpr uint32_t kTaTexture = 2;
+
+// args in PixelKey::ff order: arg1, arg2, arg0
+bool ReadsTexture(uint32_t op, const uint32_t* args, bool alpha) {
+    if (op == kTopBlendTextureAlpha || op == kTopBlendTextureAlphaPm) return true;
+    bool alpha_arg1_only = alpha && op >= kTopModulateAlphaAddColor && op <= kTopModulateInvColorAddAlpha;
+    bool uses_arg1 = op != kTopSelectArg2;
+    bool uses_arg2 = op != kTopSelectArg1 && !alpha_arg1_only;
+    bool uses_arg0 = op == kTopMultiplyAdd || op == kTopLerp;
+    auto texture = [](uint32_t a) { return (a & 0xF) == kTaTexture; };
+    return (uses_arg1 && texture(args[0])) || (uses_arg2 && texture(args[1])) || (uses_arg0 && texture(args[2]));
+}
+
+// the XDK's combiner builder turns a stage op that reads a missing texture into a pass of the current colour
+void PassMissingTexture(uint32_t* f) {
+    if (f[0] > 1 && ReadsTexture(f[0], f + 1, false)) {
+        f[0] = kTopSelectArg1;
+        f[1] = kTaCurrent;
+    }
+    if (f[4] > 1 && ReadsTexture(f[4], f + 5, true)) {
+        f[4] = kTopSelectArg1;
+        f[5] = kTaCurrent;
+    }
+}
+
+}  // namespace
+
 PixelKey MakePixelKey(const State& s, const TexInfo tex[4]) {
     PixelKey k;
     std::memset(&k, 0, sizeof(k));
@@ -599,6 +640,7 @@ PixelKey MakePixelKey(const State& s, const TexInfo tex[4]) {
     }
     k.flat = s.simple[kMShadeMode >> 2] == 0x1D00;  // D3DSHADE_FLAT
     k.two_sided = s.rs[kRsTwoSidedLighting] != 0;
+    k.alphatest = s.simple[kMAlphaTestEnable >> 2] != 0;
     if (s.ps) {
         const uint32_t* d = s.ps->def;
         k.programmable = 1;
@@ -637,6 +679,7 @@ PixelKey MakePixelKey(const State& s, const TexInfo tex[4]) {
         uint32_t v[9] = {t[kTssColorOp], t[kTssColorArg1], t[kTssColorArg2], t[kTssColorArg0], t[kTssAlphaOp],
                          t[kTssAlphaArg1],  t[kTssAlphaArg2], t[kTssAlphaArg0], t[kTssResultArg]};
         std::memcpy(k.ff[i], v, sizeof(v));
+        if (!tex[i].kind) PassMissingTexture(k.ff[i]);
         if (program || (t[kTssTextureTransformFlags] & 0x100)) k.proj |= 1u << i;  // D3DTTFF_PROJECTED
         if (t[kTssColorOp] <= 1) break;
     }
@@ -983,8 +1026,8 @@ std::string PixelHlsl(const PixelKey& k) {
                 "    outc.rgb = lerp(outc.rgb, lit, fogin.a);\n"
                 "}\n";
     }
-    body += "alphatest(outc.a);\n"
-            "if (sblend.x != 0) {\n"
+    if (k.alphatest) body += "alphatest(outc.a);\n";
+    body += "if (sblend.x != 0) {\n"
             "    float4 sb = round(saturate(outc) * 255);\n"
             "    float4 sv = (sb >= 128 ? sb - 256 : sb) / 255;\n"
             "    outc = sblend.x == 1 ? max(sv, 0) : max(-sv, 0);\n"
@@ -1021,6 +1064,33 @@ std::string QuadHlsl(std::string s) {
 }
 )", "");
     for (int i = 0; i < 4; i++) sub(F("i.tc%d", i).c_str(), "unstretch(", ", i.e)");
+    return s;
+}
+
+namespace {
+
+// A w buffer's reversed depth comes from the clip w alone, zparams.x * (zparams.y / w - 1), exact where z / w had
+// already rounded away; a z buffer's is 1 - z. zparams.z is the polygon offset in the units of each
+const char* kReversedClipHlsl = R"(float ReversedClip(float z, float w) {
+    if (zparams.x != 0) return zparams.x * (zparams.y - (w + zparams.z));
+    return w - z - zparams.z * w;
+}
+)";
+
+bool InsertAfter(std::string& s, const char* at, const char* text) {
+    size_t p = s.find(at);
+    if (p == std::string::npos) return false;
+    s.insert(p + std::strlen(at), text);
+    return true;
+}
+
+}  // namespace
+
+std::string ReversedDepthHlsl(std::string s) {
+    size_t entry = s.find("VOut main(");
+    if (entry != std::string::npos) s.insert(entry, kReversedClipHlsl);
+    InsertAfter(s, "    o.pos = q;\n", "    o.pos.z = ReversedClip(q.z, q.w);\n");
+    InsertAfter(s, "    o.pos = cp;\n", "    o.pos.z = ReversedClip(cp.z, cp.w);\n");
     return s;
 }
 

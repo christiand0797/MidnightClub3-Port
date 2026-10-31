@@ -42,6 +42,17 @@ fs::path FindAssets() {
     return {};
 }
 
+bool ReadHostFile(const fs::path& path, std::vector<uint8_t>& out) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+    std::error_code ec;
+    if (std::filesystem::file_size(path, ec) > (64u << 20) || ec) return false;
+    out.assign(std::istreambuf_iterator<char>(f), {});
+    return true;
+}
+
+}  // namespace
+
 std::string Sha1(const std::vector<uint8_t>& data) {
     alignas(8) uint8_t ctx[128];
     uint8_t digest[20];
@@ -55,17 +66,6 @@ std::string Sha1(const std::vector<uint8_t>& data) {
     }
     return hex;
 }
-
-bool ReadHostFile(const fs::path& path, std::vector<uint8_t>& out) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return false;
-    std::error_code ec;
-    if (std::filesystem::file_size(path, ec) > (64u << 20) || ec) return false;
-    out.assign(std::istreambuf_iterator<char>(f), {});
-    return true;
-}
-
-}  // namespace
 
 bool FindGame(GameFiles& game) {
     // Explicit command-line paths are strict; ordinary double-clicks discover an image or show the picker.

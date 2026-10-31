@@ -13,6 +13,7 @@
 #include <charconv>
 #include <cstdio>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 
 #include <toml++/toml.hpp>
@@ -281,6 +282,9 @@ void Load() {
     s.fps_cap = t["fps_cap"].value_or(s.fps_cap);
     s.vsync = t["vsync"].value_or(s.vsync);
     s.aniso = t["anisotropic_filtering"].value_or(s.aniso);
+    s.custom_textures = t["custom_textures"].value_or(s.custom_textures);
+    s.dump_textures = t["dump_textures"].value_or(s.dump_textures);
+    s.texture_dump_format = std::min(t["texture_dump_format"].value_or(s.texture_dump_format), 1u);
     s.join_ip = t["join_ip"].value_or(s.join_ip);
     for (const Option& o : kGame.options) {
         if (o.flag) *o.flag = t[o.key].value_or(*o.flag);
@@ -341,6 +345,9 @@ toml::table Table() {
                   {"fps_cap", int64_t(s.fps_cap)},
                   {"vsync", s.vsync},
                   {"anisotropic_filtering", int64_t(s.aniso)},
+                  {"custom_textures", s.custom_textures},
+                  {"dump_textures", s.dump_textures},
+                  {"texture_dump_format", int64_t(s.texture_dump_format)},
                   {"join_ip", s.join_ip}};
     for (const Option& o : kGame.options) {
         if (o.flag) t.insert(o.key, *o.flag);
@@ -422,9 +429,12 @@ Mode Output() {
     return Desktop();
 }
 
+Mode CachedOutput();
+
+// called every frame, so from the cached output
 Mode RenderResolution() {
     const Settings& s = Get();
-    return resolution::Scene({s.graphics.scene_width, s.graphics.scene_height}, Output(), s.render_percent);
+    return resolution::Scene({s.graphics.scene_width, s.graphics.scene_height}, CachedOutput(), s.render_percent);
 }
 
 namespace { std::atomic<uint64_t> g_actual_scene{0}; }
@@ -453,6 +463,30 @@ bool Widescreen() {
         wide = s.force_widescreen || m.width * 2 >= m.height * 3;  // 3:2 or wider
     }
     return wide;
+}
+
+// Output for every frame: the desktop mode lookup reads the registry, so it runs again only when the resolution
+// setting or the window's monitor changes
+Mode CachedOutput() {
+    struct Key {
+        uint32_t width;
+        uint32_t height;
+        HMONITOR monitor;
+        bool force_1080p;
+        bool operator==(const Key&) const = default;
+    };
+    static std::mutex lock;
+    static Key key{};
+    static Mode mode{};
+    const Settings& s = Get();
+    Key now{s.width, s.height, MonitorFromWindow(static_cast<HWND>(Window()), MONITOR_DEFAULTTOPRIMARY),
+            s.force_1080p};
+    std::lock_guard<std::mutex> guard(lock);
+    if (!(now == key) || !mode.height) {
+        key = now;
+        mode = Output();
+    }
+    return mode;
 }
 
 float RenderScale(uint32_t guest_height) {

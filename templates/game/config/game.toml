@@ -6,6 +6,7 @@ title = 0x54540079
 entry = 0x1299F
 xdk = 5849
 out = "generated/game"
+library = "mc3.dll"  # <exe>.dll, which the executable delay loads
 partitions = 128
 code_sections = [".text", "D3DX", "XGRPH", "BINK", "BINK32", "BINK32A", "BINK16", "BINK4444", "BINK5551", "BINKYUY2", "BINK16MX", "BINK16X2", "BINK16M", "BINK32MX", "BINK32X2", "BINK32M", "DSOUND", "XNET", "XONLINE", "XACTENG", "D3D", "WMADEC", "XPP"]
 

@@ -16,14 +16,18 @@ struct Pad;
 namespace app {
 
 enum class DisplayMode : uint32_t { Fullscreen, Borderless, Windowed };
+inline constexpr uint32_t kFpsCapRefresh = 1;  // fps_cap: the monitor's refresh rate
 
 struct Settings {
     DisplayMode display_mode = DisplayMode::Borderless;
     uint32_t width = 0, height = 0;  // 0 is the desktop mode
     uint32_t render_percent = 100;   // of the scene dimensions, independently of the desktop-sized settings UI
-    uint32_t fps_cap = 60;           // 0 unlimited
+    uint32_t fps_cap = 60;           // 0 unlimited, kFpsCapRefresh the monitor's refresh rate
     bool vsync = true;
     uint32_t aniso = 0;              // 0 as the game asks
+    bool custom_textures = true;     // images in textures\replacement\ beside the exe replace the game's
+    bool dump_textures = false;      // each texture once into textures\dumps\ beside the exe
+    uint32_t texture_dump_format = 0;  // 0 PNG, 1 DDS
     std::string join_ip;                   // co-op: a host past the LAN the system link search also asks
 
     // [graphics] in the settings file, changed live from the settings menu (settings_menu.cpp)
@@ -129,6 +133,10 @@ struct GameFiles {
     std::vector<uint8_t> xbe;
 };
 bool FindGame(GameFiles& game);
+std::string Sha1(const std::vector<uint8_t>& data);  // lower case hex
+// the recompiled code, <exe>.dll, built from the game in assets when missing or out of date (game_code.cpp) and
+// loaded; false after telling the player why the game cannot start, or when they chose not to start it yet
+bool PrepareGameCode(const GameFiles& game);
 int Instance();  // --instance N on the command line, 0 without: a second copy on this PC for system link tests
 void* Window();  // HWND
 // boot splash: GameInfo::splash .bmp or .png beside the exe, up before the game window

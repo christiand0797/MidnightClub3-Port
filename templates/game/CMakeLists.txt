@@ -36,12 +36,11 @@ if(NOT GAME_PARTITIONS)
 endif()
 
 # target name = GAME_EXE in build.bat, xbe = GAME_XBE
-add_xbe_image(Game default.xbe game.toml ${GAME_PARTITIONS} game)
-set_target_properties(Game PROPERTIES OUTPUT_NAME mc3)
+add_xbe_image(Game default.xbe game.toml ${GAME_PARTITIONS} game mc3)
 
 # Add Windows icon and version resource
 if(WIN32)
     target_sources(Game PRIVATE resources.rc)
 endif()
 
-add_custom_target(mc3 DEPENDS Game)
+add_custom_target(mc3 DEPENDS Game Game_code)  # the executable and its game code DLL

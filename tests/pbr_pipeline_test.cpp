@@ -177,7 +177,7 @@ void Buffer(ID3D11ShaderReflection* r,const char* name,uint32_t bytes,std::initi
 void ShaderContracts(){
     auto vs=Compile(VertexHlsl(),"vs_5_0"),ps=Compile(PixelHlsl(),"ps_5_0"),patch=Compile(VertexHlsl(true),"vs_5_0"),hs=Compile(HullHlsl(),"hs_5_0"),ds=Compile(DomainHlsl(),"ds_5_0");
     auto vr=Reflect(vs.Get()),pr=Reflect(ps.Get()),hr=Reflect(hs.Get()),dr=Reflect(ds.Get());
-    Buffer(vr.Get(),"PbrGeometry",sizeof(GeometryConstants),{{"pbr_model_to_view",0},{"pbr_normal_to_view",64},{"pbr_model_to_clip",128},{"pbr_view_to_clip",192},{"pbr_raster",256},{"pbr_surface_size",272},{"pbr_geometry_options",288}});
+    Buffer(vr.Get(),"PbrGeometry",sizeof(GeometryConstants),{{"pbr_model_to_view",0},{"pbr_normal_to_view",64},{"pbr_model_to_clip",128},{"pbr_view_to_clip",192},{"pbr_raster",256},{"pbr_surface_size",272},{"pbr_geometry_options",288},{"pbr_depth",304}});
     auto matrix=vr->GetConstantBufferByName("PbrGeometry")->GetVariableByName("pbr_model_to_clip")->GetType();D3D11_SHADER_TYPE_DESC type{};
     assert(SUCCEEDED(matrix->GetDesc(&type))&&type.Class==D3D_SVC_MATRIX_ROWS&&type.Rows==4&&type.Columns==4);
     Buffer(pr.Get(),"PbrMaterial",sizeof(MaterialConstants),{{"pbr_base_color",0},{"pbr_emission_color",16},{"pbr_surface",32},{"pbr_overrides",48},{"pbr_height",64},{"pbr_options",80},{"pbr_maps",96},{"pbr_coverage",112}});

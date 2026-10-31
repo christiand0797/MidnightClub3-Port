@@ -11,7 +11,8 @@ struct Pad {
     int16_t lx = 0, ly = 0, rx = 0, ry = 0;
 };
 
-void Init();  // window thread, before boot
+void Init();  // window thread, before boot; the game code window starts it earlier
+uint16_t HeldOnAnyController();  // face buttons as XINPUT_GAMEPAD_A/B/X/Y masks, GameInfo::pad left out
 // the controller on that port, then GameInfo::pad. Connection-only scans must not consume pending keyboard taps.
 Pad Poll(int port, bool consume_keyboard_edges = true);
 // Window thread, before ImGui's handler: mapped key transitions/focus loss only. Never suppresses a message.

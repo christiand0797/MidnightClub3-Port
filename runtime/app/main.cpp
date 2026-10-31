@@ -267,10 +267,34 @@ std::recursive_mutex& UiLock() {
 void ApplyDisplay() { PostMessageW(g_hwnd, kApplyDisplay, 0, 0); }
 void OpenGameWindow(bool apply) { SendMessageW(g_hwnd, kOpenWindow, apply, 0); }
 
+namespace {
+
+// the game window's monitor's refresh rate, read again each second (a mode change, a move to another monitor); 0
+// when unreadable
+uint32_t RefreshRate() {
+    static uint32_t rate = 0;
+    static ULONGLONG next = 0;
+    if (ULONGLONG now = GetTickCount64(); now >= next) {
+        next = now + 1000;
+        MONITORINFOEXW mi{};
+        mi.cbSize = sizeof(mi);
+        DEVMODEW mode{};
+        mode.dmSize = sizeof(mode);
+        rate = GetMonitorInfoW(MonitorFromWindow(g_hwnd, MONITOR_DEFAULTTOPRIMARY), &mi) &&
+                       EnumDisplaySettingsW(mi.szDevice, ENUM_CURRENT_SETTINGS, &mode) && mode.dmDisplayFrequency > 1
+                   ? mode.dmDisplayFrequency
+                   : 0;
+    }
+    return rate;
+}
+
+}  // namespace
+
 void Pace() {
     using clock = std::chrono::steady_clock;
     static clock::time_point next = clock::now();
     uint32_t cap = Get().fps_cap;
+    if (cap == kFpsCapRefresh) cap = RefreshRate();
     auto now = clock::now();
     if (!cap) {
         next = now;
@@ -324,6 +348,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
 
     app::GameFiles game;
     if (!app::FindGame(game)) return 1;
+    if (!app::PrepareGameCode(game)) return 1;
 
     bool splash = app::OpenSplash(), handover = app::StartHandover();
 

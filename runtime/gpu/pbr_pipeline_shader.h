@@ -11,6 +11,7 @@ cbuffer PbrGeometry : register(b0) {
     float4 pbr_raster;
     float4 pbr_surface_size;
     uint4 pbr_geometry_options;
+    float4 pbr_depth;
 };
 cbuffer PbrMaterial : register(b1) {
     float4 pbr_base_color;
@@ -69,6 +70,12 @@ float PbrFogFactor(float d) {
     if (pbr_fog.w == 2) return exp(-(d * pbr_fog.z) * (d * pbr_fog.z));
     return 1;
 }
+// The legacy ReversedClip on the same clip position, so both paths store the same depth.
+float4 PbrReversedDepth(float4 cp) {
+    if(pbr_depth.w==0)return cp;
+    cp.z=pbr_depth.x!=0?pbr_depth.x*(pbr_depth.y-(cp.w+pbr_depth.z)):cp.w-cp.z-pbr_depth.z*cp.w;
+    return cp;
+}
 float4 PbrFixedEdgeCorrection(float4 cp) {
     // Exact existing fixed-function far-edge policy, using the guest surface rather than host dimensions.
     float2 sp=(float2(cp.x,-cp.y)/cp.w+1)*0.5*pbr_surface_size.xy;
@@ -86,7 +93,7 @@ PbrRaster main(PbrVertex i) {
     // Preserve the original renderer's already-composed matrix and operation order for ordinary raster depth.
     float4 cp=mul(float4(i.model_position,1),pbr_model_to_clip);
     o.fog=PbrFogFactor(abs(cp.z));
-    o.clip_position=PbrFixedEdgeCorrection(cp);o.uv=i.uv;o.color=i.color;return o;
+    o.clip_position=PbrReversedDepth(PbrFixedEdgeCorrection(cp));o.uv=i.uv;o.color=i.color;return o;
 }
 )HLSL";
 inline constexpr std::string_view kPatchVertex=R"HLSL(
@@ -142,7 +149,7 @@ PbrRaster main(PbrPatch patch,float3 bary : SV_DomainLocation,const OutputPatch<
         if(isfinite(height))o.view_position+=o.view_normal*((height-pbr_height.z)*pbr_height.y);
     }
     float4 cp=PbrProject(o.view_position);o.fog=PbrFogFactor(abs(cp.z));
-    o.clip_position=PbrFixedEdgeCorrection(cp);return o;
+    o.clip_position=PbrReversedDepth(PbrFixedEdgeCorrection(cp));return o;
 }
 )HLSL";
 inline constexpr std::string_view kPixel=R"HLSL(

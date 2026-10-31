@@ -1,6 +1,7 @@
 #include "gpu/texture.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cstring>
 #include <mutex>
@@ -260,10 +261,15 @@ uint64_t g_epoch = 1;
 
 }  // namespace
 
+// by format byte: asked many times a draw
 const FormatInfo& Format(uint32_t f) {
-    for (auto& e : kFormats)
-        if (e.id == f) return e.info;
-    return kUnknown;
+    static const auto table = [] {
+        std::array<const FormatInfo*, 256> t;
+        t.fill(&kUnknown);
+        for (auto& e : kFormats) t[e.id] = &e.info;
+        return t;
+    }();
+    return f < table.size() ? *table[f] : kUnknown;
 }
 
 bool Describe(uint32_t header, TextureDesc& d) {

@@ -86,7 +86,9 @@ inline std::string PixelHlsl(std::string s, uint32_t target_mask = 0) {
         uv_shift += "    }\n";
         detail::Insert(s, "    float4 tc0 = i.tc0, tc1 = i.tc1, tc2 = i.tc2, tc3 = i.tc3;\n", "", uv_shift);
     }
-    detail::Insert(s, "alphatest(outc.a);\n", R"(// enhanced car paint (gpu/car_paint.h): the game's ambient and three directional lights again, per pixel
+    // before the alpha test, or where it would be: the shader has one only while the draw tests alpha
+    const char* output = s.find("alphatest(outc.a);\n") != std::string::npos ? "alphatest(outc.a);\n" : "if (sblend.x != 0) {\n";
+    detail::Insert(s, output, R"(// enhanced car paint (gpu/car_paint.h): the game's ambient and three directional lights again, per pixel
 {
     float3 n = i.cn.xyz * rsqrt(max(dot(i.cn.xyz, i.cn.xyz), 1e-12));
     float3 V = i.cv.xyz * rsqrt(max(dot(i.cv.xyz, i.cv.xyz), 1e-12));

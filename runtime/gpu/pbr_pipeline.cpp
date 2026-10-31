@@ -131,6 +131,7 @@ Status ValidateConstants(const GeometryConstants& g,const MaterialConstants& m,c
     geometry::AffineBridge a;a.model_to_view=g.model_to_view;a.normal_to_view=g.normal_to_view;a.ready=true;GeometryConstants checked;
     if(g.options[1]>1||g.options[2]>1||g.options[3]||!Range(g.raster[0],1,16384)||!Range(g.raster[1],1,16384)||
        !Range(g.surface[0],1,16384)||!Range(g.surface[1],1,16384)||g.surface[2]!=0||g.surface[3]!=0||
+       !(g.depth[3]==0||g.depth[3]==1)||!std::isfinite(g.depth[0])||!std::isfinite(g.depth[1])||!std::isfinite(g.depth[2])||
        std::floor(g.raster[0])!=g.raster[0]||std::floor(g.raster[1])!=g.raster[1]||g.raster[3]!=0||
        std::floor(g.surface[0])!=g.surface[0]||std::floor(g.surface[1])!=g.surface[1]||
        BuildGeometry(a,g.model_to_clip,g.view_to_clip,uint32_t(g.raster[0]),uint32_t(g.raster[1]),uint32_t(g.surface[0]),uint32_t(g.surface[1]),

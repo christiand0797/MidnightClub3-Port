@@ -35,6 +35,7 @@ struct PixelKey {
     uint32_t quad = 0;       // a screen quad: QuadHlsl
     uint32_t car_paint = 0;  // enhanced car paint: gpu/car_paint.h PixelHlsl over the generated shader
     uint32_t pbr = 0;        // stage 0 companion PBR maps bound on t4 (normal) and t5 (ORM+height)
+    uint32_t alphatest = 0;  // alpha test on: only then may the shader discard, which turns off early depth tests
     bool operator==(const PixelKey& o) const;
 };
 
@@ -61,6 +62,8 @@ std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode 
 std::string PixelHlsl(const PixelKey& k);
 // a screen quad's vertex or pixel shader: texture coordinates as the quad was drawn, before its far edges were pulled out
 std::string QuadHlsl(std::string s);
+// depth stored reversed (1 at the near clip, 0 at the far one) from DrawConstants::zparams, for a vertex shader
+std::string ReversedDepthHlsl(std::string s);
 // the geometry shader that draws a point as its console pixel
 std::string PointHlsl();
 
@@ -81,6 +84,7 @@ struct ShaderHooks {
     virtual std::string Output() const;
 };
 inline const ShaderHooks* g_shader_hooks = nullptr;
+inline bool g_reversed_depth = false;  // the renderer stores depth reversed: shadow compares turn r with it
 
 // the constant buffer layout both stages share, register b1
 struct DrawConstants {
@@ -117,6 +121,7 @@ struct DrawConstants {
                          // nothing before it moves
     float pbr[4];        // PBR parameters: normal_strength, ao_strength, roughness (factor or -(1+override)), metallic
     float pbr2[4];       // PBR parameters: parallax_height, base_color.r, base_color.g, base_color.b
+    float zparams[4];    // ReversedDepthHlsl: a w buffer's scale (0 for a z buffer), its far w, the polygon offset
 };
 
 }  // namespace gpu

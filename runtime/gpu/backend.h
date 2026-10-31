@@ -48,6 +48,8 @@ public:
     virtual void WaitFence(uint32_t) {}
     virtual bool Busy(uint32_t /*resource*/) { return false; }
     virtual void WaitResource(uint32_t /*resource*/) {}
+    // until the GPU has drawn present number n, counted from 0; any thread
+    virtual void WaitGpuFrame(uint64_t /*n*/) {}
 
 private:
     uint32_t fence_ = 0;
