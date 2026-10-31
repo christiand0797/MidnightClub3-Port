@@ -243,6 +243,7 @@ float4 main(PbrRaster i) : SV_Target0 {
     float roughness=pbr_options.y!=0?pbr_overrides.x:saturate(orm.g*pbr_surface.x);
     float metallic=pbr_options.z!=0?pbr_overrides.y:saturate(orm.b*pbr_surface.y);
     float ao=saturate(1+(orm.r-1)*pbr_surface.w);
+    const float3 n_geo=n; // the surface's own normal, before the normal map
     PbrGeoFrame frame;
     if(pbr_maps.x!=0&&pbr_surface.z>0&&PbrGeoCotangentFrame(dx,dy,tx,ty,n,frame)) {
         float3 map=saturate(pbr_normal.SampleGrad(pbr_sampler,uv,tx,ty).xyz)*2-1;
@@ -253,9 +254,19 @@ float4 main(PbrRaster i) : SV_Target0 {
     float3 radiance;
     if(pbr_scene_info.z==1) {
         // Baked: the vertex diffuse is display-referred like the original texture, so decode both and the
-        // neutral-map product matches the original texture*diffuse. It has no direction: metallic,
-        // roughness and the normal map cannot relight it, and only albedo, AO and emission apply.
-        radiance=saturate(base)*saturate(ao)*PbrSrgbToLinear(i.color.rgb);
+        // neutral-map product matches the original texture*diffuse. The baked light has no direction, so it is
+        // taken to fall from above the surface toward the viewer: the normal map shades relative to the surface's own
+        // normal (relief, exactly 1 for a flat map) and a glossy lobe of the same light picks out the surface where
+        // roughness allows (none at roughness 1). Normal strength scales the relief, roughness the gloss.
+        float3 light=PbrSrgbToLinear(i.color.rgb);
+        float3 l=Mc3PbrSafeNormalize(n_geo*0.8+view*0.6),h=Mc3PbrSafeNormalize(l+view);
+        float nl=saturate(dot(n,l)),nh=saturate(dot(n,h)),nv=max(dot(n,view),1e-4),vh=saturate(dot(view,h));
+        float relief=clamp(nl/max(dot(n_geo,l),0.2),0.35,1.65);
+        float a=max(roughness*roughness,0.002),a2=a*a,d=nh*nh*(a2-1)+1,k=a*0.5;
+        float lobe=a2/(3.14159265*d*d)*0.25/((nl*(1-k)+k)*(nv*(1-k)+k))*nl;
+        float fresnel=0.04+0.96*pow(1-vh,5);
+        radiance=saturate(base)*saturate(ao)*light*relief
+                +light*saturate(ao)*min(lobe*fresnel,4.0)*(1-roughness)*(1-metallic*0.5);
     } else {
         radiance=Mc3PbrIndirectDiffuse(base,metallic,ao,pbr_irradiance_exposure.xyz);
         [loop]for(uint k=0;k<min(pbr_scene_info.x,8u);++k) {

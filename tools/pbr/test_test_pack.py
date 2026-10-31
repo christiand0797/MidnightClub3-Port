@@ -62,6 +62,16 @@ class TestPack(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_city_maps_keep_roads_detailed_inside_the_budget(self):
+        self.assertEqual(T.city_map_sizes("road_asphalt", 64), (512, 256, 128))
+        self.assertEqual(T.city_map_sizes("facade", 256), (128, 128, 64))
+        self.assertEqual(T.city_map_sizes("signage", 8), (32, 32, 16))
+        # every city texture at these sizes, mips included, fits the loader's decode budget
+        mip = lambda s, b: s * s * b * 4 // 3
+        worst = 600 * sum(mip(s, 4) for s in (512, 256)) + 600 * mip(128, 2)
+        worst += 2700 * (2 * mip(128, 4) + mip(64, 2))
+        self.assertLess(worst, T.DECODE_BUDGET)
+
     def test_candidates_follow_the_capture_gates(self):
         found = T.candidates(self.cap)
         self.assertEqual(found, {(FIXED, PS, OPAQUE, 0): 2, (FIXED, PS, OPAQUE, 1): 1,

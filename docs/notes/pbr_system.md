@@ -1,8 +1,11 @@
 # PBR system development
 
-**Status 2026-10-30:** the dedicated renderer path draws baked city scenery in game (opt-in, PBR tab). A whole-city
-pack (`tools/pbr/test_pack.py --cities`) covers every Detroit/San Diego/Atlanta/Tokyo texture with generated
-AO/roughness/height maps and samples the game's own texture as albedo. How draws reach the path, the gates and the
+**Status 2026-10-31:** the dedicated renderer path draws baked city scenery in game (opt-in, PBR tab). A whole-city
+pack (`tools/pbr/test_pack.py --cities`) covers every Detroit/San Diego/Atlanta/Tokyo texture with the generated
+normal, AO/roughness and height maps (`city_map_sizes`: roads and ground 512/256/128, everything else its own size up
+to 128) and samples the game's own texture as albedo. In baked mode the light has no direction, so the shader takes it
+as falling from above the surface toward the viewer: the normal map shades relative to the surface's own normal
+(relief, exactly 1 for a flat map) and a GGX lobe of the same light adds gloss scaled by 1 - roughness (none at 1). How draws reach the path, the gates and the
 remaining legacy cases are in [pbr_reachability_20261029.md](pbr_reachability_20261029.md). The sections below are the
 original design record.
 

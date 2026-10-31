@@ -10,6 +10,12 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-10-31 later still (road and wall detail):** the city pack now ships the generated normal maps (roads and ground
+512, ORM 256; the rest at their own size up to 128; about 1.35 GB decoded, inside the 1.5 GB budget) instead of one
+flat normal. The baked branch of `pbr_pipeline_shader.h` shades them as relief against the surface's own normal and
+adds a roughness-scaled GGX gloss of the baked light. Native San Diego: 211 draws through the path, 3.2 ms, 60 fps;
+pavers and asphalt show relief and sheen. Pack digest `2104f550…` installed.
+
 **2026-10-31 later (songs skipping on hard turns: the arrow keys):**
 - **Cause.** The keyboard fallback maps the arrows to the D-pad, and while driving D-pad left/right changes the song.
   Each arrow-key turn started a new music stream; W/A/D steering never did. Reproduced in the San Diego cruise: a new
