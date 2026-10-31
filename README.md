@@ -40,6 +40,18 @@ release asset to play. The additional media pass and all-car tuning validation
 are ongoing. [PBR materials and geometry foundations](docs/notes/pbr_system.md)
 are implemented in development; rendering integration remains unfinished.
 
+## Screenshots
+
+Native captures (Xbox Game Bar, 1920×1080) from the current development builds.
+
+| | |
+| --- | --- |
+| ![Lexus GS with neon underglow](docs/screenshots/2026-10-28-lexus-gs-neon-underglow.jpg)<br>Lexus GS with neon underglow | ![Tokyo cruise](docs/screenshots/2026-10-31-tokyo-cruise-jetta.jpg)<br>Tokyo cruise |
+| ![Impala on hydraulics](docs/screenshots/2026-10-29-impala-hydraulics-neon.jpg)<br>Impala on hydraulics | ![Headlights at night](docs/screenshots/2026-10-24-lexus-headlights-night.jpg)<br>Headlights at night |
+| ![Golf in Tokyo](docs/screenshots/2026-10-21-tokyo-golf-street.jpg)<br>Golf in Tokyo | !['57 Bel Air in a parking garage](docs/screenshots/2026-10-27-bel-air-parking-garage.jpg)<br>'57 Bel Air in a parking garage |
+| ![DUB Shop tire width](docs/screenshots/2026-10-23-dub-shop-tire-width.jpg)<br>DUB Shop tire width | ![DUB Shop vehicle menu](docs/screenshots/2026-10-24-dub-shop-golf.jpg)<br>DUB Shop vehicle menu |
+| ![Bel Air on oversized wheels](docs/screenshots/2026-10-24-bel-air-oversized-wheels.jpg)<br>Bel Air on oversized wheels | ![PBR material settings (F1)](docs/screenshots/2026-10-29-pbr-material-settings.jpg)<br>PBR material settings (F1) |
+
 ## Development
 
 This source repository includes the compatibility runtime, build and media tools,
