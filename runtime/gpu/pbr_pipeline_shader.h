@@ -179,6 +179,26 @@ bool PbrUvDistance(float3 dpdx,float3 dpdy,float2 dtdx,float2 dtdy,float3 direct
     uv_direction=float2((da*bb-db*ab)/det,(db*aa-da*ab)/det);
     return all(isfinite(uv_direction));
 }
+// Fine surface grain past the maps' resolution: two octaves of gradient noise at two grains per texel of the
+// surface's own texture (so its size follows the art, not the tiling), as a tangent-space slope. It fades out where
+// its frequency nears the pixel footprint, so it shows only where the texels are magnified and never shimmers.
+float2 PbrNoiseGrad(float2 p) {
+    float2 i=floor(p),f=frac(p),u=f*f*(3-2*f),du=6*f*(1-f);
+    float2 g[4];
+    [unroll]for(uint k=0;k<4;++k){float2 c=i+float2(k&1,k>>1);
+        float h=frac(sin(dot(c,float2(127.1,311.7)))*43758.5453)*6.2831853;g[k]=float2(cos(h),sin(h));}
+    float a=dot(g[0],f),b=dot(g[1],f-float2(1,0)),c=dot(g[2],f-float2(0,1)),d=dot(g[3],f-1);
+    float2 grad=lerp(lerp(g[0],g[1],u.x),lerp(g[2],g[3],u.x),u.y);
+    return grad+du*float2((b-a)+(a-b-c+d)*u.y,(c-a)+(a-b-c+d)*u.x);
+}
+float2 PbrDetail(float2 uv,float2 tx,float2 ty) {
+    uint w,h;pbr_albedo.GetDimensions(w,h);
+    const float frequency=2*float(max(max(w,h),16u));
+    float footprint=max(length(tx),length(ty))*frequency;
+    float fade=saturate(1.5-2*footprint);
+    if(fade<=0)return 0;
+    return (PbrNoiseGrad(uv*frequency)+0.5*PbrNoiseGrad(uv*frequency*2.13+17.0))*0.035*fade;
+}
 float2 PbrParallax(float2 uv,float3 view,float3 n,float3 dx,float3 dy,float2 tx,float2 ty) {
     float nv=dot(n,view);float2 ray;
     if(pbr_options.w!=1||pbr_maps.z==0||pbr_height.x<=0||nv<=0.05||
@@ -253,6 +273,7 @@ float4 main(PbrRaster i) : SV_Target0 {
     if(pbr_maps.x!=0&&pbr_surface.z>0&&PbrGeoCotangentFrame(dx,dy,tx,ty,n,frame)) {
         float3 map=saturate(pbr_normal.SampleGrad(pbr_sampler,uv,tx,ty).xyz)*2-1;
         map.xy*=pbr_surface.z;if(pbr_options.x==0)map.y=-map.y;
+        if(pbr_scene_info.z==1)map.xy+=PbrDetail(uv,tx,ty)*pbr_surface.z; // baked city surfaces: fine grain
         float3 mapped; // Common-scale cotangents preserve skew UV metric; never normalize T/B separately.
         if(PbrGeoUnit(frame.tangent*map.x+frame.bitangent*map.y+frame.normal*map.z,mapped))n=mapped;
     }

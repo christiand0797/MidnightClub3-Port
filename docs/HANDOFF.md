@@ -10,6 +10,12 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-11-01 later (fine surface grain):** baked city surfaces add two octaves of gradient noise to the normal-map
+slope (`PbrDetail` in `pbr_pipeline_shader.h`). It runs at two grains per texel of the surface's own texture, so it
+follows the art rather than the tiling, scaled by normal strength. It fades out once a grain nears the pixel
+footprint, so it only appears where texels are magnified and never shimmers. The first try at a fixed 96 per UV
+unit with 0.08 amplitude read as speckle on large road textures. The final value is 0.035.
+
 **2026-11-01 (frame stalls: shader cache, background texture-pack decoding):**
 - **Shader compile stall.** `XBE_PERF=1 XBE_VERBOSE=1` showed the 344 ms stall at a cruise's start as 6.14 ms/frame
   of `D3DCompile`. `gpu/shader_cache.{h,cpp}` keeps compiled blobs in `shadercache\` beside the exe: named by an FNV
