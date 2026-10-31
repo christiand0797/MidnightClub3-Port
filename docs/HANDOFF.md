@@ -10,6 +10,20 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-10-31 evening (cutouts through PBR):**
+- **What draws now.** Trees, fences, railings and sign edges draw through the dedicated path. These are draws with a
+  GREATER/GEQUAL alpha test, optionally blended SRC_ALPHA/INV_SRC_ALPHA, plus ONE/ZERO blending (opaque).
+- **Shared check.** `pipeline::KeepsLegacyBlend` is used by `DescribePipeline` and the device's `OriginalStateValid`:
+  the PSO keeps the draw's blend state. `device::Input::draw_alpha_test` lets the draw's own test set coverage.
+- **Clip.** The cutoff is `(ref ± 0.5)/255`, so `clip(a - cutoff)` equals the legacy `round(a*255) > ref`/`>= ref`.
+  The baked shader clips `albedo.a * vertex alpha`, the alpha the original tests.
+- **Baked scene.** `BakedProof::coverage_kept` (with `combiner_alpha_packed`) admits blending and those tests. Lit
+  draws with coverage stay legacy, since they write texture alpha.
+- **Result.** Per-material outcomes in a run went from 371 to 543 drawn. Tokyo and San Diego at 60 fps, 2.8 ms.
+- **Still legacy.** 211 two-texture combiners (s0 tex*diffuse → TEMP, s1 tex1*TFACTOR, s2 MODULATEALPHA_ADDCOLOR:
+  facades with lit night windows), 50 vertex programs (cars, peds), 38 other blends (additive glows), 29 with depth
+  write off.
+
 **2026-10-31 later still (road and wall detail):** the city pack now ships the generated normal maps (roads and ground
 512, ORM 256; the rest at their own size up to 128; about 1.35 GB decoded, inside the 1.5 GB budget) instead of one
 flat normal. The baked branch of `pbr_pipeline_shader.h` shades them as relief against the surface's own normal and

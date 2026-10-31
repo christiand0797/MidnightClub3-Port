@@ -92,7 +92,17 @@ void BudgetsAndOutput(){
     f.in.original_opaque_state.RTVFormats[0]=DXGI_FORMAT_R16G16B16A16_FLOAT;assert(f.Get(p)==Status::Planned);
     f=Fixture{};f.in.coverage_policy_proven=false;assert(f.Get(p)==Status::InvalidConstants);
     f=Fixture{};f.in.actual_alpha_cutoff=.1f;assert(f.Get(p)==Status::InvalidConstants);
-    f=Fixture{};f.in.original_opaque_state.BlendState.RenderTarget[0].BlendEnable=TRUE;assert(f.Get(p)==Status::UnsupportedDraw);
+    // Kept compositing: ONE/ZERO is opaque, SRC_ALPHA/INV_SRC_ALPHA draws cutouts over what is behind; others stay legacy.
+    {auto& b=f.in.original_opaque_state.BlendState.RenderTarget[0];
+     f=Fixture{};b.BlendEnable=TRUE;b.BlendOp=D3D12_BLEND_OP_ADD;b.SrcBlend=D3D12_BLEND_ONE;b.DestBlend=D3D12_BLEND_ZERO;assert(f.Get(p)==Status::Planned);
+     b.SrcBlend=D3D12_BLEND_SRC_ALPHA;b.DestBlend=D3D12_BLEND_INV_SRC_ALPHA;assert(f.Get(p)==Status::Planned);
+     b.SrcBlend=D3D12_BLEND_ONE;b.DestBlend=D3D12_BLEND_ONE;assert(f.Get(p)==Status::UnsupportedDraw);
+     b.SrcBlend=D3D12_BLEND_SRC_ALPHA;b.DestBlend=D3D12_BLEND_INV_SRC_ALPHA;b.BlendOp=D3D12_BLEND_OP_REV_SUBTRACT;assert(f.Get(p)==Status::UnsupportedDraw);}
+    // The draw's own alpha test sets coverage for any material; a cutoff without either stays rejected.
+    f=Fixture{};f.in.draw_alpha_test=true;f.in.actual_alpha_cutoff=f.in.material.overrides[2]=45.5f/255;
+    assert(f.Get(p)==Status::MaterialRejected);
+    f.in.material.coverage[0]=1;assert(f.Get(p)==Status::Planned);
+    f.in.draw_alpha_test=false;assert(f.Get(p)==Status::MaterialRejected);
     f=Fixture{};f.in.original_opaque_state.NodeMask=2;assert(f.Get(p)==Status::UnsupportedDraw);
     f=Fixture{};f.vertices[2].uv={0,0};assert(f.Get(p)==Status::Planned); // collapsed UVs draw one texel
     f=Fixture{};f.vertices[2].model_position=f.vertices[1].model_position;assert(f.Get(p)==Status::InvalidMesh);

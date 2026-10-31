@@ -141,6 +141,9 @@ struct RootLayout {
 std::span<const D3D12_INPUT_ELEMENT_DESC> InputLayout();
 D3D_PRIMITIVE_TOPOLOGY DrawTopology(controls::HeightMode);
 struct ShaderSet { D3D12_SHADER_BYTECODE vs{},ps{},hs{},ds{}; };
+// Compositing the dedicated path keeps from the original draw: none, ONE/ZERO (opaque with blending on) or SRC_ALPHA/
+// INV_SRC_ALPHA (cutouts drawn over what is behind). The output alpha is the original's, so either composites alike.
+bool KeepsLegacyBlend(const D3D12_BLEND_DESC&);
 Status DescribePipeline(const D3D12_GRAPHICS_PIPELINE_STATE_DESC& original_opaque_state,
                        ID3D12RootSignature* dedicated_root,const ShaderSet&,controls::HeightMode,
                        D3D12_GRAPHICS_PIPELINE_STATE_DESC& result);

@@ -48,6 +48,9 @@ struct BakedProof {
     bool rigid_view_proven = false;
     bool perspective_camera_proven = false;
     bool opaque_no_cutout_proven = false;
+    // The dedicated pipeline keeps the draw's coverage: a GREATER/GEQUAL alpha test as the same clip on the same
+    // (packed) alpha, and its blend state as it is (pipeline::KeepsLegacyBlend). Cutouts then need no opaque state.
+    bool coverage_kept = false;
     bool coefficient_colors_linear = false;
     bool output_policy_proven = false;
     // The dedicated shader reproduces the legacy fixed-function fog from the same draw's fog states.

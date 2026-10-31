@@ -5,7 +5,9 @@ pack (`tools/pbr/test_pack.py --cities`) covers every Detroit/San Diego/Atlanta/
 normal, AO/roughness and height maps (`city_map_sizes`: roads and ground 512/256/128, everything else its own size up
 to 128) and samples the game's own texture as albedo. In baked mode the light has no direction, so the shader takes it
 as falling from above the surface toward the viewer: the normal map shades relative to the surface's own normal
-(relief, exactly 1 for a flat map) and a GGX lobe of the same light adds gloss scaled by 1 - roughness (none at 1). How draws reach the path, the gates and the
+(relief, exactly 1 for a flat map) and a GGX lobe of the same light adds gloss scaled by 1 - roughness (none at 1). Cutouts (GREATER/GEQUAL alpha tests,
+SRC_ALPHA/INV_SRC_ALPHA or ONE/ZERO blending) keep their coverage: same clip on the same packed alpha, the draw's own
+blend state (`KeepsLegacyBlend`). How draws reach the path, the gates and the
 remaining legacy cases are in [pbr_reachability_20261029.md](pbr_reachability_20261029.md). The sections below are the
 original design record.
 

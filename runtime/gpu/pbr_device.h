@@ -33,6 +33,7 @@ struct Input {
     D3D12_GRAPHICS_PIPELINE_STATE_DESC original_opaque_state{};
     D3D12_SAMPLER_DESC actual_sampler{};
     bool coverage_policy_proven=false;
+    bool draw_alpha_test=false; // the original draw tests alpha (actual_alpha_cutoff): coverage as it is, any material
     float actual_alpha_cutoff=0;
     // The draw's own accepted colour texture, for a game_albedo material (bound as t0, gamma decoded in the shader).
     // The caller guarantees it is the texture whose content hash the assignment names, in a shader-readable state.

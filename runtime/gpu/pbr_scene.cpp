@@ -179,8 +179,11 @@ Status BuildBakedVertexDiffuse(const State& s,const BakedProof& proof,pipeline::
     if(!proof.coefficient_colors_linear)return Status::MissingColorPolicy;
     if(!proof.output_policy_proven)return Status::MissingOutputPolicy;
     if(!Finite(proof.exposure)||proof.exposure<0||proof.exposure>64||static_cast<uint32_t>(output)>1)return Status::InvalidConstants;
-    if(s.rs[kRsLighting]||(s.rs[kRsFogEnable]&&!proof.fog_reproduced)||(s.rs[kRsVertexBlend]&7)||s.simple[kMBlendEnable>>2]||
-       AlphaTestCanReject(s)||s.rs[kRsTwoSidedLighting]||s.simple[kMShadeMode>>2]==0x1D00||
+    const uint32_t alpha_func=s.simple[kMAlphaFunc>>2];
+    const bool kept_test=proof.coverage_kept&&proof.combiner_alpha_packed&&(alpha_func==0x204||alpha_func==0x206);
+    if(s.rs[kRsLighting]||(s.rs[kRsFogEnable]&&!proof.fog_reproduced)||(s.rs[kRsVertexBlend]&7)||
+       (s.simple[kMBlendEnable>>2]&&!(proof.coverage_kept&&proof.combiner_alpha_packed))||
+       (AlphaTestCanReject(s)&&!kept_test)||s.rs[kRsTwoSidedLighting]||s.simple[kMShadeMode>>2]==0x1D00||
        ((s.vs_handle&1)&&(!s.vs||!s.vs->program.empty()))||
        (!(s.vs_handle&1)&&(s.vs_handle&0xE)!=0x2))return Status::UnsupportedDraw;
     for(const auto& t:s.tss)if(t[kTssColorSign]||t[kTssColorKeyOp]||t[kTssAlphaKill])return Status::UnsupportedDraw;

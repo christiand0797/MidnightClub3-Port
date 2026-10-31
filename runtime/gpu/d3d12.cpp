@@ -4712,6 +4712,18 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
                  why.c_str());
         };
         const auto& info = textures.info[assignment.stage];
+        // Cutouts (trees, fences, sign edges): a GREATER/GEQUAL alpha test keeps its coverage through the same alpha,
+        // optionally blended SRC_ALPHA/INV_SRC_ALPHA over what is behind; ONE/ZERO blending is opaque. Other tests and
+        // blends (additive glows, decals) stay legacy.
+        const uint32_t alpha_func=SimpleState(s,kMAlphaFunc),alpha_ref=SimpleState(s,kMAlphaRef)&0xFF;
+        const bool alpha_test=SimpleState(s,kMAlphaTestEnable)&&Cmp(alpha_func)!=D3D12_COMPARISON_FUNC_ALWAYS;
+        const bool cutout_test=alpha_test&&(Cmp(alpha_func)==D3D12_COMPARISON_FUNC_GREATER||
+                                            Cmp(alpha_func)==D3D12_COMPARISON_FUNC_GREATER_EQUAL);
+        const bool kept_blend=!key.blend||(key.op==kBlendOpAdd&&((key.src==kBlendSrcAlpha&&key.dst==kBlendInvSrcAlpha)||
+                                                                   (key.src==kBlendOne&&key.dst==0)));
+        // the legacy test passes round(a*255) > ref (>= ref): clip(a - cutoff) at the half step matches it exactly
+        const float cutoff=!cutout_test?0.0f:std::clamp((float(alpha_ref)+
+            (Cmp(alpha_func)==D3D12_COMPARISON_FUNC_GREATER?0.5f:-0.5f))/255.0f,0.0f,1.0f);
         // Original coverage, pass effects, fog and programmable deformation cannot be silently dropped.
         // Captures deliberately retain the original path until the evidence format also represents PBR draws.
         const char* gate =
@@ -4719,10 +4731,10 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
             photo_policy_.Armed() ? "photo capture armed" : sh.prog ? "vertex program" : sh.quad ? "screen quad" :
             !sh.fixed_transform ? "not a fixed transform" : sh.car_paint ? "car paint" :
             a.pretransformed ? "pretransformed" : !pbr::SimpleAlbedoSurface(s,pk,assignment.stage) ? "texture combiner" :
-            a.topology != Topology::Triangles ? "not triangles" : key.blend ? "blended" : !key.zen ? "depth test off" :
+            a.topology != Topology::Triangles ? "not triangles" : !kept_blend ? "blended" : !key.zen ? "depth test off" :
             !key.zwrite ? "depth write off" :
             // an enabled ALWAYS test never discards (the world's state), exactly as the legacy alphatest()
-            SimpleState(s,kMAlphaTestEnable) && Cmp(SimpleState(s,kMAlphaFunc)) != D3D12_COMPARISON_FUNC_ALWAYS ? "alpha test" :
+            alpha_test && !cutout_test ? "alpha test" :
             pk.alphakill ? "alpha kill" : assignment.cutout ? "cutout" :
             assignment.surface != pbr::SurfaceClass::World ? "not a world surface" :
             textures.rt[assignment.stage] ? "texture is a render target" : info.kind != kTex2D ? "not a 2D texture" :
@@ -4766,6 +4778,8 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
         // off forwards register 3 to oD0, which the baked mode carries. The bridge independently checks the
         // actual declaration/FVF, layout, decoding and same-draw spans.
         const bool lit=s.rs[kRsLighting]!=0,authored_normals=((a.regs>>2)&1)!=0;
+        // only the baked mode writes the original's alpha (texture times cascade); a lit draw writes the texture's
+        if ((cutout_test||key.blend) && lit) { trace("lit draw with alpha coverage or blending"); continue; }
         pbr::fixed_mesh::FixedProof fixed;
         fixed.kind=pbr::fixed_mesh::DrawKind::ObjectSpaceFixedFunction;
         fixed.authored_normals=authored_normals;fixed.face_normals=!authored_normals;fixed.assigned_uv=true;
@@ -4847,6 +4861,7 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
             baked.rigid_view_proven=mesh.height_units_proven;
             baked.perspective_camera_proven=true; // Build rechecks the SAME actual projection numerically.
             baked.opaque_no_cutout_proven=true;
+            baked.coverage_kept=cutout_test||key.blend; // the clip and blend state below are the draw's own
             baked.coefficient_colors_linear=true; // Declared policy; the shader decodes like the albedo.
             baked.output_policy_proven=bound_rt_->fmt==kBgra;
             baked.fog_reproduced=true; // Same fogfactor/fog colour/order as the legacy fixed pipeline.
@@ -4897,7 +4912,7 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
         observed.reason=pc::Reason::AlphaMismatch;
         if (pbr::Select(library,surface).reason!=pbr::SelectionReason::Ready) {trace("selection: size or alpha differs from the pack");continue;}
         pp::MaterialConstants factors;
-        if (const auto st=pp::BuildMaterial(parameters,material.normal_convention,material.has_height,material.has_emission,false,0,factors);
+        if (const auto st=pp::BuildMaterial(parameters,material.normal_convention,material.has_height,material.has_emission,cutout_test,cutoff,factors);
             st!=pp::Status::Ready) {trace(std::string("material constants: ")+pp::StatusText(st));continue;}
         pp::Evidence evidence;
         // This is an intended draw plan; GPU success/readiness is never inferred from these CPU facts.
@@ -4930,7 +4945,7 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
         input.actual_sampler=StageSampler(s,int(assignment.stage),textures,UnitTexcoords(a),graphics.aniso,graphics.graphics.texture_detail);
         input.actual_sampler.MaxAnisotropy=std::max(1u,input.actual_sampler.MaxAnisotropy);
         input.actual_sampler.ComparisonFunc=D3D12_COMPARISON_FUNC_ALWAYS;
-        input.coverage_policy_proven=true;input.actual_alpha_cutoff=0; // Opaque/no-test subset only.
+        input.coverage_policy_proven=true;input.actual_alpha_cutoff=cutoff;input.draw_alpha_test=cutout_test;
         pbr::device::Plan plan;
         observed.reason=parameters.height_mode==pc::HeightMode::Displacement?pc::Reason::DisplacementUnavailable:pc::Reason::RendererBindingsUnavailable;
         auto perf_plan_t=PerfClock::now();

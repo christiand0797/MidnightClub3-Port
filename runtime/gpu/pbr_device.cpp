@@ -47,7 +47,7 @@ bool OutputValid(const Input& in){
 }
 bool OriginalStateValid(const D3D12_GRAPHICS_PIPELINE_STATE_DESC& d){
     return d.NumRenderTargets==1&&d.SampleDesc.Count&&d.SampleDesc.Count<=16&&d.PrimitiveTopologyType==D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE&&
-        !d.BlendState.AlphaToCoverageEnable&&!d.BlendState.RenderTarget[0].BlendEnable&&!d.BlendState.RenderTarget[0].LogicOpEnable&&
+        pipeline::KeepsLegacyBlend(d.BlendState)&&
         !d.GS.pShaderBytecode&&!d.GS.BytecodeLength&&!d.HS.pShaderBytecode&&!d.HS.BytecodeLength&&!d.DS.pShaderBytecode&&!d.DS.BytecodeLength&&
         !d.StreamOutput.NumEntries&&!d.StreamOutput.NumStrides&&!d.NodeMask&&d.IBStripCutValue==D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED;
 }
@@ -122,7 +122,7 @@ Status PlanDraw(const Input& in,const Limits& limits,Plan& result){
     const auto& m=*selected.material;
     if(!controls::ValidDigest(m.review_sha256)||(!m.game_albedo&&!controls::ValidDigest(m.baseline_alpha_sha256))||
        in.geometry.options[2]!=(m.game_albedo?1u:0u)||
-       in.material.maps[2]!=(m.has_height?1u:0u)||in.material.maps[3]!=(m.has_emission?1u:0u)||in.material.coverage[0]!=(m.assignment.cutout?1u:0u)||
+       in.material.maps[2]!=(m.has_height?1u:0u)||in.material.maps[3]!=(m.has_emission?1u:0u)||in.material.coverage[0]!=((m.assignment.cutout||in.draw_alpha_test)?1u:0u)||
        in.material.options[0]!=(m.normal_convention==NormalConvention::DirectX?1u:0u))return Status::MaterialRejected;
     Plan plan;plan.owner=in.library;plan.material=&m;plan.height_mode=mode;
     // A game albedo still gets its own neutral placeholder resource, so the material's own maps keep their slots.

@@ -267,12 +267,19 @@ D3D_PRIMITIVE_TOPOLOGY DrawTopology(controls::HeightMode mode) {
     if(uint32_t(mode)>2)return D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
     return mode==controls::HeightMode::Displacement?D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST:D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 }
+bool KeepsLegacyBlend(const D3D12_BLEND_DESC& d) {
+    const auto& b=d.RenderTarget[0];
+    if(d.AlphaToCoverageEnable||d.IndependentBlendEnable||b.LogicOpEnable)return false;
+    if(!b.BlendEnable)return true;
+    return b.BlendOp==D3D12_BLEND_OP_ADD&&((b.SrcBlend==D3D12_BLEND_SRC_ALPHA&&b.DestBlend==D3D12_BLEND_INV_SRC_ALPHA)||
+                                           (b.SrcBlend==D3D12_BLEND_ONE&&b.DestBlend==D3D12_BLEND_ZERO));
+}
 Status DescribePipeline(const D3D12_GRAPHICS_PIPELINE_STATE_DESC& legacy,ID3D12RootSignature* root,const ShaderSet& s,
                         controls::HeightMode mode,D3D12_GRAPHICS_PIPELINE_STATE_DESC& result) {
     result={};const bool tess=mode==controls::HeightMode::Displacement;
     if(!root||!Bytecode(s.vs)||!Bytecode(s.ps)||uint32_t(mode)>2||legacy.NumRenderTargets!=1||
        legacy.RTVFormats[0]==DXGI_FORMAT_UNKNOWN||!legacy.SampleDesc.Count||legacy.PrimitiveTopologyType!=D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE||
-       legacy.BlendState.RenderTarget[0].BlendEnable||legacy.BlendState.RenderTarget[0].LogicOpEnable||legacy.BlendState.AlphaToCoverageEnable||
+       !KeepsLegacyBlend(legacy.BlendState)||
        !Zero(legacy.GS)||!Zero(legacy.HS)||!Zero(legacy.DS)||legacy.StreamOutput.NumEntries||legacy.StreamOutput.NumStrides||
        (tess?(!Bytecode(s.hs)||!Bytecode(s.ds)):(!Zero(s.hs)||!Zero(s.ds))))return Status::InvalidPipeline;
     result=legacy;result.pRootSignature=root;result.VS=s.vs;result.PS=s.ps;result.HS=s.hs;result.DS=s.ds;

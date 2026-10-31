@@ -210,6 +210,11 @@ void ShaderContracts(){
     assert(DescribePipeline(legacy,fake_root,shaders,controls::HeightMode::Parallax,pso)==Status::InvalidPipeline);
     shaders.hs={};assert(DescribePipeline(legacy,fake_root,shaders,controls::HeightMode::Displacement,pso)==Status::InvalidPipeline);
     legacy.BlendState.RenderTarget[0].BlendEnable=TRUE;assert(DescribePipeline(legacy,fake_root,{},controls::HeightMode::None,pso)==Status::InvalidPipeline);
+    {D3D12_BLEND_DESC b{};assert(KeepsLegacyBlend(b));auto& t=b.RenderTarget[0];t.BlendEnable=TRUE;assert(!KeepsLegacyBlend(b));
+     t.BlendOp=D3D12_BLEND_OP_ADD;t.SrcBlend=D3D12_BLEND_SRC_ALPHA;t.DestBlend=D3D12_BLEND_INV_SRC_ALPHA;assert(KeepsLegacyBlend(b));
+     t.SrcBlend=D3D12_BLEND_ONE;t.DestBlend=D3D12_BLEND_ZERO;assert(KeepsLegacyBlend(b));
+     t.DestBlend=D3D12_BLEND_ONE;assert(!KeepsLegacyBlend(b)); // additive glows stay legacy
+     t.DestBlend=D3D12_BLEND_ZERO;b.AlphaToCoverageEnable=TRUE;assert(!KeepsLegacyBlend(b));}
 }
 }
 int main(){Constants();Mesh();Gates();Numeric();ShaderContracts();std::cout<<"pbr pipeline: guarded fixed mesh, exact raster matrices, linear light/output math, strict eligibility, real VS/PS/HS/DS compile/reflection and root/PSO contracts passed; no GPU execution\n";}

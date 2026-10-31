@@ -237,7 +237,8 @@ float4 main(PbrRaster i) : SV_Target0 {
     float4 albedo=pbr_albedo.SampleGrad(pbr_sampler,uv,tx,ty);
     // The game's own texture holds gamma values; the legacy path filters them as they are, so decode after sampling.
     if(pbr_geometry_options.z==1)albedo.rgb=PbrSrgbToLinear(albedo.rgb);
-    if(pbr_coverage.x!=0)clip(albedo.a-pbr_overrides.z);
+    // The original tests the alpha it writes: in baked mode the texture's times the cascade's (vertex alpha).
+    if(pbr_coverage.x!=0)clip((pbr_scene_info.z==1?albedo.a*saturate(i.color.a):albedo.a)-pbr_overrides.z);
     float3 base=max(albedo.rgb,0)*pbr_base_color.rgb;
     float3 orm=pbr_orm.SampleGrad(pbr_sampler,uv,tx,ty).rgb;
     float roughness=pbr_options.y!=0?pbr_overrides.x:saturate(orm.g*pbr_surface.x);

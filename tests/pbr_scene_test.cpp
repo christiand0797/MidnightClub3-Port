@@ -181,6 +181,15 @@ void BakedDrawAndCombiner() {
         f=BakedFixture{};f.state.simple[field>>2]=1;f.state.simple[kMAlphaFunc>>2]=0x205;f.Expect(Status::UnsupportedDraw);
     }
     f=BakedFixture{};f.state.simple[kMAlphaTestEnable>>2]=1;f.state.simple[kMAlphaFunc>>2]=0x207;f.Expect(Status::Ready);
+    // Kept coverage (cutouts): a GREATER/GEQUAL test and blending need the pipeline's clip/blend and the packed alpha.
+    for(uint32_t func:{0x204u,0x206u}) {
+        f=BakedFixture{};f.state.simple[kMAlphaTestEnable>>2]=1;f.state.simple[kMAlphaFunc>>2]=func;f.Expect(Status::UnsupportedDraw);
+        f.proof.coverage_kept=true;f.Expect(Status::UnsupportedDraw); // the written alpha is not the original's
+        f.proof.combiner_alpha_packed=true;f.Expect(Status::Ready);
+        f.state.simple[kMBlendEnable>>2]=1;f.Expect(Status::Ready);
+    }
+    f=BakedFixture{};f.proof.coverage_kept=f.proof.combiner_alpha_packed=true;f.state.simple[kMAlphaTestEnable>>2]=1;
+    f.state.simple[kMAlphaFunc>>2]=0x201;f.Expect(Status::UnsupportedDraw); // LESS keeps the transparent part: legacy
     f=BakedFixture{};f.state.simple[kMShadeMode>>2]=0x1D00;f.Expect(Status::UnsupportedDraw);
     f=BakedFixture{};f.state.vs_handle=0x144;f.Expect(Status::UnsupportedDraw); // pretransformed
     f=BakedFixture{};f.state.vs_handle=0x1235;f.Expect(Status::UnsupportedDraw); // missing declaration

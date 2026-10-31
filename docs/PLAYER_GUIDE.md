@@ -249,7 +249,7 @@ and get clearcoat highlights. The paint, vinyls and reflections stay the game's.
 
 ## PBR materials (PBR tab)
 
-An opt-in material renderer for city scenery: walls, roads and pavements get ambient-occlusion shading, surface
+An opt-in material renderer for city scenery: walls, roads, pavements, trees, fences and railings get ambient-occlusion shading, surface
 relief and a glossy sheen from generated material maps. Colours stay exactly the original textures (the renderer
 samples the game's own texture) and the game's baked lighting is kept. The normal map shades bumps, cracks and paver
 joints against that light, and smoother surfaces (asphalt, polished stone, wet-looking pavers) pick up a gloss of
