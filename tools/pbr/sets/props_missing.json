@@ -1,0 +1,880 @@
+{
+"textures": [
+{
+"hash": "7FFD1BA7522828F5",
+"class": "facade"
+},
+{
+"hash": "EB1CDC1C483CCE5D",
+"class": "facade"
+},
+{
+"hash": "3CAD97806D067BC1",
+"class": "facade"
+},
+{
+"hash": "8105990516F935B3",
+"class": "facade"
+},
+{
+"hash": "48E128AF399A767E",
+"class": "facade"
+},
+{
+"hash": "7F08C8A1D35EAC73",
+"class": "facade"
+},
+{
+"hash": "B9A1F7D408C1238D",
+"class": "facade"
+},
+{
+"hash": "015B3CAE6DC5BC3D",
+"class": "windows_night"
+},
+{
+"hash": "2DCA7EC8203F537A",
+"class": "concrete"
+},
+{
+"hash": "925807A96B6FFE69",
+"class": "facade"
+},
+{
+"hash": "EF34EB01BA774EB4",
+"class": "facade"
+},
+{
+"hash": "401E4F9AB3672669",
+"class": "facade"
+},
+{
+"hash": "2BACBB2722CB0455",
+"class": "facade"
+},
+{
+"hash": "7BAF166E2AC2B272",
+"class": "facade"
+},
+{
+"hash": "75F8DFC7AE3C6CC4",
+"class": "facade"
+},
+{
+"hash": "98DEAC5871293863",
+"class": "facade"
+},
+{
+"hash": "5533808FF6E01BC4",
+"class": "signage"
+},
+{
+"hash": "8DBF791956152C95",
+"class": "facade"
+},
+{
+"hash": "B624B1CE379A9EB5",
+"class": "facade"
+},
+{
+"hash": "1974E7A6ACA423CC",
+"class": "facade"
+},
+{
+"hash": "1648D140A53D1FF7",
+"class": "signage"
+},
+{
+"hash": "3D97987C09BB3C95",
+"class": "facade"
+},
+{
+"hash": "2C4F84CE79410048",
+"class": "facade"
+},
+{
+"hash": "EE12428D1A368114",
+"class": "facade"
+},
+{
+"hash": "ADFF99F879C8BFB4",
+"class": "facade"
+},
+{
+"hash": "83BA0B19FC1EC189",
+"class": "facade"
+},
+{
+"hash": "F24F6F4DAAE9CD47",
+"class": "windows_night"
+},
+{
+"hash": "9965BE3DCB12B046",
+"class": "facade"
+},
+{
+"hash": "32FB1EEE0C23CB15",
+"class": "facade"
+},
+{
+"hash": "36C49A03F89F7CFF",
+"class": "facade"
+},
+{
+"hash": "1E488FBFD08EFD94",
+"class": "facade"
+},
+{
+"hash": "5E1B87095EF24EFE",
+"class": "facade"
+},
+{
+"hash": "232D61E7877B2469",
+"class": "facade"
+},
+{
+"hash": "E41E16C403831E47",
+"class": "windows_night"
+},
+{
+"hash": "750E24328B56F41E",
+"class": "facade"
+},
+{
+"hash": "94CAD74B840168EB",
+"class": "signage"
+},
+{
+"hash": "CF42D64E41A70D51",
+"class": "facade"
+},
+{
+"hash": "430A13AA679E1D97",
+"class": "facade"
+},
+{
+"hash": "EB431105C508A347",
+"class": "facade"
+},
+{
+"hash": "A4BAD40598949A6B",
+"class": "facade"
+},
+{
+"hash": "6058F44765419312",
+"class": "facade"
+},
+{
+"hash": "10DBC51028BC1BA3",
+"class": "concrete"
+},
+{
+"hash": "8ADF6A2281711826",
+"class": "facade"
+},
+{
+"hash": "9E752D765ACA2151",
+"class": "facade"
+},
+{
+"hash": "864D8F3D8292C592",
+"class": "signage"
+},
+{
+"hash": "90233B291F7CD99E",
+"class": "road_asphalt"
+},
+{
+"hash": "3181E504C00B2416",
+"class": "facade"
+},
+{
+"hash": "142C234FB0A01A9D",
+"class": "facade"
+},
+{
+"hash": "0E0C616CF96F1100",
+"class": "facade"
+},
+{
+"hash": "746C08227744ACBD",
+"class": "signage"
+},
+{
+"hash": "6A9AEDC75FE17B1E",
+"class": "facade"
+},
+{
+"hash": "09C435F47B2DA6A7",
+"class": "concrete"
+},
+{
+"hash": "1EDE5F696ACA5414",
+"class": "facade"
+},
+{
+"hash": "3E93A5792C477A92",
+"class": "facade"
+},
+{
+"hash": "502F37F0A8984A5B",
+"class": "facade"
+},
+{
+"hash": "DDB3708B6E3278F6",
+"class": "signage"
+},
+{
+"hash": "E2C3DAB0236B0833",
+"class": "signage"
+},
+{
+"hash": "9B5729E913539854",
+"class": "facade"
+},
+{
+"hash": "29F11E0ADA7F7011",
+"class": "facade"
+},
+{
+"hash": "D4B029F7D67E629D",
+"class": "facade"
+},
+{
+"hash": "00760D6CE19681D9",
+"class": "facade"
+},
+{
+"hash": "A4DDE9BB73ABD064",
+"class": "facade"
+},
+{
+"hash": "0C84846B1EC828E2",
+"class": "facade"
+},
+{
+"hash": "BCA940E1B174E4B1",
+"class": "facade"
+},
+{
+"hash": "6E5A3A67EB69040D",
+"class": "facade"
+},
+{
+"hash": "89A8F57540EB5271",
+"class": "facade"
+},
+{
+"hash": "AB7050D8BC5DC511",
+"class": "facade"
+},
+{
+"hash": "B69B2C9C2A5AA616",
+"class": "facade"
+},
+{
+"hash": "D399FAEC2042F729",
+"class": "facade"
+},
+{
+"hash": "35419D73CE8CBFF0",
+"class": "facade"
+},
+{
+"hash": "DD949B8106E48ADC",
+"class": "concrete"
+},
+{
+"hash": "4A5EF7E84D370DAF",
+"class": "facade"
+},
+{
+"hash": "9E1AB1521A1B245F",
+"class": "signage"
+},
+{
+"hash": "9386941F660745FA",
+"class": "facade"
+},
+{
+"hash": "5FFB52B85B4FCB80",
+"class": "facade"
+},
+{
+"hash": "777228AE7180291C",
+"class": "facade"
+},
+{
+"hash": "55B3048BC9634BCD",
+"class": "facade"
+},
+{
+"hash": "090AF929EFEBF297",
+"class": "facade"
+},
+{
+"hash": "8B0F3808E7307525",
+"class": "facade"
+},
+{
+"hash": "DCC1E619F3D95CEE",
+"class": "signage"
+},
+{
+"hash": "D217106907C099D0",
+"class": "facade"
+},
+{
+"hash": "F2D19AC09259794D",
+"class": "facade"
+},
+{
+"hash": "6B8BEED1B05B47C6",
+"class": "facade"
+},
+{
+"hash": "34A2CE9A5ECA7292",
+"class": "facade"
+},
+{
+"hash": "6EC6DD75A782E7A9",
+"class": "facade"
+},
+{
+"hash": "48B20DAEB8B4C513",
+"class": "facade"
+},
+{
+"hash": "37CFEC306774509F",
+"class": "facade"
+},
+{
+"hash": "0D528A671AE7F115",
+"class": "facade"
+},
+{
+"hash": "18A6738EFF9A7506",
+"class": "facade"
+},
+{
+"hash": "514433DE36D51290",
+"class": "signage"
+},
+{
+"hash": "0DCB35D20E98AD88",
+"class": "facade"
+},
+{
+"hash": "5053CBD2940AF17E",
+"class": "signage"
+},
+{
+"hash": "3D29114AD70C7B8B",
+"class": "facade"
+},
+{
+"hash": "A3D4F53C7930DFFD",
+"class": "signage"
+},
+{
+"hash": "03E989A9F05A0A5E",
+"class": "signage"
+},
+{
+"hash": "133E4885A0F6D45E",
+"class": "facade"
+},
+{
+"hash": "48F461B92E29EB44",
+"class": "facade"
+},
+{
+"hash": "FCC312F674C6AAF4",
+"class": "signage"
+},
+{
+"hash": "E05B3107EDA505B2",
+"class": "facade"
+},
+{
+"hash": "39920E103B5FE551",
+"class": "signage"
+},
+{
+"hash": "3DE746483A72412E",
+"class": "facade"
+},
+{
+"hash": "DC6B559E26D144E4",
+"class": "facade"
+},
+{
+"hash": "D7BBEF2FDDF2FE2E",
+"class": "facade"
+},
+{
+"hash": "1292B96A3F538DBE",
+"class": "facade"
+},
+{
+"hash": "F5FEE1DC04F5D82E",
+"class": "facade"
+},
+{
+"hash": "5D8402AF7D34028A",
+"class": "facade"
+},
+{
+"hash": "4E1F8C2749815738",
+"class": "facade"
+},
+{
+"hash": "11E7585AF8F35899",
+"class": "facade"
+},
+{
+"hash": "AC41CD47255BEEE1",
+"class": "signage"
+},
+{
+"hash": "20B6C524BDF0F09E",
+"class": "facade"
+},
+{
+"hash": "7E008F6668974F25",
+"class": "facade"
+},
+{
+"hash": "D9AEFACCE0880D6D",
+"class": "facade"
+},
+{
+"hash": "24D22785833FB752",
+"class": "facade"
+},
+{
+"hash": "AA0A5B4B12610CA1",
+"class": "facade"
+},
+{
+"hash": "9917764C8DF5046C",
+"class": "facade"
+},
+{
+"hash": "5AB5B727AA3AF352",
+"class": "facade"
+},
+{
+"hash": "BBB6809B540529F3",
+"class": "signage"
+},
+{
+"hash": "E205110686B055A7",
+"class": "facade"
+},
+{
+"hash": "BDC7172B87AB6B59",
+"class": "facade"
+},
+{
+"hash": "A3FFE8D1EC52C3BD",
+"class": "windows_night"
+},
+{
+"hash": "F94DE0B5EC29BD5F",
+"class": "facade"
+},
+{
+"hash": "367ECB69FDB35F65",
+"class": "facade"
+},
+{
+"hash": "9D6A3205D7869447",
+"class": "facade"
+},
+{
+"hash": "C275D1B36E174029",
+"class": "facade"
+},
+{
+"hash": "137E20B6314EA7B4",
+"class": "signage"
+},
+{
+"hash": "55260B34109C6ABD",
+"class": "facade"
+},
+{
+"hash": "6969F8378A9D3AC4",
+"class": "facade"
+},
+{
+"hash": "063BE1A4395B1FAD",
+"class": "facade"
+},
+{
+"hash": "8755B6FEBCB7C1C1",
+"class": "facade"
+},
+{
+"hash": "C39239F964D50CE8",
+"class": "facade"
+},
+{
+"hash": "87B9E22AC0123104",
+"class": "facade"
+},
+{
+"hash": "AFE121D8E7D5FD45",
+"class": "signage"
+},
+{
+"hash": "AF99BF23AC598778",
+"class": "signage"
+},
+{
+"hash": "C6635D162B282486",
+"class": "facade"
+},
+{
+"hash": "5E9B76F3FA94CDCB",
+"class": "signage"
+},
+{
+"hash": "3B47A2F302F3AC1B",
+"class": "facade"
+},
+{
+"hash": "A198D960C9258DF0",
+"class": "facade"
+},
+{
+"hash": "6476E2976C95CC3E",
+"class": "facade"
+},
+{
+"hash": "ACE3DE653CA836F6",
+"class": "facade"
+},
+{
+"hash": "2D52C416090670D0",
+"class": "facade"
+},
+{
+"hash": "EE5EAB7489FDC02B",
+"class": "facade"
+},
+{
+"hash": "F3191ED1715F427D",
+"class": "facade"
+},
+{
+"hash": "AC158D37D33F4F60",
+"class": "facade"
+},
+{
+"hash": "34D162DC381CF6B5",
+"class": "facade"
+},
+{
+"hash": "DC12EC0E63621F90",
+"class": "concrete"
+},
+{
+"hash": "B9AC5E9A91428639",
+"class": "facade"
+},
+{
+"hash": "9D31361712C090E3",
+"class": "facade"
+},
+{
+"hash": "B05D097F7BA05509",
+"class": "concrete"
+},
+{
+"hash": "EAC1D7E42D48C5AC",
+"class": "facade"
+},
+{
+"hash": "85C45E17938F8DAB",
+"class": "facade"
+},
+{
+"hash": "D4846A1744029CC9",
+"class": "facade"
+},
+{
+"hash": "E5DC401160806C9C",
+"class": "facade"
+},
+{
+"hash": "0CB45D0F077EC83A",
+"class": "signage"
+},
+{
+"hash": "19BFFDF8515EA817",
+"class": "facade"
+},
+{
+"hash": "FA992ECD6CDE3029",
+"class": "signage"
+},
+{
+"hash": "B7FF592A2E721F0D",
+"class": "signage"
+},
+{
+"hash": "79A6258EC1F5FA7E",
+"class": "signage"
+},
+{
+"hash": "08865A3316BE7C7F",
+"class": "facade"
+},
+{
+"hash": "98917472CE12138B",
+"class": "signage"
+},
+{
+"hash": "CAD61B5DA3CF04C7",
+"class": "facade"
+},
+{
+"hash": "D2AE4A521137A7F3",
+"class": "signage"
+},
+{
+"hash": "51C36C8A68EABDE1",
+"class": "facade"
+},
+{
+"hash": "C4AAAF8FBCCF0A1A",
+"class": "facade"
+},
+{
+"hash": "6951D3E54E448391",
+"class": "facade"
+},
+{
+"hash": "3026BB043E6CCD2B",
+"class": "facade"
+},
+{
+"hash": "72893DA9A7937444",
+"class": "facade"
+},
+{
+"hash": "DE8AB7DCAB50C347",
+"class": "facade"
+},
+{
+"hash": "5944A8862ACEFB4A",
+"class": "concrete"
+},
+{
+"hash": "8435C7C563CCFF00",
+"class": "facade"
+},
+{
+"hash": "DA29DB8F5301C596",
+"class": "facade"
+},
+{
+"hash": "F880106793FF85E6",
+"class": "facade"
+},
+{
+"hash": "C268866D30EFD2C3",
+"class": "facade"
+},
+{
+"hash": "0B5F17637BE5633F",
+"class": "facade"
+},
+{
+"hash": "53F3F926E69E0495",
+"class": "facade"
+},
+{
+"hash": "B058D245E0FF64F8",
+"class": "signage"
+},
+{
+"hash": "85D722BD41A7E4FC",
+"class": "signage"
+},
+{
+"hash": "C7C1241F567ABAE0",
+"class": "facade"
+},
+{
+"hash": "463D3BCAC7711CC6",
+"class": "facade"
+},
+{
+"hash": "34A0E9BE54730BC8",
+"class": "facade"
+},
+{
+"hash": "412FA410E9F3BA07",
+"class": "concrete"
+},
+{
+"hash": "4D61709F06FD42D1",
+"class": "facade"
+},
+{
+"hash": "2FEC1958FF531F7D",
+"class": "facade"
+},
+{
+"hash": "17640BCCB8147CFA",
+"class": "facade"
+},
+{
+"hash": "3CB814981B7C3D63",
+"class": "facade"
+},
+{
+"hash": "3F57DEFD5C42F956",
+"class": "facade"
+},
+{
+"hash": "20834439A2ECC7FF",
+"class": "concrete"
+},
+{
+"hash": "AB9093A04279EB83",
+"class": "facade"
+},
+{
+"hash": "1C7881A6F794AD2D",
+"class": "facade"
+},
+{
+"hash": "028EC0E06B13B073",
+"class": "signage"
+},
+{
+"hash": "D481451ABCF8E565",
+"class": "facade"
+},
+{
+"hash": "9A36910BA46EAFA7",
+"class": "facade"
+},
+{
+"hash": "9A46E02C366A9AA2",
+"class": "facade"
+},
+{
+"hash": "90BCF2E41C27AD05",
+"class": "facade"
+},
+{
+"hash": "DB475F3668C5CD11",
+"class": "concrete"
+},
+{
+"hash": "F6B1E34AF2558A86",
+"class": "facade"
+},
+{
+"hash": "980C25D645D9B540",
+"class": "facade"
+},
+{
+"hash": "C18C4BA295CBA72B",
+"class": "facade"
+},
+{
+"hash": "EB283BEFDF9AFC0E",
+"class": "signage"
+},
+{
+"hash": "AEFDD392EBC4A487",
+"class": "facade"
+},
+{
+"hash": "6FBB49ED00B8228A",
+"class": "signage"
+},
+{
+"hash": "5CB5B5F14C3A1A7E",
+"class": "signage"
+},
+{
+"hash": "66C90F0C6693362B",
+"class": "facade"
+},
+{
+"hash": "65E7C5B4127CE445",
+"class": "signage"
+},
+{
+"hash": "07E0DB060392E58C",
+"class": "signage"
+},
+{
+"hash": "EBEE87590DFC8316",
+"class": "facade"
+},
+{
+"hash": "719EC93563DCF7D1",
+"class": "facade"
+},
+{
+"hash": "F181DE10B0FF3BC0",
+"class": "signage"
+},
+{
+"hash": "813EDA2E1894F12E",
+"class": "facade"
+},
+{
+"hash": "9ACFB9036D240450",
+"class": "signage"
+},
+{
+"hash": "69DF809C7F42510C",
+"class": "facade"
+},
+{
+"hash": "AC993140F855F422",
+"class": "facade"
+},
+{
+"hash": "DF9317D0552372CF",
+"class": "facade"
+},
+{
+"hash": "49494D70D8C337EA",
+"class": "signage"
+},
+{
+"hash": "4BA401F1622F471D",
+"class": "facade"
+},
+{
+"hash": "EFFC71AC1F300D11",
+"class": "terrain"
+},
+{
+"hash": "7133684DEBEFC7AE",
+"class": "signage"
+},
+{
+"hash": "1DFFB7CA21D1E029",
+"class": "facade"
+},
+{
+"hash": "C3942FD548D45EF5",
+"class": "facade"
+},
+{
+"hash": "440677E55332E2E4",
+"class": "facade"
+}
+]
+}

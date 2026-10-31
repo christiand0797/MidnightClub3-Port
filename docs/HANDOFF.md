@@ -10,6 +10,17 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-11-01 later (props in the PBR pack; coverage audit):**
+- **Audit.** By source over all 12,714 game textures:
+  - City scenery: 3,260 in all four cities, Detroit's 901 included; every one with maps is in the pack.
+  - Props: 436 street objects and garage props, which were missing.
+  - Not applicable to this path: car vinyls, decals and wheels (~6,400, overlays on the car paint shader); cars and
+    characters (~650, vertex programs); 2D menus, HUD and fonts (1,276).
+- **Change.** `tools/pbr/sets/props_missing.json` generated the 219 missing prop maps. `cities_pack` now takes
+  `resources/(city|prop)/<city>` and stops if the decoded total would pass the 1.5 GB loader budget.
+- **Result.** Pack: 3,695 materials, about 1,375 MB decoded, digest `87231d8e…`, installed. On the title backdrop, prop
+  materials draw through the path where their state allows; most props there are blended glows and stay legacy.
+
 **2026-11-01 (Detroit unlock: mapped, deliberately not shipped):**
 - **The rule.** `tune/progress/unlockingrules.csv` (in assets_x.dat) has `C,Detroit,H,Muscle_2_part_2,H,Culture_2_part_1`
   (or `Chopper_2_part_1`). Detroit opens after those career hookmen, evaluated by `mcPgUnlockingRulesEval`
