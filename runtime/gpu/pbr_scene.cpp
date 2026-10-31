@@ -93,6 +93,21 @@ bool WindowLayerCombiner(const State& s) {
            t2[kTssAlphaOp]==select_arg1&&t2[kTssAlphaArg1]==temp&&t2[kTssResultArg]==current&&
            (t3[kTssColorOp]<=disable||(!s.textures[3]&&(t3[kTssColorArg1]&0xF)==texture));
 }
+// The blend-layer program (pbr::BlendLayerProgram) on the actual D3DPIXELSHADERDEF (dword offsets as MakePixelKey):
+// r0 = t0*v0, r1 = t1*v0, r0.rgb = r1.rgb*r1.a + r0.rgb*(1 - r1.a), no final combiner, two 2D textures.
+bool BlendLayerShader(const State& s) {
+    if(!s.ps||!s.textures[0]||!s.textures[1]||s.textures[2]||s.textures[3])return false;
+    const uint32_t* d=s.ps->def;
+    constexpr uint32_t rgb_in[3]={0xC8C40000,0xC9C40000,0x1DCDCC3D},rgb_out[3]={0xC0,0xD0,0xC00};
+    constexpr uint32_t a_in[3]={0xD8D41010,0xD9D41010,0},a_out[3]={0xC0,0xD0,0};
+    if(d[53]!=0x11103||d[8]||d[9]||d[42]||d[55]||d[56])return false;
+    for(unsigned i=0;i<8;++i) {
+        const bool used=i<3;
+        if(d[i]!=(used?a_in[i]:0)||d[26+i]!=(used?a_out[i]:0)||d[34+i]!=(used?rgb_in[i]:0)||d[45+i]!=(used?rgb_out[i]:0))
+            return false;
+    }
+    return true;
+}
 // The fixed-function (no vertex program) half of FillFogConstants, packed after the scene is built.
 Status PackFog(const State& s,pipeline::SceneConstants& result) {
     if(!s.rs[kRsFogEnable])return Status::Ready;
@@ -204,7 +219,7 @@ Status BuildBakedVertexDiffuse(const State& s,const BakedProof& proof,pipeline::
     for(const auto& t:s.tss)if(t[kTssColorSign]||t[kTssColorKeyOp]||t[kTssAlphaKill])return Status::UnsupportedDraw;
     if(!RigidView(s.transforms[kView]))return Status::InvalidView;
     if(!Perspective(s.transforms[kProjection]))return Status::InvalidProjection;
-    if(!(proof.window_layer_kept?WindowLayerCombiner(s):
+    if(!(proof.blend_layer_kept?BlendLayerShader(s):proof.window_layer_kept?WindowLayerCombiner(s):
          BakedCombiner(s,proof.vertex_diffuse_alpha_one_proven,proof.texture_factor_applied,proof.combiner_alpha_packed)))
         return Status::UnsupportedBakedCombiner;
     // BuildBakedScene packs a mode, not a uniform white light/irradiance approximation. Actual bounded

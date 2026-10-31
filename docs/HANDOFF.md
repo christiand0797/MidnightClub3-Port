@@ -10,6 +10,22 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-10-31 late (road markings and overlays through PBR; what stays legacy):**
+- **Program.** The world's blend-layer pixel shader (combiner count 0x11103, rgb_in C8C40000/C9C40000/1DCDCC3D,
+  no final combiner) computes r0 = t0*v0, r1 = t1*v0, `r0.rgb = r1.rgb*r1.a + r0.rgb*(1 - r1.a)`. It draws road
+  markings, cracks and stains over asphalt and walls. `pbr::BlendLayerProgram` (pixel key) and
+  `scene::BlendLayerShader` (raw D3DPIXELSHADERDEF, `BakedProof::blend_layer_kept`) match it word for word.
+- **Shader.** `options[3] = 2`: the stage-1 texture times the vertex colour, laid over the encoded surface by
+  `t1.a*v0.a`; output alpha `t0.a*v0.a`.
+- **Texture transform.** The overlay's coordinates usually go through `D3DTS_TEXTURE1` with `D3DTTFF_COUNT2`. The
+  fixed mesh packs `mul((u,v,1,0), T)` into `uv1` like `FixedVertexHlsl`, and the matrix is part of the mesh cache key.
+- **Result.** Tokyo: about 800 materials through the path, up to 786 draws a frame, 60 fps (PBR 6–9 ms).
+- **Kept legacy on purpose:**
+  - Additive glows and decals (other blends, depth write off): a material model adds nothing to light halos.
+  - The environment-bump program 0x11101 (glass and water reflections).
+  - Vertex-program draws: mostly skinned "rider" characters, plus a few animated facades. Their geometry exists only
+    after a GPU vertex program, which the CPU-built mesh path cannot reproduce.
+
 **2026-10-31 night (facade night windows through PBR):**
 - **The cascade.** Captured from the facades: s0 `tmp = tex0*diffuse`, `tmp.a = tex0.a`; s1 `cur = tex1*TFACTOR` on
   texcoord set 1; s2 MODULATEALPHA_ADDCOLOR `tmp.rgb + cur.rgb*tmp.a`, alpha `tmp.a`. `pbr::WindowLayerSurface` (pixel

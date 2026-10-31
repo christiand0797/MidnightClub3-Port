@@ -8,7 +8,10 @@ as falling from above the surface toward the viewer: the normal map shades relat
 (relief, exactly 1 for a flat map) and a GGX lobe of the same light adds gloss scaled by 1 - roughness (none at 1). Cutouts (GREATER/GEQUAL alpha tests,
 SRC_ALPHA/INV_SRC_ALPHA or ONE/ZERO blending) keep their coverage: same clip on the same packed alpha, the draw's own
 blend state (`KeepsLegacyBlend`). Facades with lit night windows draw their stage-1 window texture as a layer on a
-second UV set, added in display values after the PBR surface is encoded (`WindowLayerSurface`, `options[3]`). How draws reach the path, the gates and the
+second UV set, added in display values after the PBR surface is encoded (`WindowLayerSurface`, `options[3]` 1). The
+world's blend-layer pixel shader (markings, cracks, stains) lays its second texture over the surface by its alpha
+(`BlendLayerProgram`, `options[3]` 2), with the overlay's D3DTS_TEXTURE1 tiling packed into `uv1`. Additive glows,
+decals, the environment-bump glass/water program and vertex-program characters stay on the original renderer. How draws reach the path, the gates and the
 remaining legacy cases are in [pbr_reachability_20261029.md](pbr_reachability_20261029.md). The sections below are the
 original design record.
 

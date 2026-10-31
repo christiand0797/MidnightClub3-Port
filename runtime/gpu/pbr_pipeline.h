@@ -49,7 +49,8 @@ struct alignas(16) GeometryConstants {
     std::array<float,4> surface{}; // Actual guest surface width/height; remaining words zero.
     // TessellationPolicy, NormalSource, albedo gamma encoded (1: the game's own UNORM texture, decoded in the shader
     // exactly as the legacy path filters it), window layer (1: the game's stage-1 texture on uv1, times the material's
-    // emission colour and the albedo alpha, added after encoding: the facades' lit night windows). Camera is
+    // emission colour and the albedo alpha, added after encoding: the facades' lit night windows; 2: the same texture
+    // times the vertex colour laid over by its alpha times the vertex alpha: markings, cracks and stains). Camera is
     // view-space origin.
     std::array<uint32_t,4> options{};
     // Reversed depth as the legacy draw stores it (ReversedDepthHlsl's zparams): a w buffer's scale (0 for a z

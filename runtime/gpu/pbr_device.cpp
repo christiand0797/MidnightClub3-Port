@@ -121,7 +121,7 @@ Status PlanDraw(const Input& in,const Limits& limits,Plan& result){
     if(!ValidSampler(in.actual_sampler))return Status::InvalidSampler;
     const auto& m=*selected.material;
     if(!controls::ValidDigest(m.review_sha256)||(!m.game_albedo&&!controls::ValidDigest(m.baseline_alpha_sha256))||
-       in.geometry.options[2]!=(m.game_albedo?1u:0u)||(in.geometry.options[3]==1)!=(in.game_layer!=nullptr)||
+       in.geometry.options[2]!=(m.game_albedo?1u:0u)||(in.geometry.options[3]!=0)!=(in.game_layer!=nullptr)||
        in.material.maps[2]!=(m.has_height?1u:0u)||in.material.maps[3]!=(m.has_emission?1u:0u)||in.material.coverage[0]!=((m.assignment.cutout||in.draw_alpha_test)?1u:0u)||
        in.material.options[0]!=(m.normal_convention==NormalConvention::DirectX?1u:0u))return Status::MaterialRejected;
     Plan plan;plan.owner=in.library;plan.material=&m;plan.height_mode=mode;
@@ -305,7 +305,7 @@ Result Device::RecordDraw(const Context& context,const Input& input,const Plan& 
             c.owner->manifest_sha256==plan.owner->manifest_sha256,Status::OwnershipChanged);
         Require(limits==c.limits,Status::OwnershipChanged);
         Require(plan.material->game_albedo==(input.game_albedo!=nullptr),Status::MaterialRejected);
-        Require((input.geometry.options[3]==1)==(input.game_layer!=nullptr),Status::MaterialRejected);
+        Require((input.geometry.options[3]!=0)==(input.game_layer!=nullptr),Status::MaterialRejected);
         auto pso=c.Pso(input,plan.height_mode);uint32_t sampler=c.Sampler(input.actual_sampler);auto& material=c.MaterialResources(input,plan);
         const uint32_t table=c.Table(material,input.game_albedo,input.game_layer);
         result.resident_bytes=c.resident;

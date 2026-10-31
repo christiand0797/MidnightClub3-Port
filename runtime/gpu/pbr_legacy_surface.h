@@ -55,4 +55,25 @@ inline bool WindowLayerSurface(const State& state,const PixelKey& pixel,uint32_t
     for(const auto& s:state.tss)if(s[kTssColorSign]||s[kTssColorKeyOp]||s[kTssAlphaKill])return false;
     return true;
 }
+// A pixel shader program of the world's (road markings, cracks and stains over walls and asphalt), word for word:
+// r0 = t0*v0, r1 = t1*v0 (colour and alpha), then r0.rgb = r1.rgb*r1.a + r0.rgb*(1 - r1.a) with r0.a kept, no final
+// combiner (the output is r0, fogged). The dedicated path draws t0 as the surface and lays t1 over it as a blend layer.
+inline bool BlendLayerProgram(const State& state,const PixelKey& pixel,uint32_t stage) {
+    constexpr uint32_t count=0x11103,modes=0x21;  // three stages (mux MSB, unique C0/C1); stages 0 and 1 2D
+    constexpr uint32_t rgb_in[3]={0xC8C40000,0xC9C40000,0x1DCDCC3D},rgb_out[3]={0xC0,0xD0,0xC00};
+    constexpr uint32_t a_in[3]={0xD8D41010,0xD9D41010,0},a_out[3]={0xC0,0xD0,0};
+    if(stage||!pixel.programmable||pixel.count!=count||pixel.final_abcd||pixel.final_efg||pixel.tex_modes!=modes||
+       pixel.dot_mapping||pixel.input_texture||pixel.compare_mode||pixel.flat||pixel.two_sided||pixel.quad||
+       pixel.car_paint||pixel.pbr||pixel.alphakill)return false;
+    for(unsigned i=0;i<8;++i) {
+        const bool used=i<3;
+        if(pixel.rgb_in[i]!=(used?rgb_in[i]:0)||pixel.rgb_out[i]!=(used?rgb_out[i]:0)||
+           pixel.a_in[i]!=(used?a_in[i]:0)||pixel.a_out[i]!=(used?a_out[i]:0))return false;
+    }
+    for(unsigned i=0;i<2;++i)
+        if(pixel.tex[i].kind!=kTex2D||pixel.tex[i].rect||pixel.tex[i].shadow||pixel.tex[i].flags)return false;
+    for(unsigned i=2;i<4;++i)if(pixel.tex[i].kind!=kTexNone)return false;
+    for(const auto& s:state.tss)if(s[kTssColorKeyOp]||s[kTssAlphaKill])return false;
+    return true;
+}
 } // namespace gpu::pbr

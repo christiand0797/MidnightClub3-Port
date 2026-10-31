@@ -290,6 +290,11 @@ float4 main(PbrRaster i) : SV_Target0 {
         float3 glow=saturate(pbr_emission.SampleGrad(pbr_sampler,i.uv1,ddx(i.uv1),ddy(i.uv1)).rgb*pbr_emission_color.rgb);
         radiance=saturate(radiance+glow*saturate(albedo.a));
     }
+    // The blend layer as the original program lays it, in display values: t1*v0 over the encoded surface by t1.a*v0.a.
+    if(pbr_scene_info.z==1&&pbr_geometry_options.w==2) {
+        float4 layer=pbr_emission.SampleGrad(pbr_sampler,i.uv1,ddx(i.uv1),ddy(i.uv1));
+        radiance=lerp(radiance,saturate(layer.rgb*i.color.rgb),saturate(layer.a*i.color.a));
+    }
     // Legacy order: the fog colour is blended over the final colour with saturate(fogfactor).
     if(pbr_fog.w!=0)radiance=lerp(pbr_fog_color.rgb,radiance,saturate(i.fog));
     // Baked: the vertex alpha carries the cascade's diffuse/TFACTOR alpha factors, as the original writes them.

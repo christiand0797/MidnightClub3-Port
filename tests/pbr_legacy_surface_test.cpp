@@ -40,4 +40,15 @@ int main() {
     v=w;v.tex[1].kind=kTexNone;assert(!pbr::WindowLayerSurface(s,v,0));
     v=w;v.tex[2].kind=kTex2D;assert(!pbr::WindowLayerSurface(s,v,0));
     v=w;v.alphakill=1;assert(!pbr::WindowLayerSurface(s,v,0));
+    // The world's blend-layer pixel shader, word for word as captured.
+    PixelKey b;b.programmable=1;b.count=0x11103;b.tex_modes=0x21;b.tex[0].kind=b.tex[1].kind=kTex2D;
+    const uint32_t ri[3]={0xC8C40000,0xC9C40000,0x1DCDCC3D},ro[3]={0xC0,0xD0,0xC00},ai[3]={0xD8D41010,0xD9D41010,0},ao[3]={0xC0,0xD0,0};
+    for(unsigned i=0;i<3;++i){b.rgb_in[i]=ri[i];b.rgb_out[i]=ro[i];b.a_in[i]=ai[i];b.a_out[i]=ao[i];}
+    s={};assert(pbr::BlendLayerProgram(s,b,0)&&!pbr::BlendLayerProgram(s,b,1)&&!pbr::SimpleAlbedoSurface(s,b,0));
+    auto q=b;q.rgb_in[2]^=1;assert(!pbr::BlendLayerProgram(s,q,0));
+    q=b;q.a_out[2]=0xC0;assert(!pbr::BlendLayerProgram(s,q,0)); // a stage-2 alpha write changes the output alpha
+    q=b;q.final_abcd=1;assert(!pbr::BlendLayerProgram(s,q,0));
+    q=b;q.rgb_in[3]=1;assert(!pbr::BlendLayerProgram(s,q,0));
+    q=b;q.tex_modes=0x41;assert(!pbr::BlendLayerProgram(s,q,0));
+    q=b;q.programmable=0;assert(!pbr::BlendLayerProgram(s,q,0));
 }

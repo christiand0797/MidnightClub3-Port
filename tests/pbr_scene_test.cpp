@@ -185,6 +185,16 @@ void BakedWindowLayer() {
     f.state.tss[2][kTssColorArg1]=1;f.state.tss[2][kTssColorArg2]=5;f.Expect(Status::UnsupportedBakedCombiner);
     f=BakedFixture{};windows(f.state);f.proof.window_layer_kept=true;f.state.textures[2]=0x9ABC;f.Expect(Status::UnsupportedBakedCombiner);
     f=BakedFixture{};f.proof.window_layer_kept=true;f.Expect(Status::UnsupportedBakedCombiner); // the proof is for that cascade only
+    // The blend-layer pixel shader, checked on the actual D3DPIXELSHADERDEF.
+    const auto program=[](State& s){
+        s.textures[1]=0x5678;s.ps=std::make_shared<PixelShader>();auto* d=s.ps->def;
+        const uint32_t ri[3]={0xC8C40000,0xC9C40000,0x1DCDCC3D},ro[3]={0xC0,0xD0,0xC00},ai[3]={0xD8D41010,0xD9D41010,0},ao[3]={0xC0,0xD0,0};
+        for(unsigned i=0;i<3;++i){d[i]=ai[i];d[26+i]=ao[i];d[34+i]=ri[i];d[45+i]=ro[i];}d[53]=0x11103;};
+    f=BakedFixture{};program(f.state);f.Expect(Status::UnsupportedBakedCombiner);
+    f.proof.blend_layer_kept=true;f.Expect(Status::Ready);
+    f.state.ps->def[9]=1;f.Expect(Status::UnsupportedBakedCombiner); // a final combiner
+    f=BakedFixture{};program(f.state);f.proof.blend_layer_kept=true;f.state.ps->def[36]^=1;f.Expect(Status::UnsupportedBakedCombiner);
+    f=BakedFixture{};program(f.state);f.proof.blend_layer_kept=true;f.state.textures[1]=0;f.Expect(Status::UnsupportedBakedCombiner);
 }
 void BakedDrawAndCombiner() {
     BakedFixture f;

@@ -54,6 +54,9 @@ struct BakedProof {
     // The pipeline adds the cascade's stage 1 (texture*TFACTOR) as the window layer over the encoded surface, times the
     // base's alpha, and writes that alpha: the facades' MODULATEALPHA_ADDCOLOR cascade instead of a one-stage albedo.
     bool window_layer_kept = false;
+    // The pipeline lays the program's second texture (t1*v0) over the encoded surface by t1.a*v0.a and writes
+    // t0.a*v0.a: the world's blend-layer pixel shader (markings, cracks, stains) instead of a fixed cascade.
+    bool blend_layer_kept = false;
     bool coefficient_colors_linear = false;
     bool output_policy_proven = false;
     // The dedicated shader reproduces the legacy fixed-function fog from the same draw's fog states.

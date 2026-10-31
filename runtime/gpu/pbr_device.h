@@ -38,7 +38,8 @@ struct Input {
     // The draw's own accepted colour texture, for a game_albedo material (bound as t0, gamma decoded in the shader).
     // The caller guarantees it is the texture whose content hash the assignment names, in a shader-readable state.
     ID3D12Resource* game_albedo=nullptr;
-    // The draw's stage-1 texture for a window layer (GeometryConstants::options[3]), bound as t4 in place of emission.
+    // The draw's stage-1 texture for a window or blend layer (GeometryConstants::options[3]), bound as t4 in place of
+    // emission.
     ID3D12Resource* game_layer=nullptr;
 };
 struct MapPlan {

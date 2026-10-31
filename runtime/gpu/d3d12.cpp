@@ -4726,13 +4726,16 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
             (Cmp(alpha_func)==D3D12_COMPARISON_FUNC_GREATER?0.5f:-0.5f))/255.0f,0.0f,1.0f);
         // The facades' lit night windows: stage 1 drawn as the window layer over the stage-0 surface.
         const bool window_layer=pbr::WindowLayerSurface(s,pk,assignment.stage);
+        // The world's blend-layer program (markings, cracks, stains): its second texture laid over the surface.
+        const bool blend_layer=pbr::BlendLayerProgram(s,pk,assignment.stage);
+        const bool layered=window_layer||blend_layer;
         // Original coverage, pass effects, fog and programmable deformation cannot be silently dropped.
         // Captures deliberately retain the original path until the evidence format also represents PBR draws.
         const char* gate =
             !bound_rt_ || bound_rt_->range != 1 ? "render target" : ext_ ? "renderer extension" : cap_ ? "capturing" :
             photo_policy_.Armed() ? "photo capture armed" : sh.prog ? "vertex program" : sh.quad ? "screen quad" :
             !sh.fixed_transform ? "not a fixed transform" : sh.car_paint ? "car paint" :
-            a.pretransformed ? "pretransformed" : !(pbr::SimpleAlbedoSurface(s,pk,assignment.stage)||window_layer) ? "texture combiner" :
+            a.pretransformed ? "pretransformed" : !(pbr::SimpleAlbedoSurface(s,pk,assignment.stage)||layered) ? "texture combiner" :
             a.topology != Topology::Triangles ? "not triangles" : !kept_blend ? "blended" : !key.zen ? "depth test off" :
             !key.zwrite ? "depth write off" :
             // an enabled ALWAYS test never discards (the world's state), exactly as the legacy alphatest()
@@ -4791,14 +4794,14 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
         fixed.authored_normals=authored_normals;fixed.face_normals=!authored_normals;fixed.assigned_uv=true;
         fixed.vertex_diffuse=!lit;
         // SimpleAlbedoSurface admitted stage 1 only as a CURRENT*TFACTOR tint; the baked mode folds the factor in.
-        if (window_layer && lit) { trace("lit draw with a window layer"); continue; }
-        if (window_layer) {
+        if (layered && lit) { trace("lit draw with a texture layer"); continue; }
+        if (layered) {
             const uint32_t layer_uv=s.tss[1][kTssTexCoordIndex];
             Tex* layer=textures.accepted_color[1];
-            if (layer_uv>=4 || !layer || !layer->res) { trace("window layer without a usable stage-1 texture"); continue; }
+            if (layer_uv>=4 || !layer || !layer->res) { trace("texture layer without a usable stage-1 texture"); continue; }
             fixed.layer_uv=int32_t(layer_uv);
         }
-        const bool factor_stage=!window_layer&&pk.ff[1][0]>1;
+        const bool factor_stage=!layered&&pk.ff[1][0]>1;
         if (factor_stage && lit) { trace("lit draw with a texture factor stage"); continue; }
         if (factor_stage) {
             const uint32_t f=s.rs[kRsTextureFactor];
@@ -4806,8 +4809,8 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
             fixed.diffuse_factor={float((f>>16)&255)/255.0f,float((f>>8)&255)/255.0f,float(f&255)/255.0f,
                                   factor_alpha?float(f>>24)/255.0f:1.0f};
         }
-        // SimpleAlbedoSurface: stage-0 alpha is the texture's, or texture*diffuse
-        fixed.alpha_from_diffuse=pk.ff[0][4]==4;
+        // SimpleAlbedoSurface: stage-0 alpha is the texture's, or texture*diffuse; the blend program's is t0.a*v0.a
+        fixed.alpha_from_diffuse=blend_layer||pk.ff[0][4]==4;
         observed.reason=pc::Reason::MissingGeometry;
         auto perf_mesh_t=PerfClock::now();
         // Static scenery repeats its exact bytes every frame: build each mesh once, then refresh it.
@@ -4821,6 +4824,9 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
                 uint64_t(int64_t(fixed.layer_uv))};
             mesh_key=MixHash(words,sizeof(words),mesh_key);
             mesh_key=MixHash(a.elements.data(),sizeof(a.elements),mesh_key);
+            // a layer's transformed coordinates are packed into the mesh: a changed matrix is a different mesh
+            if (fixed.layer_uv>=0 && s.tss[1][kTssTextureTransformFlags])
+                mesh_key=MixHash(s.transforms[17].data(),sizeof(s.transforms[17]),mesh_key);
             for (uint32_t i=0;i<a.buffer_count&&i<a.buffers.size();++i) {
                 const auto& b=a.buffers[i];const uint32_t layout[2]={b.bytes,b.stride};
                 mesh_key=MixHash(layout,sizeof(layout),mesh_key);
@@ -4856,6 +4862,13 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
         }
         g_pbr_perf.mesh+=PerfMs(perf_mesh_t);
         if (const auto st=mesh_status; st!=pbr::fixed_mesh::Status::Ready) {
+            if (st==pbr::fixed_mesh::Status::UnsupportedDraw && mesh_detail.empty()) {
+                char state[160];
+                snprintf(state,sizeof(state),"tci %u/%u ttf %X/%X uv %u layer %d vs %X layer mode %d",s.tss[0][kTssTexCoordIndex],
+                         s.tss[1][kTssTexCoordIndex],s.tss[0][kTssTextureTransformFlags],s.tss[1][kTssTextureTransformFlags],
+                         mesh_assignment.uv_set,fixed.layer_uv,s.vs_handle,window_layer?1:blend_layer?2:0);
+                mesh_detail=state;
+            }
             trace(std::string("mesh: ")+pbr::fixed_mesh::StatusText(st)+(mesh_detail.empty()?"":" ("+mesh_detail+")"));continue;
         }
         const auto& mesh=cached->second.mesh;
@@ -4877,6 +4890,7 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
             baked.opaque_no_cutout_proven=true;
             baked.coverage_kept=cutout_test||key.blend; // the clip and blend state below are the draw's own
             baked.window_layer_kept=window_layer; // stage 1 is added by the shader below (options[3], game_layer)
+            baked.blend_layer_kept=blend_layer;   // ... or laid over the surface by its alpha
             baked.coefficient_colors_linear=true; // Declared policy; the shader decodes like the albedo.
             baked.output_policy_proven=bound_rt_->fmt==kBgra;
             baked.fog_reproduced=true; // Same fogfactor/fog colour/order as the legacy fixed pipeline.
@@ -4955,6 +4969,8 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
             const uint32_t f=s.rs[kRsTextureFactor];
             input.material.emission_color={float((f>>16)&255)/255.0f,float((f>>8)&255)/255.0f,float(f&255)/255.0f,0};
             input.game_layer=textures.accepted_color[1]->res.Get();input.geometry.options[3]=1;
+        } else if (blend_layer) {
+            input.game_layer=textures.accepted_color[1]->res.Get();input.geometry.options[3]=2;
         }
         if (g_reversed_depth) {
             DrawConstants depth{};

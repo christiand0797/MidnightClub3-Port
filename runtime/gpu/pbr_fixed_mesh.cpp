@@ -164,7 +164,10 @@ Status Gate(const State& state,const Assembled& draw,const Assignment& assignmen
     const uint32_t coordinates=state.tss[assignment.stage][kTssTexCoordIndex];
     if(coordinates!=assignment.uv_set||state.tss[assignment.stage][kTssTextureTransformFlags])return Status::UnsupportedDraw;
     if(proof.layer_uv>=4||proof.layer_uv<-1)return Status::UnprovenDraw;
-    if(proof.layer_uv>=0&&(state.tss[1][kTssTexCoordIndex]!=uint32_t(proof.layer_uv)||state.tss[1][kTssTextureTransformFlags]))
+    // The layer's set as is, or through D3DTS_TEXTURE1 with D3DTTFF_COUNT2 (an overlay's tiling); no generation, no
+    // projection.
+    if(proof.layer_uv>=0&&(state.tss[1][kTssTexCoordIndex]!=uint32_t(proof.layer_uv)||
+                           (state.tss[1][kTssTextureTransformFlags]!=0&&state.tss[1][kTssTextureTransformFlags]!=2)))
         return Status::UnsupportedDraw;
     return Status::Ready;
 }
@@ -214,7 +217,12 @@ Status BuildImpl(const State& state,const Assembled& draw,const Assignment& assi
         auto d=proof.vertex_diffuse?Decode(diffuse,i):std::array<float,4>{1,1,1,1};
         for(unsigned c=0;c<3;++c)d[c]*=proof.diffuse_factor[c];
         d[3]=(proof.alpha_from_diffuse?d[3]:1.0f)*proof.diffuse_factor[3];
-        const auto t1=proof.layer_uv>=0?Decode(layer,i):std::array<float,4>{0,0,0,0};
+        auto t1=proof.layer_uv>=0?Decode(layer,i):std::array<float,4>{0,0,0,0};
+        if(proof.layer_uv>=0&&state.tss[1][kTssTextureTransformFlags]==2) {
+            // FixedVertexHlsl: mul(float4(u, v, 1, 0), D3DTS_TEXTURE1), the first two results
+            const auto& m=state.transforms[17];
+            t1={t1[0]*m[0]+t1[1]*m[4]+m[8],t1[0]*m[1]+t1[1]*m[5]+m[9],0,0};
+        }
         if(!Finite(p)||!Finite(n)||!Finite(t)||!Finite(d)||!Finite(t1))return Status::InvalidMesh;
         out.vertices[i]={{p[0],p[1],p[2]},{n[0],n[1],n[2]},{t[0],t[1]},d,{t1[0],t1[1]}};
         if(!Projectable(out.vertices[i].model_position,out.geometry,target))return Status::InvalidTransform;
