@@ -539,7 +539,4 @@ float RenderScale(uint32_t guest_height) {
     return guest_height ? std::max(h / guest_height, 0.1f) : 1.0f;
 }
 
-// the renderer (gpu/d3d12.cpp) declares and calls this name; force_1080p is already in Output(), so it is RenderScale
-float EnhancedRenderScale(uint32_t guest_height) { return RenderScale(guest_height); }
-
 }  // namespace app

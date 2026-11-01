@@ -66,11 +66,6 @@
 #include "gpu/vertex.h"
 #include "kernel/kernel.h"
 
-// Forward declaration for enhanced render scale
-namespace app {
-float EnhancedRenderScale(uint32_t guest_height);
-}
-
 using Microsoft::WRL::ComPtr;
 
 namespace gpu {
@@ -1094,6 +1089,15 @@ private:
     ComPtr<ID3D12PipelineState> dlss_fill_pso_;
     ID3D12Resource* present_src_ = nullptr;  // DLSS's output, shown in place of the frame target
     bool EnsureDlssTex(DlssTex& t, DXGI_FORMAT fmt, uint32_t w, uint32_t h, bool rtv, bool uav);
+    // MC3_TEXTURE_COVERAGE=1: every texture drawn into the frame, by content hash (the packs' names), with its draws
+    // and its draws through the dedicated PBR path; logs/texture_coverage.tsv, rewritten every ten seconds and
+    // merged with what an earlier run wrote (tools/pbr/coverage_report.py reads it per city)
+    struct Coverage {
+        uint64_t draws = 0, pbr = 0;
+    };
+    std::unordered_map<uint64_t, Coverage> coverage_;
+    bool coverage_loaded_ = false;
+    void WriteCoverage();
     bool BindVelocity(bool on);
     uint32_t VelocityRole(const PsoKey& k, const DrawShaders& sh, float (&taa)[4]) const;
     void DlssPreviousConstants(const State& s, uint32_t prim, uint32_t start, uint32_t count, DrawConstants& c);
@@ -1438,7 +1442,7 @@ void D3D12Backend::CreateGammaLut() {
 
 void D3D12Backend::LoadSettings() {
     scene_ = app::RenderResolution();
-    scale_ = app::EnhancedRenderScale(guest_h_);
+    scale_ = app::RenderScale(guest_h_);
     texturedumper::Update();
     ext_ = g_extension.get();
     if (ext_) {
@@ -1766,6 +1770,41 @@ bool D3D12Backend::BindTargets(const State& s) {
         bound_vel_ = vel;
     }
     return true;
+}
+
+bool CoverageOn() {
+    static const bool on = [] {
+        char v[8] = {};
+        return GetEnvironmentVariableA("MC3_TEXTURE_COVERAGE", v, sizeof(v)) && v[0] && v[0] != '0';
+    }();
+    return on;
+}
+
+void D3D12Backend::WriteCoverage() {
+    const auto path = app::ExeDir() / "logs" / "texture_coverage.tsv";
+    if (!coverage_loaded_) {
+        // an earlier run's counts carry over: drives across launches add up to one census
+        coverage_loaded_ = true;
+        if (FILE* f = _wfopen(path.c_str(), L"r")) {
+            char line[128];
+            while (std::fgets(line, sizeof(line), f)) {
+                unsigned long long h = 0, d = 0, b = 0;
+                if (std::sscanf(line, "%llx	%llu	%llu", &h, &d, &b) == 3) {
+                    coverage_[h].draws += d;
+                    coverage_[h].pbr += b;
+                }
+            }
+            std::fclose(f);
+        }
+    }
+    const auto part = path.wstring() + L".part";
+    FILE* f = _wfopen(part.c_str(), L"w");
+    if (!f) return;
+    for (const auto& [h, c] : coverage_)
+        std::fprintf(f, "%016llX\t%llu\t%llu\n", static_cast<unsigned long long>(h),
+                     static_cast<unsigned long long>(c.draws), static_cast<unsigned long long>(c.pbr));
+    std::fclose(f);
+    MoveFileExW(part.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
 }
 
 // DLSS's render target textures, remade at a new size; their views from the free RTV slots
@@ -4082,6 +4121,9 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
     pk.pbr = 0;
     stages.pbr_nrm = stages.pbr_orm = nullptr;
     sh.pkey = Hash(&pk, sizeof(pk));
+    if (CoverageOn() && bound_rt_ && DlssFrameTarget(bound_rt_))
+        for (Tex* tx : stages.accepted_color)
+            if (tx && tx->pbr_hash) coverage_[tx->pbr_hash].draws++;
     if (sh.velocity) {
         // a screen effect laid over the frame (glow, speed blur) keeps the plain pixel shader and leaves the target
         sh.plain_ps = count == 4 && stages.tgt[0];
@@ -5055,6 +5097,7 @@ void D3D12Backend::Present(const Surface& front) {
     DrawFrame(t, bi);
     present_src_ = nullptr;
     DlssNextFrame(front, t);
+    if (CoverageOn() && presents_ % 600 == 599) WriteCoverage();
     if (photo.capture) CapturePhoto(photo, bi);
     photo_observed_ = {};
     Submit(false);
@@ -5470,6 +5513,7 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
             trace(std::string("record: ")+pbr::device::StatusText(result.status));continue;
         }
         trace("drawing through the dedicated path");
+        if (CoverageOn()) coverage_[assignment.original_texture].pbr++;
         ++g_pbr_perf.drawn;
         ++frame.pbr_pending_draws[row_index];
         observed.reason=pc::Reason::Ready;
@@ -5553,7 +5597,7 @@ void D3D12Backend::ApplySettings() {
     if (texturedumper::Update()) ReleasePackTextures();
     std::lock_guard lock(app::UiLock());
     app::Mode scene = app::RenderResolution();
-    float want = app::EnhancedRenderScale(guest_h_);
+    float want = app::RenderScale(guest_h_);
     bool remake = ext_ && ext_->Settings();
     if (scene != scene_ || std::fabs(want - scale_) > 1e-4f || remake) {
         Flush();

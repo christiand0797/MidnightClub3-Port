@@ -29,7 +29,6 @@
 #include "xdk/hle.h"
 
 namespace mc3 {
-namespace {
 
 constexpr uint32_t kHumanController = 0x47684C;  // the player's car controller vtable
 constexpr uint64_t kLeaseMs = 150;  // several 60 Hz updates, so one late frame does not hand the arrows back
@@ -37,10 +36,15 @@ constexpr uint64_t kLeaseMs = 150;  // several 60 Hz updates, so one late frame 
 constexpr uint16_t kUp = 1, kDown = 2, kLeft = 4, kRight = 8;
 constexpr int kBrake = 6, kGas = 7;
 
+namespace {
+// Injectable time source: defaults to GetTickCount64, overridable by tests.
+uint64_t (*g_now_ms)() = GetTickCount64;
+
 std::atomic<uint64_t> g_driving_until{0};
+}
 
 bool Driving() {
-    const bool driving = GetTickCount64() < g_driving_until.load(std::memory_order_relaxed);
+    const bool driving = g_now_ms() < g_driving_until.load(std::memory_order_relaxed);
     static std::atomic<bool> was{false};
     if (was.exchange(driving) != driving) {
         static std::atomic<unsigned> changes{0};
@@ -49,7 +53,11 @@ bool Driving() {
     return driving;
 }
 
-}  // namespace
+// ---- test accessors ----
+uint64_t DrivingUntilForTest() { return g_driving_until.load(std::memory_order_relaxed); }
+void SetDrivingUntilForTest(uint64_t ms) { g_driving_until.store(ms, std::memory_order_relaxed); }
+void SetNowMsForTest(uint64_t (*fn)()) { g_now_ms = fn; }
+void ResetNowMsForTest() { g_now_ms = GetTickCount64; }
 
 // GameInfo::pad: the first controller's arrows as driving controls while driving
 void ArrowDriving(int port, input::Pad& pad) {
@@ -76,6 +84,6 @@ X86_EXTERN_FUNC(__imp__sub_002C8BC0);
 X86_FUNC(sub_002C8BC0) {
     const uint32_t self = ctx.ecx;
     if (self && mem::IsCommitted(self + 4) && kernel::R32(self) == mc3::kHumanController)
-        mc3::g_driving_until.store(GetTickCount64() + mc3::kLeaseMs, std::memory_order_relaxed);
+        mc3::g_driving_until.store(mc3::g_now_ms() + mc3::kLeaseMs, std::memory_order_relaxed);
     __imp__sub_002C8BC0(ctx, base);
 }
