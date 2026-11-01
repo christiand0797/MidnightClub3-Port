@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Upscale original Bink pictures without changing their frame order or timing.
 
-  py -3.12 tools/video/upscale_movies.py --model realesrgan-x4plus
+  py -3.12 tools/video/upscale_movies.py --model remacri-4x   (natural detail; x4plus looks plastic)
   py -3.12 tools/video/upscale_movies.py --status
   py -3.12 tools/video/upscale_movies.py --audit-only --only mc3intro
 
@@ -38,15 +38,18 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
-ASSETS = ROOT / "templates" / "game" / "assets" / "video"
-OUT = ROOT / "templates" / "game" / "out" / "native" / "video_hd"
+# MC3_ASSETS / MC3_NATIVE: the game files and the folder holding mc3.exe on a player's PC (tools/enhance/build_hd.py)
+ASSETS = Path(os.environ.get("MC3_ASSETS") or ROOT / "templates" / "game" / "assets") / "video"
+OUT = Path(os.environ.get("MC3_NATIVE") or ROOT / "templates" / "game" / "out" / "native") / "video_hd"
 QUARANTINE = ROOT / ".local" / "video-upscale-candidates"
 ESRGAN_DIR = ROOT / "upscale_tools" / "realesrgan-20220424"
 SCALE = 3
 CHUNK = 400
 PAUSE_CHUNK = 8
 PAUSE_POLL_SECONDS = 1.0
-PIPELINE_VERSION = 1
+PIPELINE_VERSION = 2  # 2: BT.709 matrix and colour tags (1 wrote BT.601 untagged, decoded as 709: faded colour)
+# HD pictures are decoded as HD video, BT.709; RGB is converted with that matrix and the stream says so
+BT709 = ("-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv")
 MODELS = {  # folder, inference scale, post-resize unsharp amount
     "realesr-animevideov3": (ESRGAN_DIR / "models", 3, 0.5),
     "realesrgan-x4plus": (ESRGAN_DIR / "models", 4, 0.25),
@@ -299,7 +302,7 @@ def recipe_for(src, source, identity):
     return {"pipeline_version": PIPELINE_VERSION, "source_sha256": sha256(src),
             "source_bytes": src.stat().st_size, "source": source,
             "model": identity, "output_scale": SCALE,
-            "encoder": {"codec": "libx264", "preset": "slow", "crf": 16, "pix_fmt": "yuv420p",
+            "encoder": {"codec": "libx264", "preset": "slow", "crf": 16, "pix_fmt": "yuv420p", "color": "bt709-tv",
                         "time_base": str(1 / fps), "video_track_timescale": fps.numerator}}
 
 
@@ -583,8 +586,9 @@ def upscale_movie(ff, src, dst, model, source=None, recipe=None, chunk_size=CHUN
             cooperate(pause_file, stop_file, pause_owner)
             enc = subprocess.Popen([binary(ff, "ffmpeg"), "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
                                     "-s", f"{W}x{H}", "-r", f"{fps.numerator}/{fps.denominator}", "-i", "-",
-                                    "-an", "-vf", f"unsharp=5:5:{sharpen}", "-c:v", "libx264", "-preset", "slow",
-                                    "-crf", "16", "-pix_fmt", "yuv420p",
+                                    "-an", "-vf", f"unsharp=5:5:{sharpen},scale=out_color_matrix=bt709:out_range=tv",
+                                    "-c:v", "libx264", "-preset", "slow", "-crf", "16", "-pix_fmt", "yuv420p",
+                                    *BT709,
                                     "-enc_time_base", f"{fps.denominator}:{fps.numerator}",
                                     "-video_track_timescale", str(fps.numerator), "-movflags", "+faststart", str(part)],
                                    stdin=subprocess.PIPE)
@@ -797,7 +801,7 @@ def run_report(args, rows, mode):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--only", default="", help="only movies whose path contains this")
-    ap.add_argument("--model", default="realesrgan-x4plus", choices=sorted(MODELS))
+    ap.add_argument("--model", default="remacri-4x", choices=sorted(MODELS))
     ap.add_argument("--force", action="store_true", help="redo even verified outputs made with this recipe")
     ap.add_argument("--status", action="store_true", help="read-only marker/frame inventory; no GPU")
     ap.add_argument("--audit-only", action="store_true", help="decode/validate published files; no GPU or file changes")

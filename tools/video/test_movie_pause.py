@@ -239,12 +239,13 @@ class MoviePauseTests(unittest.TestCase):
     def test_default_chunk_and_picture_recipe_are_unchanged_without_pause_option(self):
         original_recipe = copy.deepcopy(self.recipe)
         self.run_movie()
-        self.assertEqual(video.CHUNK, 400); self.assertEqual(video.PIPELINE_VERSION, 1)
+        self.assertEqual(video.CHUNK, 400); self.assertEqual(video.PIPELINE_VERSION, 2)
         self.assertEqual([len(batch) for batch in self.batches], [19])
         self.identity_mock.assert_not_called()
         self.assertEqual(json.loads(self.dst.with_suffix(".upscale.json").read_text())["recipe"], original_recipe)
         self.assertEqual(self.encoder_command[self.encoder_command.index("-preset")+1], "slow")
         self.assertEqual(self.encoder_command[self.encoder_command.index("-crf")+1], "16")
+        self.assertEqual(self.encoder_command[self.encoder_command.index("-colorspace")+1], "bt709")
 
     def test_dangling_pause_marker_is_presence_and_explicit_stop_wins(self):
         try:

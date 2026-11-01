@@ -261,7 +261,7 @@ class ValidationTests(unittest.TestCase):
                 dst.with_suffix(".upscale.json").write_text(json.dumps(record)); targets.append(dst)
             before = {p: p.read_bytes() for p in output.iterdir()}
             report_path = folder / "audit.json"
-            base_argv = ["upscale_movies.py", "--audit-only", "--report", str(report_path)]
+            base_argv = ["upscale_movies.py", "--model", "realesrgan-x4plus", "--audit-only", "--report", str(report_path)]
             with (mock.patch.object(video, "ffmpeg_bin", return_value=folder),
                   mock.patch.object(video, "movie_paths", return_value=sources),
                   mock.patch.object(video, "ASSETS", folder), mock.patch.object(video, "OUT", output),
