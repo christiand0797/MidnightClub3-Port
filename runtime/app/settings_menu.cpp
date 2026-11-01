@@ -353,10 +353,10 @@ void Quality(Settings& s) {
     Slider("Clearcoat reflection", &s.graphics.car_reflection, 0, 2, "%.2f",
            "Reflection of the surroundings in the clearcoat, stronger at glancing angles (Fresnel).");
     ImGui::EndDisabled();
-    Slider("Level of detail", &s.graphics.lod, 0.5f, 4, "x%.2f",
+    Slider("Level of detail", &s.graphics.lod, 0.25f, 4, "x%.2f",
            "How far cars, people and props keep their detail and stay drawn. Above 1 also pushes the far clip out "
            "(up to x2) from the next race or free roam.");
-    Slider("Field of view", &s.graphics.fov_scale, 0.75f, 1.5f, "x%.2f",
+    Slider("Field of view", &s.graphics.fov_scale, 0.5f, 2, "x%.2f",
            "The driving camera's field of view; the mirror and menus keep theirs.");
 }
 

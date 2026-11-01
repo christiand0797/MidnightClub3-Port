@@ -639,15 +639,27 @@ X86_FUNC(sub_0032F840) {
 }
 
 // once a frame (the time manager hook): every tracked value set from the current settings
+// Only applies tuning to player vehicles (tracked in g_player_sims). Traffic and opponents
+// are skipped entirely to preserve their original values.
 void ApplyVehicleTuning() {
     const auto bank = SettingsSnapshot();
     std::lock_guard<std::mutex> lock(g_lock);
+    static unsigned skip_log = 0;
+    unsigned frame_skips = 0;
     for (auto it = g_tuned.begin(); it != g_tuned.end();) {
+        // Skip non-player vehicles entirely - traffic and opponents keep their original values
+        if (it->second.owner != 0 && !g_player_sims.count(it->second.owner)) {
+            ++it;
+            ++frame_skips;
+            continue;
+        }
         if (!Apply(it->first, it->second, SimSettings(bank, it->second.owner)))
             it = g_tuned.erase(it);  // the block was freed or reloaded: the visitor tracks it again if it comes back
         else
             ++it;
     }
+    if (frame_skips && skip_log++ < 10)
+        LOGR("tuning: skipped %u non-player vehicle fields (traffic/opponents unchanged)", frame_skips);
     for (auto& [car, c] : g_player_cars)
         if (g_player_sims.count(c.sim)) ApplyRender(car, c, bank.ForCfg(c.cfg));
 }
