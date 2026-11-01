@@ -20,3 +20,11 @@
 # Python caches and locally downloaded PBR model weights
 __pycache__/
 *.py[cod]
+
+# tools/enhance/build_hd.py run from a checkout (a release keeps these in enhance\)
+/work/
+/ffmpeg/
+/state.json
+/build_hd.log
+/build_hd.pbr*.log
+/done.txt

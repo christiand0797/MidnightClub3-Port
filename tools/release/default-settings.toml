@@ -1,0 +1,36 @@
+# The release's first-run settings (config\default-settings.toml beside mc3.exe): the developer's HD look.
+# Used only when settings.toml does not exist yet; everything here can be changed in game with F1.
+anisotropic_filtering = 16
+display_mode = 'borderless'
+fps_cap = 60
+render_percent = 200
+vsync = true
+
+[graphics]
+anti_aliasing = 1
+anti_aliasing_strength = 1.0
+car_paint = true
+car_reflection = 1.0
+car_relight = 1.0
+car_roughness = 0.42
+car_specular = 1.0
+glow = 2.0
+hd_movies = true
+headlights = 2.0
+lod = 4.0
+motion_blur = 0.0
+neon = 3.0
+post = true
+sharpen = 0.35
+sixty_fps = true
+texture_detail = 2
+texture_pack = true
+
+[pbr]
+enabled = false
+pack_path = ''
+quality = 'ultra'
+
+[pbr.parameters]
+height_mode = 'parallax'
+parallax_height = 0.04

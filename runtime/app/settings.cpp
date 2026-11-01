@@ -200,6 +200,38 @@ void LoadPbr(const toml::table& root,pc::Settings& settings) {
     }
     pc::Sanitize(settings);
 }
+// config\hd-pack.txt: the PBR pack "Make HD" (tools/enhance/build_hd.py) built on this PC, as pack_path = and sha256 =
+// lines. The builder never writes settings.toml (a running game would save over it); the next start takes the pack
+// once, unless the player already uses a different pack, and renames the note so turning PBR off later sticks.
+bool AdoptHdPack(pc::Settings& settings) {
+    const auto note = ExeDir() / "config" / "hd-pack.txt";
+    std::ifstream f(note);
+    if (!f) return false;
+    std::string line, pack, digest;
+    while (std::getline(f, line)) {
+        const auto eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        auto trim = [](std::string v) {
+            const auto a = v.find_first_not_of(" \t\r'\""), b = v.find_last_not_of(" \t\r'\"");
+            return a == std::string::npos ? std::string{} : v.substr(a, b - a + 1);
+        };
+        const auto key = trim(line.substr(0, eq)), value = trim(line.substr(eq + 1));
+        if (key == "pack_path") pack = value;
+        if (key == "sha256") digest = value;
+    }
+    f.close();
+    const bool hex = digest.size() == 64 && digest.find_first_not_of("0123456789abcdef") == std::string::npos;
+    const bool relative = !pack.empty() && pack.find("..") == std::string::npos && pack.find(':') == std::string::npos;
+    if (!hex || !relative) return false;
+    if (!settings.pack_path.empty() && settings.pack_path != pack) return false;
+    settings.enabled = true;
+    settings.pack_path = pack;
+    settings.approved_manifest_sha256 = digest;
+    std::error_code ec;
+    std::filesystem::rename(note, note.parent_path() / "hd-pack.adopted.txt", ec);
+    LOGR("PBR: adopted the pack Make HD built (%s, %s)", pack.c_str(), digest.c_str());
+    return true;
+}
 toml::table PbrTable(pc::Settings settings) {
     pc::Sanitize(settings);
     toml::table result{{"enabled",settings.enabled},{"pack_path",settings.pack_path},
@@ -269,9 +301,14 @@ void Load() {
     try {
         t = toml::parse_file(File().wstring());
     } catch (...) {
-        // none yet (first run) or unreadable: the defaults, and the game's load hook and the enhancements file
+        // none yet (first run) or unreadable: the release's recommended preset (config\default-settings.toml, the
+        // developer's HD look) when it ships one, else the defaults; the game's load hook and the enhancements file
         // still run
-        t = toml::table{};
+        try {
+            t = toml::parse_file((ExeDir() / "config" / "default-settings.toml").wstring());
+        } catch (...) {
+            t = toml::table{};
+        }
     }
     std::string mode = t["display_mode"].value_or(std::string(kModes[uint32_t(s.display_mode)]));
     for (uint32_t i = 0; i < 3; i++)
@@ -325,6 +362,7 @@ void Load() {
                 if (auto v = (*c)[f.key].value<int64_t>()) *f.u = uint32_t(std::clamp(*v, int64_t(f.lo), int64_t(f.hi)));
         }
     LoadPbr(t,s.pbr);
+    const bool adopted = AdoptHdPack(s.pbr);
     LoadEnhancements(s, t["graphics"].as_table());
     s.render_percent = std::clamp(s.render_percent, 25u, 400u);
     s.width = std::min(s.width, resolution::kMaxDimension);
@@ -332,6 +370,7 @@ void Load() {
     if (!s.width || !s.height) s.width = s.height = 0;
     if (!resolution::ValidScene({s.graphics.scene_width, s.graphics.scene_height}))
         s.graphics.scene_width = s.graphics.scene_height = 0;
+    if (adopted) Save();
 }
 
 namespace {

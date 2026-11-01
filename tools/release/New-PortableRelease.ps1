@@ -14,7 +14,8 @@ param(
     [string]$OutputDirectory,
     [string]$CRTDirectory,
     [string]$ContentManifest,
-    [string]$ContentManifestUrl
+    [string]$ContentManifestUrl,
+    [switch]$NoEnhance  # leave out Make HD (enhance\, Make HD.cmd, the HD first-run settings)
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -58,6 +59,59 @@ Get-ChildItem -LiteralPath $compilerSource -Recurse -File | Where-Object {
 # xbe_recomp.exe needs the C++ runtime beside it
 foreach ($dll in $crtDlls) { Copy-Item -LiteralPath $dll.FullName -Destination (Join-Path $compilerStage $dll.Name) }
 if (Get-ChildItem -LiteralPath $stage -Recurse -File -Filter 'mc3.dll') { throw 'mc3.dll (recompiled game code) must not be packaged.' }
+# "Make HD" (tools/enhance/build_hd.py): the HD textures, PBR pack and HD movies built on the player's PC from their own
+# disc. enhance\ holds a private Python with the packages the tools import, the tools as laid out in the repository,
+# the Real-ESRGAN upscaler with the models the pipeline uses and the PBR networks (DeepBump, PBRify as ONNX). No game
+# texture, map or movie is packaged; ffmpeg is fetched by the movie step itself.
+if (-not $NoEnhance) {
+    $cache = Join-Path $projectRoot 'out/release-cache'
+    [void][IO.Directory]::CreateDirectory($cache)
+    $enhance = Join-Path $stage 'enhance'
+    $pythonZip = Join-Path $cache 'python-3.12.10-embed-amd64.zip'
+    if (-not (Test-Path -LiteralPath $pythonZip)) {
+        Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip' -OutFile $pythonZip
+    }
+    if ((Get-FileHash -LiteralPath $pythonZip -Algorithm SHA256).Hash -ne '4ACBED6DD1C744B0376E3B1CF57CE906F9DC9E95E68824584C8099A63025A3C3') {
+        throw "$pythonZip does not match the pinned Python 3.12.10 embeddable package."
+    }
+    $python = Join-Path $enhance 'python'
+    Expand-Archive -LiteralPath $pythonZip -DestinationPath $python
+    # the embeddable package ignores site-packages unless its ._pth file names it
+    [IO.File]::WriteAllText((Join-Path $python 'python312._pth'), "python312.zip`r`n.`r`nLib\site-packages`r`nimport site`r`n", [Text.UTF8Encoding]::new($false))
+    $sitePackages = Join-Path $python 'Lib/site-packages'
+    & py -3.12 -m pip install --quiet --disable-pip-version-check --target $sitePackages --only-binary=:all: `
+        --platform win_amd64 --python-version 3.12 --implementation cp `
+        numpy==2.4.3 pillow==12.1.1 scipy==1.17.1 onnxruntime-directml==1.24.4
+    if ($LASTEXITCODE) { throw 'pip could not fetch the Make HD packages.' }
+    Get-ChildItem -LiteralPath $sitePackages -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force
+    Get-ChildItem -LiteralPath $sitePackages -Directory | Where-Object Name -In 'bin' | Remove-Item -Recurse -Force
+    $toolFiles = @(
+        'tools/enhance/build_hd.py',
+        'tools/texture_pack/extract_all.py', 'tools/texture_pack/upscale.py', 'tools/texture_pack/xiso.py',
+        'tools/texture_pack/dave.py', 'tools/texture_pack/texfile.py', 'tools/texture_pack/xbpf.py', 'tools/texture_pack/xbtex.py',
+        'tools/pbr/pbrlib.py', 'tools/pbr/generate.py', 'tools/pbr/test_pack.py', 'tools/pbr/sets/hd_release.json',
+        'tools/video/upscale_movies.py')
+    $models = 'tools/pbr/models'
+    $upscaler = 'upscale_tools/realesrgan-20220424'
+    $toolFiles += @("$models/deepbump256.onnx", "$models/pbrify/1x-PBRify_NormalV3.onnx", "$models/pbrify/1x-PBRify_RoughnessV2.onnx",
+        "$models/pbrify/1x-PBRify_Height.onnx", "$models/pbrify/LICENSE",
+        "$upscaler/realesrgan-ncnn-vulkan.exe", "$upscaler/vcomp140.dll",
+        'upscale_tools/models_extra/ultrasharp-4x.param', 'upscale_tools/models_extra/ultrasharp-4x.bin',
+        'upscale_tools/models_extra/remacri-4x.param', 'upscale_tools/models_extra/remacri-4x.bin')
+    foreach ($relative in $toolFiles) {
+        $source = Join-Path $projectRoot $relative
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "Make HD needs $relative (models: tools/pbr/generate.py --download-models then --export-onnx; upscaler: upscale_tools)."
+        }
+        $target = Join-Path $enhance $relative
+        [void][IO.Directory]::CreateDirectory((Split-Path -Parent $target))
+        Copy-Item -LiteralPath $source -Destination $target
+    }
+    [void][IO.Directory]::CreateDirectory((Join-Path $enhance 'tools/pbr/overrides'))
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Make HD.cmd') -Destination (Join-Path $stage 'Make HD.cmd')
+    [void][IO.Directory]::CreateDirectory((Join-Path $stage 'config'))
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'default-settings.toml') -Destination (Join-Path $stage 'config/default-settings.toml')
+}
 foreach ($name in @('LICENSE', 'THIRD_PARTY.txt')) { Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination (Join-Path $stage $name) }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/INSTALL.md') -Destination (Join-Path $stage 'INSTALL.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/PLAYER_GUIDE.md') -Destination (Join-Path $stage 'PLAYER_GUIDE.md')
@@ -73,28 +127,39 @@ if ($ContentManifest) {
     [IO.File]::WriteAllText((Join-Path $stage 'content-source.txt'), $descriptor, $utf8)
 }
 $setupInstructions = if ($ContentManifest) {
-    "3. First launch automatically downloads and verifies this release's complete game/media content.`n   Keep an internet connection available and enough free disk space for installation.`n   Offline: place all matching .mc3c parts next to mc3.exe before launching."
+    "3. The first start downloads the game content. Keep the internet on and wait."
 } else {
-    "3. Select your own original Xbox USA Midnight Club 3 DUB Edition Remix ISO when asked.`n   Putting the matching ISO beside mc3.exe skips that dialog automatically."
+    "3. When it asks for your game, pick your Midnight Club 3 DUB Edition Remix (USA) .iso file.`n   (Tip: put the .iso in this folder and it finds it by itself.)"
+}
+$hdInstructions = if ($NoEnhance) { '' } else {
+    "5. When it asks ""Make the game HD?"", click YES. A black window makes HD textures,`n   shiny realistic materials and HD movies from your own disc. It takes a few hours.`n   It pauses while you play, so leave it on overnight. When it says ALL DONE!,`n   start the game again. (Closed it? Double-click ""Make HD"" in this folder.)`n"
 }
 [IO.File]::WriteAllText((Join-Path $stage 'START HERE.txt'), @"
-Midnight Club 3: DUB Edition Remix - native Windows PC development build
+MIDNIGHT CLUB 3: DUB EDITION REMIX - PC VERSION
+===============================================
 
-1. Extract the ENTIRE ZIP to a writable folder, for example Games\MidnightClub3.
+HOW TO PLAY
+1. Make sure you EXTRACTED this ZIP (right-click it, Extract All). Don't play inside the ZIP.
 2. Double-click mc3.exe.
+   If Windows says "Windows protected your PC": click More info, then Run anyway.
 $setupInstructions
+4. The first start builds the game for your PC. Wait a few minutes (only the first time).
+$hdInstructions
+6. Play! Next time use the "Midnight Club 3 Remix (Native)" shortcut on your desktop.
 
-The game checks the disc, remembers its location, creates a desktop shortcut, and starts.
-The first launch builds the game's code from your disc with the bundled compiler folder (a few minutes, once).
-No emulator, Python, administrator rights, or separate setup app is needed.
-Use F1 (or controller Back + Y) for PC graphics and tuning settings.
-Keep every DLL and the compiler folder next to mc3.exe. Full instructions: INSTALL.md.
-Controls, F1/F2 menus, customization and troubleshooting: PLAYER_GUIDE.md.
+KEYS
+  Arrow keys = move in menus      Space = choose      Escape = back      Enter = start/pause
+  F1 = PC settings (graphics, cars, more)              F2 = car tuning
+  Controller: plug it in before starting. Back + Y = PC settings.
 
-Version: $Version
-Source revision: $SourceRevision
-Saves and personal settings are never included. Full-content packages fetch separately checksummed release assets.
-This is a development release; see the GitHub release notes for tested features and known limitations.
+PROBLEMS?
+  Slow or choppy?  Press F1, Display, and lower Render scale (try 100%).
+  Don't delete or move anything in this folder (the DLLs, compiler and enhance folders are needed).
+  More help: INSTALL.md and PLAYER_GUIDE.md in this folder.
+
+Version: $Version   Source revision: $SourceRevision
+Your saves and settings stay on this PC. Nothing from the game is downloaded: the HD look is made from your disc.
+This is a fan-made development build; the GitHub release notes list what was tested.
 "@, $utf8)
 
 $files = @(Get-ChildItem -LiteralPath $stage -File)

@@ -64,3 +64,32 @@ freely, subject to the following restrictions:
 2. Altered source versions must be plainly marked as such, and must not be
    misrepresented as being the original software.
 3. This notice may not be removed or altered from any source distribution.
+
+--------------------------------------------------------------------------------
+Make HD (the enhance folder of the portable release)
+
+These run on the player's PC to build HD textures, PBR maps and HD movies from the
+player's own disc. Each keeps its own license; full texts are at the links.
+
+Python 3.12.10 embeddable package - Python Software Foundation License
+  https://www.python.org/  (license: enhance\python\LICENSE.txt)
+NumPy - BSD-3-Clause - https://numpy.org/
+SciPy - BSD-3-Clause - https://scipy.org/
+Pillow - MIT-CMU (HPND) - https://python-pillow.org/
+ONNX Runtime (DirectML build) - MIT - https://github.com/microsoft/onnxruntime
+  includes Microsoft DirectML, redistributable under its license - https://github.com/microsoft/DirectML
+Their bundled dependencies (protobuf, flatbuffers, sympy, mpmath, packaging, coloredlogs, humanfriendly)
+  keep their licenses in each package's .dist-info folder.
+Real-ESRGAN ncnn Vulkan (realesrgan-ncnn-vulkan.exe) - BSD-3-Clause, Xintao Wang
+  https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan ; built on Tencent ncnn (BSD-3-Clause)
+  https://github.com/Tencent/ncnn ; vcomp140.dll is the Microsoft OpenMP runtime (Visual C++ redistributable)
+4x-UltraSharp (Kim2091) - CC BY-NC-SA 4.0 - https://openmodeldb.info/models/4x-UltraSharp
+4x Remacri (FoolhardyVEVO) - CC BY-NC-SA 4.0 - https://openmodeldb.info/models/4x-Remacri
+  (converted to ncnn by the Upscayl project, https://github.com/upscayl/upscayl)
+DeepBump (deepbump256.onnx), Hugo Tini - GPL-3.0 - https://github.com/HugoTini/DeepBump
+  (the unmodified network; its source is at that address)
+PBRify_Remix (Kim2091) - CC0 1.0 - https://github.com/Kim2091/PBRify_Remix
+  (the three networks exported to ONNX by tools/pbr/generate.py --export-onnx)
+FFmpeg 9.0.2 essentials build (gyan.dev) - GPL-3.0 - downloaded by Make HD's movie step, not shipped
+  https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2 ; source: https://ffmpeg.org/
+The model licenses above are non-commercial (NC): this project is free and must stay that way.
