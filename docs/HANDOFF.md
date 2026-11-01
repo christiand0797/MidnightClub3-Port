@@ -10,6 +10,25 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-11-01 00:10 (lead Claude session: live checks, scrape counter, a hang on an in-progress renderer):**
+- **Verified by driving (career free roam, Player 1 save untouched):** steady 60 fps in San Diego; minimap is a clean
+  circle (no black square); pedestrians animate with limbs (a woman on the sidewalk changed pose between frames:
+  standing, crouching, stepping); slammed '57 Bel Air (F1 ride height -0.45 m front/rear, temporarily, now restored
+  to the user's 0.304/0.0) sits with the body on the ground and wheels tucked in the arches, nothing through the
+  floor; the private chassis floor applied ("clearance 0.681 -> 0.000") and wheels stayed in contact.
+- **New diagnostic** `templates/game/src/game/scrape_diag.cpp` (commit ede1598): counts 0x1027D0 contact sets, 0x36F60
+  sparks, 0x10B130 scrape sounds; logs "scrape: ..." at most every 5 s. First run: 19 sparks + 20 scrape sounds in a
+  5 s window, but the car was against a wall then, so this is not yet clean proof of road scraping; repeat on open
+  road at stock vs slammed height.
+- **Hang (unresolved, likely not game code):** at 198.6 s the game froze; the render thread sat in
+  `NtGdiDdDDIWaitForSynchronizationObjectFromCpu` (D3D12 CPU wait on a fence the GPU never signalled), no TDR in the
+  System log, GPU at 100% from the Remacri movie upscaler. The exe had been built at 00:02 from a tree containing an
+  **uncommitted, actively edited DLSS/TAA change** by another session (runtime/gpu/d3d12.cpp +414 lines, shaders.cpp
+  velocity output + `float4 taa` in the cbuffer, dlss.cpp/.h, cmake/DLSS.cmake). Whoever owns that work: check fence
+  signalling in the new path; until it lands, builds from this tree are not a clean baseline. Also: the lldb symbols
+  for mc3.exe frames were wrong (mc3.exe vs mc3.dll/Game.pdb split); detaching lldb from the hung process killed it.
+- Live input lags 5-10 s behind the pad file at times; check `input: live press` timestamps before reading results.
+
 **2026-10-31 (Make HD: releases build the developer's look on the player's PC):**
 - **Why.** A fresh release looked like the console: the HD textures, PBR pack and HD movies on the dev install are
   upscales/derivatives of the game's own art, so they are built per player from their disc, never shipped.
