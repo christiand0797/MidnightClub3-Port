@@ -66,6 +66,33 @@ def download_models():
     print("models ok:", P.DEEPBUMP.exists(), P.PBRify.available())
 
 
+def export_onnx():
+    """PBRify's three networks as ONNX beside the .pth files (pbrlib then runs them through onnxruntime): what the
+    release's HD builder ships, so a player's PC needs no torch. Needs torch, spandrel and onnx once, here."""
+    import numpy as np
+    import onnxruntime as ort
+    import spandrel
+    import torch
+    for f in P.PBRify.FILES.values():
+        sd = torch.load(str(P.PBRIFY_DIR / f), map_location="cpu", weights_only=True)
+        for key in ("params_ema", "params"):
+            if isinstance(sd, dict) and key in sd:
+                sd = sd[key]
+        net = spandrel.ModelLoader().load_from_state_dict(sd).model.eval()
+        out = P.PBRify.onnx_path(f)
+        torch.onnx.export(net, torch.rand(1, 3, 96, 80), str(out), input_names=["input"], output_names=["output"],
+                          opset_version=17, dynamic_axes={"input": {2: "h", 3: "w"}, "output": {2: "h", 3: "w"}},
+                          dynamo=False)
+        x = np.random.default_rng(1).random((1, 3, 160, 224), dtype=np.float32)
+        with torch.no_grad():
+            want = net(torch.from_numpy(x)).numpy()
+        got = ort.InferenceSession(str(out), providers=["CPUExecutionProvider"]).run(None, {"input": x})[0]
+        diff = float(np.abs(want - got).max())
+        if diff > 1e-3:
+            raise SystemExit(f"{out.name}: ONNX differs from torch by {diff}")
+        print(f"{out.name}: max difference {diff:.1e}")
+
+
 def load_manifest(path=MANIFEST):
     if path.exists():
         return json.load(open(path, encoding="utf-8"))
@@ -141,11 +168,15 @@ def main():
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--threads", type=int, default=6, help="CPU threads for the PBRify networks")
     ap.add_argument("--download-models", action="store_true")
+    ap.add_argument("--export-onnx", action="store_true", help="write PBRify's networks as ONNX (needs torch) and exit")
     ap.add_argument("--shard", help="K/N: only every Nth job starting at K (0-based), with its own manifest")
     ap.add_argument("--merge", action="store_true", help="fold the shard manifests into manifest.json and exit")
     args = ap.parse_args()
     if args.merge:
         merge_shards()
+        return
+    if args.export_onnx:
+        export_onnx()
         return
     shard = None
     if args.shard:

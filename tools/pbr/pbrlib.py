@@ -29,7 +29,9 @@ from PIL import Image
 from scipy import ndimage
 
 ROOT = Path(__file__).resolve().parents[2]
-TEXTURES = ROOT / "templates" / "game" / "out" / "native" / "textures"
+# MC3_NATIVE: the folder holding mc3.exe, when the tools run from a player's install (tools/enhance/build_hd.py)
+NATIVE = Path(os.environ.get("MC3_NATIVE") or ROOT / "templates" / "game" / "out" / "native")
+TEXTURES = NATIVE / "textures"
 SOURCE = TEXTURES / "source"
 REPLACE = TEXTURES / "replace"
 PBR = TEXTURES / "pbr"
@@ -368,27 +370,51 @@ class PBRify:
     reliable in absolute terms on MC3 textures (a black rubber tyre comes out 0.2), so only its variation is used."""
 
     FILES = {"normal": "1x-PBRify_NormalV3.pth", "rough": "1x-PBRify_RoughnessV2.pth", "height": "1x-PBRify_Height.pth"}
+    # the same networks exported by generate.py --export-onnx (max difference ~3e-5): what player PCs run, without torch
+    @staticmethod
+    def onnx_path(f: str) -> Path:
+        return PBRIFY_DIR / (Path(f).stem + ".onnx")
 
     def __init__(self, threads: int = 0):
+        self.nets = {}
+        if all(self.onnx_path(f).exists() for f in self.FILES.values()) and self._has("onnxruntime"):
+            import onnxruntime as ort
+            so = ort.SessionOptions()
+            if threads:
+                so.intra_op_num_threads = threads
+            for k, f in self.FILES.items():
+                s = ort.InferenceSession(str(self.onnx_path(f)), so, providers=["CPUExecutionProvider"])
+                self.nets[k] = lambda x, s=s: s.run(None, {"input": x})[0]
+            return
         import torch
         import spandrel
-        self.torch = torch
         if threads:
             torch.set_num_threads(threads)
-        self.nets = {}
         for k, f in self.FILES.items():
             sd = torch.load(str(PBRIFY_DIR / f), map_location="cpu", weights_only=True)
             for key in ("params_ema", "params"):
                 if isinstance(sd, dict) and key in sd:
                     sd = sd[key]
-            self.nets[k] = spandrel.ModelLoader().load_from_state_dict(sd).model.eval()
+            net = spandrel.ModelLoader().load_from_state_dict(sd).model.eval()
+
+            def run(x, net=net):
+                with torch.no_grad():
+                    return net(torch.from_numpy(x)).numpy()
+            self.nets[k] = run
+
+    @staticmethod
+    def _has(module: str) -> bool:
+        try:
+            __import__(module)
+        except ImportError:
+            return False
+        return True
 
     @staticmethod
     def available() -> bool:
-        try:
-            import torch  # noqa: F401
-            import spandrel  # noqa: F401
-        except ImportError:
+        if all(PBRify.onnx_path(f).exists() for f in PBRify.FILES.values()) and PBRify._has("onnxruntime"):
+            return True
+        if not (PBRify._has("torch") and PBRify._has("spandrel")):
             return False
         return all((PBRIFY_DIR / f).exists() for f in PBRify.FILES.values())
 
@@ -396,18 +422,16 @@ class PBRify:
         pad = 16
         H, W = rgb.shape[:2]
         x = np.pad(rgb, ((pad, pad), (pad, pad), (0, 0)), mode="wrap" if _EDGE[0] == "wrap" else "symmetric")
-        x = x.transpose(2, 0, 1)
-        x = self.torch.from_numpy(np.ascontiguousarray(x, dtype=np.float32))[None]
+        x = np.ascontiguousarray(x.transpose(2, 0, 1), dtype=np.float32)[None]
         out = {}
-        with self.torch.no_grad():
-            for k in which:
-                y = self.nets[k](x)[0].numpy().transpose(1, 2, 0)[pad:pad + H, pad:pad + W]
-                if k == "normal":
-                    n = y * 2 - 1
-                    n[..., 1] = -n[..., 1]  # DirectX -> OpenGL
-                    out[k] = normalize(n)
-                else:
-                    out[k] = np.clip(y.mean(-1), 0, 1)
+        for k in which:
+            y = self.nets[k](x)[0].transpose(1, 2, 0)[pad:pad + H, pad:pad + W]
+            if k == "normal":
+                n = y * 2 - 1
+                n[..., 1] = -n[..., 1]  # DirectX -> OpenGL
+                out[k] = normalize(n)
+            else:
+                out[k] = np.clip(y.mean(-1), 0, 1)
         return out
 
 

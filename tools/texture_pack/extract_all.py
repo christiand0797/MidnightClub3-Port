@@ -15,6 +15,7 @@ textures/source and textures/dump into textures/replace.
 """
 import argparse
 import json
+import os
 import struct
 import sys
 from pathlib import Path
@@ -235,8 +236,8 @@ def jobs(assets, iso):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--assets", type=Path, default=ROOT / "templates" / "game" / "assets")
-    ap.add_argument("--textures", type=Path, default=ROOT / "templates" / "game" / "out" / "native" / "textures")
+    ap.add_argument("--assets", type=Path, default=Path(os.environ.get("MC3_ASSETS") or ROOT / "templates" / "game" / "assets"))
+    ap.add_argument("--textures", type=Path, default=Path(os.environ.get("MC3_NATIVE") or ROOT / "templates" / "game" / "out" / "native") / "textures")
     ap.add_argument("--iso", type=Path, default=xiso.default_iso(), help="disc image for pristine XPRs")
     args = ap.parse_args()
     out = args.textures / "source"

@@ -35,7 +35,7 @@ MODELS = {  # name: folder of its .param/.bin (all 4x)
     "realesrgan-x4plus": ESRGAN_DIR / "models",                  # the first pass's, smoother
 }
 DEFAULT_MODEL = "ultrasharp-4x"
-TEXTURES = ROOT / "templates" / "game" / "out" / "native" / "textures"
+TEXTURES = Path(os.environ.get("MC3_NATIVE") or ROOT / "templates" / "game" / "out" / "native") / "textures"  # MC3_NATIVE: a player's install (tools/enhance/build_hd.py)
 
 NET_SCALE = 4        # the model's
 MAX_SIZE = 2048      # longest side of a replacement

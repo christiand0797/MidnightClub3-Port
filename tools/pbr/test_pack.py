@@ -22,6 +22,7 @@ pack_path/approved_manifest_sha256/enabled into the [pbr] table of settings.toml
 """
 import argparse
 import hashlib
+import os
 import re
 import shutil
 import struct
@@ -30,7 +31,8 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-NATIVE = ROOT / "templates" / "game" / "out" / "native"
+# MC3_NATIVE: the folder holding mc3.exe, when run from a player's install (tools/enhance/build_hd.py)
+NATIVE = Path(os.environ.get("MC3_NATIVE") or ROOT / "templates" / "game" / "out" / "native")
 MAX_MATERIALS = 1024  # LoadPolicy::max_materials
 DECODE_BUDGET = 1536 << 20  # LoadPolicy::max_decoded_bytes, every material's maps and mips decoded separately
 FLAT = 4  # flat normal/ORM maps: only the albedo must match the game texture's size
