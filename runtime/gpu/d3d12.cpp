@@ -38,6 +38,7 @@
 #include "core/host_path.h"
 #include "gpu/backend.h"
 #include "gpu/d3d12_diagnostics.h"
+#include "gpu/dlss.h"
 #include "gpu/ext.h"
 #include "gpu/fast_hash.h"
 #include "gpu/shader_cache.h"
@@ -200,6 +201,60 @@ constexpr DXGI_FORMAT kDepthTypeless = DXGI_FORMAT_R32G8X24_TYPELESS;
 constexpr DXGI_FORMAT kDepthFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
 constexpr DXGI_FORMAT kDepthRead = DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
 constexpr float kDepthFar = 0;
+
+// DLSS (gpu/dlss.h): the frame target's draws also write the velocity target: previous minus current position in uv,
+// the HUD mask, and 1 where a draw's own motion is known (a vertex program run again on last frame's constants)
+constexpr DXGI_FORMAT kVelocityFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+constexpr uint32_t kZFuncAlways = 0x207;  // NV2A's ALWAYS, as KeyDepthStencil stores it
+
+// what DLSS reads, made from the velocity target and the frame's depth at Present: motion vectors, where the camera's
+// motion stands in for draws that did not write their own (static world, the PBR path), the HUD mask, and depth as a
+// plain float. Matrices are row vectors (clip = world * vp), uploaded untransposed.
+bool Invert4x4(const float m[16], float out[16]);
+
+const char* kDlssFillHlsl = R"(
+cbuffer F : register(b0) {
+    row_major float4x4 inv_vp;   // z buffer: (ndc, z, 1) * inv_vp -> world, homogeneous
+    row_major float4x4 prev_vp;  // world -> previous clip
+    row_major float4x4 inv_a;    // w buffer: (cx, cy, cw) - t, times its upper 3x3 -> world
+    float4 t;                    // w buffer: the x, y and w columns' translation
+    float4 zp;                   // x 1 for a w buffer, y z its zparams.x and .y; w 1 when the camera is known
+};
+Texture2D vel : register(t0);
+Texture2D<float> depth : register(t1);
+struct O { float4 p : SV_Position; float2 uv : TEXCOORD0; };
+O vs(uint id : SV_VertexID) {
+    O o;
+    o.uv = float2((id << 1) & 2, id & 2);
+    o.p = float4(o.uv * float2(2, -2) + float2(-1, 1), 0, 1);
+    return o;
+}
+struct Out { float2 mv : SV_Target0; float mask : SV_Target1; float d : SV_Target2; };
+Out ps(O i) {
+    int2 px = int2(i.p.xy);
+    float4 v = vel.Load(int3(px, 0));
+    float d = depth.Load(int3(px, 0));
+    Out o;
+    o.d = d;
+    o.mask = saturate(v.b);
+    o.mv = v.rg;
+    if (v.a > 0.5 || zp.w == 0) return o;
+    float2 ndc = float2(i.uv.x * 2 - 1, 1 - i.uv.y * 2);
+    float3 world;
+    if (zp.x > 0) {
+        float w = zp.y * zp.z / max(d + zp.y, 1e-6);
+        world = mul(float3(ndc * w, w) - t.xyz, (float3x3)inv_a);
+    } else {
+        float4 h = mul(float4(ndc, 1 - d, 1), inv_vp);
+        if (abs(h.w) < 1e-8) return o;
+        world = h.xyz / h.w;
+    }
+    float4 pc = mul(float4(world, 1), prev_vp);
+    if (pc.w <= 1e-6) return o;
+    o.mv = (pc.xy / pc.w - ndc) * float2(0.5, -0.5);
+    return o;
+}
+)";
 
 const char* kDepthHlsl = R"(
 Texture2D<float> img : register(t0);
@@ -548,6 +603,7 @@ struct PsoKey {
     float zslope;
     uint32_t rtfmt;
     uint32_t sprite;  // DrawShaders::sprite
+    uint32_t vel;     // DLSS's velocity target: 0 not bound, 1 written, 2 blended by a HUD draw's coverage, 3 untouched
 };
 
 // Blit's settings past the source and its rectangle
@@ -619,6 +675,8 @@ struct DrawShaders {
     bool fixed_transform = false;  // fixed function on untransformed vertices: the shader reads matrices and lights
     bool car_paint = false;  // the enhanced car paint variants (gpu/car_paint.h)
     bool sprite = false;           // a program's points drawn as point sprites (SpriteHlsl)
+    bool velocity = false;   // DLSS's variants (VelocityVertexHlsl, VelocityPixelHlsl): drawn into the frame target
+    bool plain_ps = false;   // velocity drawn with the plain pixel shader: a screen effect, which leaves the target
     FixedKey fk;
     uint64_t vkey = 0;
     uint64_t vh = 0;
@@ -658,7 +716,10 @@ public:
     ID3D12GraphicsCommandList* List() override { return cl_.Get(); }
     void Release(ComPtr<ID3D12Resource> r) override { CurrentFrame().garbage.push_back(std::move(r)); }
     D3D12_CPU_DESCRIPTOR_HANDLE View(const Target& t) override { return Cpu(rtv_heap_.Get(), t.view, rtv_inc_); }
-    void Unbind() override { bound_rt_ = bound_ds_ = nullptr; }
+    void Unbind() override {
+        bound_rt_ = bound_ds_ = nullptr;
+        bound_vel_ = false;
+    }
     void Capture(Target& t, const char* tag, float mul) override;
     float Scale() const override { return scale_; }
     void GuestSize(uint32_t& w, uint32_t& h) const override {
@@ -999,6 +1060,46 @@ private:
     D3D12_RESOURCE_STATES post_state_[2] = {D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_RENDER_TARGET};
     uint32_t post_rtv_[2] = {~0u, ~0u};
     uint32_t post_w_ = 0, post_h_ = 0;
+    // DLSS (gpu/dlss.h). The frame target is the surface presented last; while DLSS is on its draws jitter by
+    // dlss_jitter_ and write vel_; Present makes DLSS's inputs from it (DlssFrame) and shows dlss_out_
+    struct DlssTex {
+        ComPtr<ID3D12Resource> res;
+        D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
+        uint32_t rtv = ~0u, w = 0, h = 0;
+    };
+    bool dlss_tried_ = false;
+    bool dlss_on_ = false;          // this frame's draws feed DLSS
+    // guest addresses (as targets hold them) of the surfaces presented lately: the title flips between its front
+    // buffers, so the frame being drawn is one of these, not the one presented last
+    std::array<uint32_t, 3> dlss_frames_{};
+    bool DlssFrameTarget(const Target* t) const {
+        return t && t->data && std::find(dlss_frames_.begin(), dlss_frames_.end(), t->data) != dlss_frames_.end();
+    }
+    DlssTex vel_, dlss_mv_, dlss_mask_, dlss_depth_, dlss_out_;
+    uint64_t vel_cleared_ = ~0ull;  // presents_ when vel_ was last cleared
+    bool bound_vel_ = false;
+    Target* dlss_ds_ = nullptr;     // the frame target's depth buffer this frame
+    float dlss_jitter_[2] = {};     // render pixels
+    float dlss_clip_jitter_[2] = {};
+    // the camera of the frame target's fixed function 3D draws, clip = world * vp (row vectors), and its depth mode
+    struct DlssCamera {
+        bool valid = false;
+        float vp[16] = {};
+        float zparams[2] = {};  // DrawConstants::zparams x, y: x != 0 a w buffer
+    } dlss_cam_, dlss_prev_cam_;
+    // a vertex program draw's constants by object, this frame and last: PrevPos runs on last frame's
+    std::unordered_map<uint64_t, std::array<std::array<float, 4>, 192>> dlss_vsc_, dlss_prev_vsc_;
+    std::unordered_map<uint64_t, uint32_t> dlss_seen_;  // draws of the same object this frame
+    bool dlss_reset_ = true;
+    ComPtr<ID3D12PipelineState> dlss_fill_pso_;
+    ID3D12Resource* present_src_ = nullptr;  // DLSS's output, shown in place of the frame target
+    bool EnsureDlssTex(DlssTex& t, DXGI_FORMAT fmt, uint32_t w, uint32_t h, bool rtv, bool uav);
+    bool BindVelocity(bool on);
+    uint32_t VelocityRole(const PsoKey& k, const DrawShaders& sh, float (&taa)[4]) const;
+    void DlssPreviousConstants(const State& s, uint32_t prim, uint32_t start, uint32_t count, DrawConstants& c);
+    float pbr_jitter_[2] = {};  // DLSS's clip-space jitter for the PBR draw being tried
+    bool DlssFrame(Target& t, uint32_t out_w, uint32_t out_h);
+    void DlssNextFrame(const Surface& front, const Target* t);
     D3D12_RESOURCE_STATES lut_state_ = D3D12_RESOURCE_STATE_COPY_DEST;
     uint8_t ramp_[768] = {};
     bool ramp_dirty_ = false;
@@ -1268,7 +1369,7 @@ bool D3D12Backend::CreateRootSignature() {
     ranges[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     ranges[2].BaseShaderRegister = 4;
     ranges[2].NumDescriptors = 2;
-    D3D12_ROOT_PARAMETER params[5] = {};
+    D3D12_ROOT_PARAMETER params[6] = {};
     params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     params[0].Descriptor.ShaderRegister = 0;
     params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -1279,8 +1380,12 @@ bool D3D12Backend::CreateRootSignature() {
         params[2 + i].DescriptorTable.pDescriptorRanges = &ranges[i];
         params[2 + i].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     }
+    // b2: a vertex program's previous-frame constants for DLSS's motion vectors (VelocityVertexHlsl's PrevPos)
+    params[5].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    params[5].Descriptor.ShaderRegister = 2;
+    params[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
     D3D12_ROOT_SIGNATURE_DESC rsd{};
-    rsd.NumParameters = 5;
+    rsd.NumParameters = 6;
     ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     ranges[0].NumDescriptors = 4;
     ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
@@ -1347,6 +1452,7 @@ void D3D12Backend::Begin() {
     cl_->SetDescriptorHeaps(2, heaps);
     cl_->SetGraphicsRootSignature(root_.Get());
     bound_rt_ = bound_ds_ = nullptr;
+    bound_vel_ = false;
     binds_ = {};
 }
 
@@ -1490,6 +1596,7 @@ void D3D12Backend::Transition(ID3D12Resource* r, D3D12_RESOURCE_STATES& cur, D3D
 // a resized target gives back its view and its resources
 void D3D12Backend::ReleaseTarget(std::unordered_map<uint64_t, Target>::iterator it) {
     if (bound_rt_ == &it->second || bound_ds_ == &it->second) bound_rt_ = bound_ds_ = nullptr;
+    if (dlss_ds_ == &it->second) dlss_ds_ = nullptr;
     (it->second.depth ? free_dsv_ : free_rtv_).push_back(it->second.view);
     CurrentFrame().garbage.push_back(it->second.res);
     if (it->second.fb) CurrentFrame().garbage.push_back(it->second.fb);
@@ -1637,14 +1744,241 @@ bool D3D12Backend::BindTargets(const State& s) {
         Transition(ds->res.Get(), ds->state, D3D12_RESOURCE_STATE_DEPTH_WRITE);
         ds->drawn = true;
     }
-    if (rt != bound_rt_ || ds != bound_ds_) {
-        D3D12_CPU_DESCRIPTOR_HANDLE rh = rt ? Cpu(rtv_heap_.Get(), rt->view, rtv_inc_) : D3D12_CPU_DESCRIPTOR_HANDLE{};
+    // DLSS: the frame target's draws also write the velocity target, cleared at its first use each frame
+    bool vel = dlss_on_ && DlssFrameTarget(rt) && !rt->depth &&
+               EnsureDlssTex(vel_, kVelocityFormat, rt->w, rt->h, true, false);
+    if (vel) {
+        Transition(vel_.res.Get(), vel_.state, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        if (vel_cleared_ != presents_) {
+            const float zero[4] = {};
+            cl_->ClearRenderTargetView(Cpu(rtv_heap_.Get(), vel_.rtv, rtv_inc_), zero, 0, nullptr);
+            vel_cleared_ = presents_;
+        }
+        if (ds) dlss_ds_ = ds;
+    }
+    if (rt != bound_rt_ || ds != bound_ds_ || vel != bound_vel_) {
+        D3D12_CPU_DESCRIPTOR_HANDLE rh[2] = {rt ? Cpu(rtv_heap_.Get(), rt->view, rtv_inc_) : D3D12_CPU_DESCRIPTOR_HANDLE{},
+                                             vel ? Cpu(rtv_heap_.Get(), vel_.rtv, rtv_inc_) : D3D12_CPU_DESCRIPTOR_HANDLE{}};
         D3D12_CPU_DESCRIPTOR_HANDLE dh = ds ? Cpu(dsv_heap_.Get(), ds->view, dsv_inc_) : D3D12_CPU_DESCRIPTOR_HANDLE{};
-        cl_->OMSetRenderTargets(rt ? 1 : 0, rt ? &rh : nullptr, FALSE, ds ? &dh : nullptr);
+        cl_->OMSetRenderTargets(rt ? (vel ? 2 : 1) : 0, rt ? rh : nullptr, FALSE, ds ? &dh : nullptr);
         bound_rt_ = rt;
         bound_ds_ = ds;
+        bound_vel_ = vel;
     }
     return true;
+}
+
+// DLSS's render target textures, remade at a new size; their views from the free RTV slots
+bool D3D12Backend::EnsureDlssTex(DlssTex& t, DXGI_FORMAT fmt, uint32_t w, uint32_t h, bool rtv, bool uav) {
+    if (t.res && t.w == w && t.h == h) return true;
+    if (t.res) Release(std::move(t.res));
+    if (rtv && t.rtv == ~0u) {
+        if (free_rtv_.empty()) return false;
+        t.rtv = free_rtv_.back();
+        free_rtv_.pop_back();
+    }
+    D3D12_HEAP_PROPERTIES hp{D3D12_HEAP_TYPE_DEFAULT};
+    D3D12_RESOURCE_DESC rd = Texture2DDesc(fmt, w, h);
+    rd.Flags = (rtv ? D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET : D3D12_RESOURCE_FLAG_NONE) |
+               (uav ? D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS : D3D12_RESOURCE_FLAG_NONE);
+    D3D12_CLEAR_VALUE cv{fmt, {0, 0, 0, 0}};
+    t.state = rtv ? D3D12_RESOURCE_STATE_RENDER_TARGET : D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    if (FAILED(dev_->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd, t.state, rtv ? &cv : nullptr,
+                                             IID_PPV_ARGS(&t.res)))) {
+        LOGE("d3d12: DLSS texture %ux%u failed", w, h);
+        t.res.Reset();
+        return false;
+    }
+    if (rtv) dev_->CreateRenderTargetView(t.res.Get(), nullptr, Cpu(rtv_heap_.Get(), t.rtv, rtv_inc_));
+    t.w = w;
+    t.h = h;
+    return true;
+}
+
+// the velocity target on or off beside the bound frame target, for a draw path with one render target (PBR)
+bool D3D12Backend::BindVelocity(bool on) {
+    if (!bound_rt_ || on == bound_vel_ || (on && !vel_.res)) return false;
+    D3D12_CPU_DESCRIPTOR_HANDLE rh[2] = {Cpu(rtv_heap_.Get(), bound_rt_->view, rtv_inc_), Cpu(rtv_heap_.Get(), vel_.rtv, rtv_inc_)};
+    D3D12_CPU_DESCRIPTOR_HANDLE dh = bound_ds_ ? Cpu(dsv_heap_.Get(), bound_ds_->view, dsv_inc_) : D3D12_CPU_DESCRIPTOR_HANDLE{};
+    cl_->OMSetRenderTargets(on ? 2 : 1, rh, FALSE, bound_ds_ ? &dh : nullptr);
+    bound_vel_ = on;
+    return true;
+}
+
+// what a draw into the frame target does to the velocity target (PsoKey::vel) and its DrawConstants::taa. A HUD draw
+// (no depth test, no depth write) marks where DLSS keeps the current frame and is not jittered; a 3D draw is
+// jittered and, writing depth, owns its pixels' motion; a screen effect or transparent 3D leaves the target
+uint32_t D3D12Backend::VelocityRole(const PsoKey& k, const DrawShaders& sh, float (&taa)[4]) const {
+    if (!bound_vel_) return 0;
+    if (!sh.velocity || sh.plain_ps) return 3;
+    if ((!k.zen || k.zfunc == kZFuncAlways) && !k.zwrite) {
+        taa[2] = 1;
+        return 2;
+    }
+    taa[0] = dlss_clip_jitter_[0];
+    taa[1] = dlss_clip_jitter_[1];
+    return k.zwrite ? 1 : 3;
+}
+
+// a vertex program draw's constants as of the previous frame (b2, PrevPos), matched by the object it draws: its
+// program, buffers, range and how many times it was drawn before this frame; a new object takes the camera's motion
+void D3D12Backend::DlssPreviousConstants(const State& s, uint32_t prim, uint32_t start, uint32_t count,
+                                         DrawConstants& c) {
+    uint64_t key = Hash(&s.vs->hash, sizeof(s.vs->hash), uint64_t(s.streams[0].vb) << 32 | s.index_data);
+    const uint32_t range[3] = {prim, start, count};
+    key = Hash(range, sizeof(range), key);
+    uint32_t& seen = dlss_seen_[key];
+    key = Hash(&seen, sizeof(seen), key);
+    seen++;
+    auto prev = dlss_prev_vsc_.find(key);
+    const auto& constants = prev != dlss_prev_vsc_.end() ? prev->second : s.vsc;
+    Alloc pv = Upload(sizeof(s.vsc), 256);
+    std::memcpy(pv.cpu, constants.data(), sizeof(s.vsc));
+    cl_->SetGraphicsRootConstantBufferView(5, pv.gpu);
+    c.taa[3] = prev != dlss_prev_vsc_.end() ? 1.0f : 0.0f;
+    dlss_vsc_[key] = s.vsc;
+}
+
+// DLSS at Present: motion vectors, HUD mask and depth from this frame's velocity target and depth buffer, then DLSS
+// itself into dlss_out_ (output size), which the picture chain shows in place of the frame target
+bool D3D12Backend::DlssFrame(Target& t, uint32_t out_w, uint32_t out_h) {
+    const char* skip = !dlss::Available() ? "unavailable" : !vel_.res || vel_.w != t.w || vel_.h != t.h ? "no velocity target"
+                       : vel_cleared_ != presents_ ? "no 3D draws this frame" : !dlss_ds_ ? "no depth buffer"
+                       : dlss_ds_->w != t.w || dlss_ds_->h != t.h ? "depth size differs" : !out_w || !out_h ? "no output" : nullptr;
+    if (skip) {
+        static uint32_t logged = 0;
+        if (logged++ < 3) LOGR("DLSS: frame skipped (%s)", skip);
+        return false;
+    }
+    if (!EnsureDlssTex(dlss_mv_, DXGI_FORMAT_R16G16_FLOAT, t.w, t.h, true, false) ||
+        !EnsureDlssTex(dlss_mask_, DXGI_FORMAT_R8_UNORM, t.w, t.h, true, false) ||
+        !EnsureDlssTex(dlss_depth_, DXGI_FORMAT_R32_FLOAT, t.w, t.h, true, false) ||
+        !EnsureDlssTex(dlss_out_, DXGI_FORMAT_R8G8B8A8_UNORM, out_w, out_h, false, true))
+        return false;
+    if (!dlss_fill_pso_) {
+        uint64_t h;
+        ID3DBlob* vs = Compile(kDlssFillHlsl, "vs", "vs_5_0", h);
+        ID3DBlob* ps = Compile(kDlssFillHlsl, "ps", "ps_5_0", h);
+        if (!vs || !ps) return false;
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC d = FullScreenPipelineDesc(vs, ps, DXGI_FORMAT_R16G16_FLOAT);
+        d.NumRenderTargets = 3;
+        d.RTVFormats[1] = DXGI_FORMAT_R8_UNORM;
+        d.RTVFormats[2] = DXGI_FORMAT_R32_FLOAT;
+        d.BlendState.RenderTarget[1] = d.BlendState.RenderTarget[2] = d.BlendState.RenderTarget[0];
+        if (FAILED(dev_->CreateGraphicsPipelineState(&d, IID_PPV_ARGS(&dlss_fill_pso_)))) {
+            LOGE("d3d12: DLSS fill pipeline failed");
+            return false;
+        }
+    }
+    // motion, mask and depth
+    Transition(vel_.res.Get(), vel_.state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    Transition(dlss_ds_->res.Get(), dlss_ds_->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    for (DlssTex* d : {&dlss_mv_, &dlss_mask_, &dlss_depth_})
+        Transition(d->res.Get(), d->state, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    uint32_t slot = AllocSrvSlots(4);
+    for (int i = 0; i < 4; i++) {
+        D3D12_SHADER_RESOURCE_VIEW_DESC sv{};
+        sv.Format = i == 0 ? kVelocityFormat : i == 1 ? kDepthRead : kBgra;
+        sv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        sv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        sv.Texture2D.MipLevels = 1;
+        ID3D12Resource* r = i == 0 ? vel_.res.Get() : i == 1 ? dlss_ds_->res.Get() : nullptr;
+        dev_->CreateShaderResourceView(r, &sv, Cpu(srv_heap_.Get(), slot + i, srv_inc_));
+    }
+    struct {
+        float inv_vp[16], prev_vp[16], inv_a[16], t[4], zp[4];
+    } f{};
+    const bool known = dlss_cam_.valid && dlss_prev_cam_.valid && Invert4x4(dlss_cam_.vp, f.inv_vp);
+    std::memcpy(f.prev_vp, dlss_prev_cam_.vp, sizeof(f.prev_vp));
+    // a w buffer gives the clip w: world from the x, y and w columns of the camera, (c - t) * inverse(A)
+    const float* m = dlss_cam_.vp;
+    float a4[16] = {m[0], m[1], m[3], 0, m[4], m[5], m[7], 0, m[8], m[9], m[11], 0, 0, 0, 0, 1};
+    bool w_ok = Invert4x4(a4, f.inv_a);
+    f.t[0] = m[12];
+    f.t[1] = m[13];
+    f.t[2] = m[15];
+    const bool wbuffer = dlss_cam_.zparams[0] != 0;
+    f.zp[0] = wbuffer ? 1.0f : 0.0f;
+    f.zp[1] = dlss_cam_.zparams[0];
+    f.zp[2] = dlss_cam_.zparams[1];
+    f.zp[3] = known && (!wbuffer || w_ok) ? 1.0f : 0.0f;
+    Alloc cb = Upload(sizeof(f), 256);
+    std::memcpy(cb.cpu, &f, sizeof(f));
+    D3D12_CPU_DESCRIPTOR_HANDLE rh[3] = {Cpu(rtv_heap_.Get(), dlss_mv_.rtv, rtv_inc_), Cpu(rtv_heap_.Get(), dlss_mask_.rtv, rtv_inc_),
+                                         Cpu(rtv_heap_.Get(), dlss_depth_.rtv, rtv_inc_)};
+    cl_->OMSetRenderTargets(3, rh, FALSE, nullptr);
+    bound_rt_ = bound_ds_ = nullptr;
+    bound_vel_ = false;
+    SetFullViewport(t.w, t.h);
+    DrawFullScreen(dlss_fill_pso_.Get(), cb.gpu, slot);
+    // DLSS
+    constexpr auto kRead = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    for (DlssTex* d : {&dlss_mv_, &dlss_mask_, &dlss_depth_}) Transition(d->res.Get(), d->state, kRead);
+    Transition(t.res.Get(), t.state, kRead);
+    Transition(dlss_out_.res.Get(), dlss_out_.state, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    const auto& g = app::Get().graphics;
+    dlss::Frame frame;
+    frame.color = t.res.Get();
+    frame.depth = dlss_depth_.res.Get();
+    frame.motion = dlss_mv_.res.Get();
+    frame.mask = dlss_mask_.res.Get();
+    frame.output = dlss_out_.res.Get();
+    frame.in_w = t.w;
+    frame.in_h = t.h;
+    frame.out_w = out_w;
+    frame.out_h = out_h;
+    frame.jitter_x = dlss_jitter_[0];
+    frame.jitter_y = dlss_jitter_[1];
+    frame.reset = dlss_reset_;
+    const bool ok = dlss::Evaluate(cl_.Get(), dlss::Mode(g.dlss), g.dlss_preset, frame);
+    Begin();  // NGX binds its own heaps, root signature and pipeline
+    bound_vel_ = false;
+    Transition(dlss_out_.res.Get(), dlss_out_.state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    if (ok) dlss_reset_ = false;
+    return ok;
+}
+
+// after a present: whether the next frame feeds DLSS, its frame target and jitter; this frame's constants and camera
+// become the previous ones
+void D3D12Backend::DlssNextFrame(const Surface& front, const Target* t) {
+    if (!dlss_tried_) {
+        dlss_tried_ = true;
+        dlss::Init(dev_.Get(), app::ExeDir().wstring().c_str());
+    }
+    const auto& g = app::Get().graphics;
+    const bool on = g.dlss && dlss::Available() && t;
+    if (on != dlss_on_) dlss_reset_ = true;
+    dlss_on_ = on;
+    (void)front;
+    if (t && !DlssFrameTarget(t)) {
+        std::rotate(dlss_frames_.rbegin(), dlss_frames_.rbegin() + 1, dlss_frames_.rend());
+        dlss_frames_[0] = t->data;
+    }
+    dlss_ds_ = nullptr;
+    std::swap(dlss_prev_vsc_, dlss_vsc_);
+    dlss_vsc_.clear();
+    dlss_seen_.clear();
+    dlss_prev_cam_ = dlss_cam_;
+    dlss_cam_.valid = false;
+    if (!on) {
+        dlss_jitter_[0] = dlss_jitter_[1] = dlss_clip_jitter_[0] = dlss_clip_jitter_[1] = 0;
+        dlss_prev_vsc_.clear();
+        return;
+    }
+    // MC3_DLSS_JITTER=-1 flips the jitter's sign as DLSS reads it (a diagnostic for a picture that wobbles)
+    static const float sign = [] {
+        char v[8] = {};
+        return GetEnvironmentVariableA("MC3_DLSS_JITTER", v, sizeof(v)) && v[0] == '-' ? -1.0f : 1.0f;
+    }();
+    const float aspect = app::Widescreen() ? 16.0f / 9.0f : 4.0f / 3.0f;
+    const uint32_t out_w = uint32_t(std::min(float(bb_w_), float(bb_h_) * aspect) + 0.5f);
+    float jx, jy;
+    dlss::Jitter(presents_, t->w, std::max(out_w, t->w), jx, jy);
+    // the projection moves by (jx, jy) render pixels: x right, y down
+    dlss_clip_jitter_[0] = 2.0f * jx / float(t->w);
+    dlss_clip_jitter_[1] = -2.0f * jy / float(t->h);
+    dlss_jitter_[0] = sign * jx;
+    dlss_jitter_[1] = sign * jy;
 }
 
 constexpr uint64_t kDepthCopyKey = ~0ull;  // DepthCopy's pipeline in blit_psos_
@@ -2042,6 +2376,19 @@ void D3D12Backend::FillPipelineDesc(const PsoKey& k, ID3DBlob* vs, ID3DBlob* ps,
     d.PrimitiveTopologyType = TopologyType(k.topo);
     d.NumRenderTargets = k.has_rt ? 1 : 0;
     d.RTVFormats[0] = k.has_rt ? DXGI_FORMAT(k.rtfmt) : DXGI_FORMAT_UNKNOWN;
+    if (k.vel && k.has_rt) {
+        d.NumRenderTargets = 2;
+        d.RTVFormats[1] = kVelocityFormat;
+        d.BlendState.IndependentBlendEnable = TRUE;
+        auto& v = d.BlendState.RenderTarget[1];
+        v = {};
+        v.BlendEnable = k.vel == 2;
+        v.SrcBlend = v.SrcBlendAlpha = D3D12_BLEND_SRC_ALPHA;
+        v.DestBlend = v.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+        v.BlendOp = v.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+        v.LogicOp = D3D12_LOGIC_OP_NOOP;
+        v.RenderTargetWriteMask = k.vel == 3 ? 0 : D3D12_COLOR_WRITE_ENABLE_ALL;
+    }
     d.DSVFormat = k.has_ds ? kDepthFormat : DXGI_FORMAT_UNKNOWN;
     d.SampleDesc.Count = 1;
 }
@@ -2104,7 +2451,10 @@ ID3D12PipelineState* D3D12Backend::EnsurePipeline(const PsoKey& k, ID3DBlob* vs,
     if (k.topo == uint32_t(Topology::Points)) ExpandPoints(d, k.sprite);
     ComPtr<ID3D12PipelineState> pso;
     g_perf.psos++;
-    if (FAILED(dev_->CreateGraphicsPipelineState(&d, IID_PPV_ARGS(&pso)))) LOGE("d3d12: pipeline creation failed");
+    if (HRESULT hr = dev_->CreateGraphicsPipelineState(&d, IID_PPV_ARGS(&pso)); FAILED(hr))
+        LOGE("d3d12: pipeline creation failed (0x%08lX) vs %016llX ps %016llX topo %u rt %u fmt %u ds %u blend %u vel %u",
+             static_cast<unsigned long>(hr), static_cast<unsigned long long>(k.vs), static_cast<unsigned long long>(k.ps),
+             k.topo, k.has_rt, k.rtfmt, k.has_ds, k.blend, k.vel);
     psos_[h] = pso;
     return pso.Get();
 }
@@ -2725,6 +3075,8 @@ uint64_t VertexKey(const State& s, const Assembled& a, const DrawShaders& sh) {
 
 // the enhanced car paint variant, apart from the program's plain shader
 constexpr uint64_t kCarPaintSalt = 0xCA9A1A7ull << 32;
+// DLSS's velocity variants (VelocityVertexHlsl, VelocityPixelHlsl), apart from the plain shaders
+constexpr uint64_t kVelocitySalt = 0xD155ull << 48;
 
 // enhanced car paint applies to the programs that light cars the console's way (gpu/car_paint.h); known per program
 bool CarLightingProgram(const State& s, const Assembled& a) {
@@ -2746,9 +3098,10 @@ std::string SpriteSizeHlsl(std::string s) {
 }
 
 std::string VertexHlsl(const State& s, const Assembled& a, const DrawShaders& sh) {
-    if (sh.prog && sh.car_paint) return car_paint::VertexHlsl(VertexProgramHlsl(s.vs->program, a.regs, a.decode));
+    if (sh.prog && sh.car_paint)
+        return car_paint::VertexHlsl(VertexProgramHlsl(s.vs->program, a.regs, a.decode, sh.velocity));
     if (sh.prog) {
-        std::string src = VertexProgramHlsl(s.vs->program, a.regs, a.decode);
+        std::string src = VertexProgramHlsl(s.vs->program, a.regs, a.decode, sh.velocity);
         return sh.sprite ? SpriteSizeHlsl(std::move(src)) : src;
     }
     return FixedVertexHlsl(a.regs, a.pretransformed, a.decode, sh.fk);
@@ -2763,6 +3116,7 @@ void D3D12Backend::EnsureVertexShader(const State& s, const Assembled& a, DrawSh
         return;
     }
     std::string src = ReversedDepthHlsl(VertexHlsl(s, a, sh));
+    if (sh.velocity) src = VelocityVertexHlsl(std::move(src));
     sh.vs_code = Compile(sh.quad ? QuadHlsl(std::move(src)) : src, "main", "vs_5_0", sh.vh);
     shader_src_[sh.vkey] = sh.vh;
 }
@@ -2799,8 +3153,9 @@ void D3D12Backend::EnsurePixelShader(const PixelKey& pk, DrawShaders& sh) {
         sh.ph = pit->second;
         return;
     }
-    sh.ps_code = Compile(pk.car_paint ? car_paint::PixelHlsl(PixelHlsl(pk), CarPaintTargetMask(pk)) : PixelHlsl(pk),
-                         "main", "ps_5_0", sh.ph);
+    std::string src = pk.car_paint ? car_paint::PixelHlsl(PixelHlsl(pk), CarPaintTargetMask(pk)) : PixelHlsl(pk);
+    if (sh.velocity && !sh.plain_ps) src = VelocityPixelHlsl(std::move(src));
+    sh.ps_code = Compile(src, "main", "ps_5_0", sh.ph);
     shader_src_[sh.pkey ^ kPixelKeySalt] = sh.ph;
 }
 
@@ -3027,6 +3382,44 @@ void FillTransformConstants(const State& s, GuestExtent size, DrawConstants& c) 
             Transpose(bn, c.bwvn[k]);
         }
     }
+}
+
+// view, projection and viewport as FillTransformConstants makes them, without a world: the camera's clip = world * out
+void CameraMatrix(const State& s, GuestExtent size, float out[16]) {
+    float vp[16];
+    MatMul(s.transforms[kTsView].data(), s.transforms[kTsProjection].data(), vp);
+    const auto& v = s.viewport;
+    float sx = float(v.w) / size.w;
+    float sy = float(v.h) / size.h;
+    float ox = (2.0f * v.x + v.w) / size.w - 1;
+    float oy = 1 - (2.0f * v.y + v.h) / size.h;
+    float vpm[16] = {sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, v.max_z - v.min_z, 0, ox, oy, v.min_z, 1};
+    MatMul(vp, vpm, out);
+}
+
+// a general 4x4 inverse (row major), false for a singular matrix
+bool Invert4x4(const float m[16], float out[16]) {
+    float inv[16];
+    inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15] + m[9] * m[7] * m[14] + m[13] * m[6] * m[11] - m[13] * m[7] * m[10];
+    inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15] - m[8] * m[7] * m[14] - m[12] * m[6] * m[11] + m[12] * m[7] * m[10];
+    inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15] + m[8] * m[7] * m[13] + m[12] * m[5] * m[11] - m[12] * m[7] * m[9];
+    inv[12] = -m[4] * m[9] * m[14] + m[4] * m[10] * m[13] + m[8] * m[5] * m[14] - m[8] * m[6] * m[13] - m[12] * m[5] * m[10] + m[12] * m[6] * m[9];
+    inv[1] = -m[1] * m[10] * m[15] + m[1] * m[11] * m[14] + m[9] * m[2] * m[15] - m[9] * m[3] * m[14] - m[13] * m[2] * m[11] + m[13] * m[3] * m[10];
+    inv[5] = m[0] * m[10] * m[15] - m[0] * m[11] * m[14] - m[8] * m[2] * m[15] + m[8] * m[3] * m[14] + m[12] * m[2] * m[11] - m[12] * m[3] * m[10];
+    inv[9] = -m[0] * m[9] * m[15] + m[0] * m[11] * m[13] + m[8] * m[1] * m[15] - m[8] * m[3] * m[13] - m[12] * m[1] * m[11] + m[12] * m[3] * m[9];
+    inv[13] = m[0] * m[9] * m[14] - m[0] * m[10] * m[13] - m[8] * m[1] * m[14] + m[8] * m[2] * m[13] + m[12] * m[1] * m[10] - m[12] * m[2] * m[9];
+    inv[2] = m[1] * m[6] * m[15] - m[1] * m[7] * m[14] - m[5] * m[2] * m[15] + m[5] * m[3] * m[14] + m[13] * m[2] * m[7] - m[13] * m[3] * m[6];
+    inv[6] = -m[0] * m[6] * m[15] + m[0] * m[7] * m[14] + m[4] * m[2] * m[15] - m[4] * m[3] * m[14] - m[12] * m[2] * m[7] + m[12] * m[3] * m[6];
+    inv[10] = m[0] * m[5] * m[15] - m[0] * m[7] * m[13] - m[4] * m[1] * m[15] + m[4] * m[3] * m[13] + m[12] * m[1] * m[7] - m[12] * m[3] * m[5];
+    inv[14] = -m[0] * m[5] * m[14] + m[0] * m[6] * m[13] + m[4] * m[1] * m[14] - m[4] * m[2] * m[13] - m[12] * m[1] * m[6] + m[12] * m[2] * m[5];
+    inv[3] = -m[1] * m[6] * m[11] + m[1] * m[7] * m[10] + m[5] * m[2] * m[11] - m[5] * m[3] * m[10] - m[9] * m[2] * m[7] + m[9] * m[3] * m[6];
+    inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11] + m[4] * m[3] * m[10] + m[8] * m[2] * m[7] - m[8] * m[3] * m[6];
+    inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11] - m[4] * m[3] * m[9] - m[8] * m[1] * m[7] + m[8] * m[3] * m[5];
+    inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10] + m[4] * m[2] * m[9] + m[8] * m[1] * m[6] - m[8] * m[2] * m[5];
+    float det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
+    if (!std::isfinite(det) || std::fabs(det) < 1e-20f) return false;
+    for (int i = 0; i < 16; i++) out[i] = inv[i] / det;
+    return true;
 }
 
 // D3DLIGHT8 as floats: Type, Diffuse[4], Specular[4], Ambient[4], Position[3], Direction[3], Range, Falloff,
@@ -3673,6 +4066,9 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
     const auto& graphics = app::Get().graphics;
     sh.car_paint = graphics.car_paint && sh.prog && !sh.quad && !a.pretransformed && CarLightingProgram(s, a);
     if (sh.car_paint) sh.vkey ^= kCarPaintSalt;
+    // DLSS: the frame target's draws in their velocity variants (jitter, motion vectors), apart from points and quads
+    sh.velocity = bound_vel_ && !sh.quad && a.topology != Topology::Points;
+    if (sh.velocity) sh.vkey ^= kVelocitySalt;
     EnsureVertexShader(s, a, sh);
 
     // stage textures, then the pixel shader made for them
@@ -3686,6 +4082,11 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
     pk.pbr = 0;
     stages.pbr_nrm = stages.pbr_orm = nullptr;
     sh.pkey = Hash(&pk, sizeof(pk));
+    if (sh.velocity) {
+        // a screen effect laid over the frame (glow, speed blur) keeps the plain pixel shader and leaves the target
+        sh.plain_ps = count == 4 && stages.tgt[0];
+        if (!sh.plain_ps) sh.pkey ^= kVelocitySalt;
+    }
     EnsurePixelShader(pk, sh);
     if (!sh.vs_code || !sh.ps_code) return;
 
@@ -3693,6 +4094,8 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
     PsoKey k;
     BuildPipelineKey(s, a, sh.vh, sh.ph, k);
     k.sprite = sh.sprite;
+    float taa[4] = {};
+    k.vel = VelocityRole(k, sh, taa);
     // ADDSIGNED d + s and REVSUBTRACTSIGNED d - s on colours read as signed bytes (the console's alpha counters, as in
     // the headlight volumes): an add of one sign of s, then a reverse subtract of the other
     const uint32_t guest_op = k.op;
@@ -3707,7 +4110,16 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
     // constants
     GuestExtent size;
     SurfaceSize(bound_rt_ ? s.rt : s.zs, size.w, size.h);
-    if (TryPbrDraw(s, a, sh, pk, k, stages, size, pso)) return;
+    {
+        // the dedicated PBR path draws into one render target, jittered like the rest of the frame
+        PsoKey k_pbr = k;
+        k_pbr.vel = 0;
+        const bool vel_pbr = k.vel && sh.fixed_transform && pbr_settings_ && BindVelocity(false);
+        pbr_jitter_[0] = k.vel == 1 || k.vel == 3 ? taa[0] : 0;
+        pbr_jitter_[1] = k.vel == 1 || k.vel == 3 ? taa[1] : 0;
+        if (TryPbrDraw(s, a, sh, pk, k_pbr, stages, size, pso)) return;
+        if (vel_pbr) BindVelocity(true);
+    }
     std::unique_ptr<draw_evidence::Recorder> evidence;
     if (draw_evidence_selector_.enabled && draw_evidence_selector_.Claim(cap_ != nullptr, sh.vkey, sh.pkey, cap_i_)) {
         try {
@@ -3745,6 +4157,8 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
         }
     }
     DrawConstants c{};
+    std::memcpy(c.taa, taa, sizeof(taa));
+    if (sh.velocity && sh.prog && k.vel == 1) DlssPreviousConstants(s, prim, start, count, c);
     if (sh.car_paint) {
         c.carpaint[0] = std::clamp(graphics.car_relight, 0.0f, 1.0f);
         c.carpaint[1] = std::clamp(graphics.car_specular, 0.0f, 3.0f);
@@ -3752,6 +4166,13 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
         c.carpaint[3] = std::clamp(graphics.car_reflection, 0.0f, 2.0f);
     }
     UploadConstants(s, sh, k, stages, size, c, evidence.get());
+    // the camera of the frame's static world, for the motion of draws that do not write their own
+    if (k.vel == 1 && sh.fixed_transform && !dlss_cam_.valid && !a.pretransformed) {
+        CameraMatrix(s, size, dlss_cam_.vp);
+        dlss_cam_.zparams[0] = c.zparams[0];
+        dlss_cam_.zparams[1] = c.zparams[1];
+        dlss_cam_.valid = true;
+    }
     if (ext_) binds_ = {};
     auto reupload = [&] {
         Alloc dc = Upload(sizeof(DrawConstants), 256);
@@ -4415,13 +4836,16 @@ bool D3D12Backend::PostProcess(Target& t, D3D12_CPU_DESCRIPTOR_HANDLE bb, const 
     if (!g.post) return false;
     uint32_t w = uint32_t(vp.Width + 0.5f), h = uint32_t(vp.Height + 0.5f);
     if (!w || !h || !EnsurePostTargets(w, h)) return false;
-    Transition(t.res.Get(), t.state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    // DLSS's output (DlssFrame) is already output sized and anti-aliased
+    ID3D12Resource* src = present_src_ ? present_src_ : t.res.Get();
+    const DXGI_FORMAT src_fmt = present_src_ ? DXGI_FORMAT_R8G8B8A8_UNORM : t.fmt;
+    if (!present_src_) Transition(t.res.Get(), t.state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     // supersampled frames are box filtered down: one tap per source texel under each output pixel
-    float taps = std::clamp(std::round(float(t.w) / float(w)), 1.0f, 4.0f);
+    float taps = present_src_ ? 1.0f : std::clamp(std::round(float(t.w) / float(w)), 1.0f, 4.0f);
     float grade[16] = {1.0f / w, 1.0f / h, taps, gamma_ ? 1.0f : 0.0f,
                        g.brightness, g.contrast, g.saturation, g.vibrance,
                        g.gamma};
-    PostPass("grade", 0, t.res.Get(), t.fmt, lut_.Get(), kBgra, grade, 16);
+    PostPass("grade", 0, src, src_fmt, lut_.Get(), kBgra, grade, 16);
     int cur = 0;
     auto step = [&](const char* entry, float amount) {
         Transition(post_[cur].Get(), post_state_[cur], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
@@ -4429,7 +4853,7 @@ bool D3D12Backend::PostProcess(Target& t, D3D12_CPU_DESCRIPTOR_HANDLE bb, const 
         PostPass(entry, 1 - cur, post_[cur].Get(), kBgra, nullptr, kBgra, p, 4);
         cur = 1 - cur;
     };
-    if (g.aa == 1 && g.aa_strength > 0) step("fxaa", g.aa_strength);
+    if (g.aa == 1 && g.aa_strength > 0 && !present_src_) step("fxaa", g.aa_strength);
     if (g.sharpen > 0) step("cas", g.sharpen);
     // into the back buffer as the plain blit would place the frame
     Transition(post_[cur].Get(), post_state_[cur], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
@@ -4457,6 +4881,10 @@ void D3D12Backend::BlitFrame(Target& t, D3D12_CPU_DESCRIPTOR_HANDLE bb) {
     cl_->RSSetViewports(1, &vp);
     cl_->RSSetScissorRects(1, &scissor);
     binds_ = {};
+    if (present_src_) {
+        Blit(present_src_, DXGI_FORMAT_R8G8B8A8_UNORM, uv, {.gamma = gamma_});
+        return;
+    }
     Transition(t.res.Get(), t.state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     Blit(t.res.Get(), t.fmt, uv, {.gamma = gamma_});
 }
@@ -4617,7 +5045,16 @@ void D3D12Backend::Present(const Surface& front) {
     Transition(lut_.Get(), lut_state_, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
     uint32_t bi = swap_->GetCurrentBackBufferIndex();
+    present_src_ = nullptr;
+    if (t && dlss_on_ && DlssFrameTarget(t)) {
+        // DLSS's output is the region BlitFrame shows the frame in
+        const float aspect = app::Widescreen() ? 16.0f / 9.0f : 4.0f / 3.0f;
+        const float vw = std::min(float(bb_w_), float(bb_h_) * aspect);
+        if (DlssFrame(*t, uint32_t(vw + 0.5f), uint32_t(vw / aspect + 0.5f))) present_src_ = dlss_out_.res.Get();
+    }
     DrawFrame(t, bi);
+    present_src_ = nullptr;
+    DlssNextFrame(front, t);
     if (photo.capture) CapturePhoto(photo, bi);
     photo_observed_ = {};
     Submit(false);
@@ -5008,6 +5445,11 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
             frame.pbr_retained.reserve(frame.pbr_retained.size()+objects.size());
             for(IUnknown* object:objects){if(!object)return false;frame.pbr_retained.emplace_back(object);}return true;
         };
+        if (pbr_jitter_[0]!=0||pbr_jitter_[1]!=0) {
+            // DLSS: clip.xy += jitter * clip.w, for row vectors a column's worth of the w column
+            auto& m=input.geometry.model_to_clip.values;
+            for(int r=0;r<4;r++){m[size_t(r*4)]+=pbr_jitter_[0]*m[size_t(r*4+3)];m[size_t(r*4+1)]+=pbr_jitter_[1]*m[size_t(r*4+3)];}
+        }
         SetViewportScissor(s,size.w);SetBlendFactorStencilRef(s);
         const uint32_t query=BeginCountedDraw(s);
         auto perf_record_t=PerfClock::now();

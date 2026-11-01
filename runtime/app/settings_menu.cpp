@@ -18,6 +18,7 @@
 
 #include <imgui.h>
 
+#include "gpu/dlss.h"
 #include "app/app.h"
 #include "app/tuning_profiles.h"
 #include "app/pbr_menu.h"
@@ -293,6 +294,35 @@ void Quality(Settings& s) {
         g_dirty = true;
     }
     if (s.graphics.aa) Slider("Anti-aliasing strength", &s.graphics.aa_strength, 0, 1, "%.2f", nullptr);
+    {
+        const char* modes[] = {"Off", "DLAA (native resolution)", "Quality (67%)", "Balanced (58%)", "Performance (50%)",
+                               "Ultra Performance (33%)"};
+        int dm = int(std::min<uint32_t>(s.graphics.dlss, 5));
+        ImGui::BeginDisabled(!gpu::dlss::Available());
+        if (ImGui::Combo("NVIDIA DLSS", &dm, modes, 6)) {
+            s.graphics.dlss = uint32_t(dm);
+            g_dirty = true;
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("DLSS 4 Super Resolution: AI anti-aliasing that also upscales. DLAA keeps the full\n"
+                              "resolution for the cleanest picture; the other modes render smaller for more fps.\n"
+                              "While on, it replaces the render scale and FXAA. Status: %s", gpu::dlss::Status());
+        if (s.graphics.dlss) {
+            const char* presets[] = {"Default (driver)", "J", "K (sharpest)", "L", "M"};
+            const uint32_t values[] = {0, 10, 11, 12, 13};
+            int dp = 0;
+            for (int i = 0; i < 5; i++)
+                if (values[i] == s.graphics.dlss_preset) dp = i;
+            if (ImGui::Combo("DLSS model preset", &dp, presets, 5)) {
+                s.graphics.dlss_preset = values[dp];
+                g_dirty = true;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("DLSS 4 transformer presets. K: best detail; J: a little less ghosting, a little\n"
+                                  "more flicker; L and M: tuned for the Performance modes.");
+        }
+    }
     Slider("Sharpening (CAS)", &s.graphics.sharpen, 0, 1, "%.2f",
            "AMD FidelityFX contrast adaptive sharpening: restores texture detail, strongest on soft areas.");
     ImGui::Separator();

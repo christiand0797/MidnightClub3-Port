@@ -45,7 +45,8 @@ PixelKey MakePixelKey(const State& s, const TexInfo tex[4]);
 
 // vertex program microcode to HLSL, regs is the bit mask of v registers the draw supplies
 // decode: VertexDecode per register, 4 bits each, for elements the input assembler hands over raw
-std::string VertexProgramHlsl(const std::vector<uint32_t>& program, uint16_t regs, uint64_t decode = 0);
+std::string VertexProgramHlsl(const std::vector<uint32_t>& program, uint16_t regs, uint64_t decode = 0,
+                              bool velocity = false);  // velocity: adds PrevPos (VelocityVertexHlsl)
 // the program reads c-37, the viewport offset that carries the XDK's half pixel screen space offset
 bool ReadsViewportOffset(const std::vector<uint32_t>& program);
 // fixed function vertex state a shader is built for
@@ -64,6 +65,11 @@ std::string PixelHlsl(const PixelKey& k);
 std::string QuadHlsl(std::string s);
 // depth stored reversed (1 at the near clip, 0 at the far one) from DrawConstants::zparams, for a vertex shader
 std::string ReversedDepthHlsl(std::string s);
+// DLSS's variants, applied after ReversedDepthHlsl: the vertex shader hands on its clip position unjittered (cur) and
+// as of the previous frame (prev: a program's PrevPos on last frame's constants in b2, else cur), then moves pos by
+// DrawConstants::taa.xy; the pixel shader writes SV_Target1 for the velocity target (d3d12.cpp, DLSS motion)
+std::string VelocityVertexHlsl(std::string s);
+std::string VelocityPixelHlsl(std::string s);
 // the geometry shader that draws a point as its console pixel
 std::string PointHlsl();
 
@@ -122,6 +128,10 @@ struct DrawConstants {
     float pbr[4];        // PBR parameters: normal_strength, ao_strength, roughness (factor or -(1+override)), metallic
     float pbr2[4];       // PBR parameters: parallax_height, base_color.r, base_color.g, base_color.b
     float zparams[4];    // ReversedDepthHlsl: a w buffer's scale (0 for a z buffer), its far w, the polygon offset
+    // DLSS (VelocityVertexHlsl / VelocityPixelHlsl, gpu/dlss.h): xy the clip-space jitter of a 3D draw DLSS sees (0
+    // otherwise), z 1 for a HUD draw (DLSS keeps the current frame there), w 1 when the draw's own motion is known
+    // (a vertex program run again on last frame's constants), 0 for the camera's
+    float taa[4];
 };
 
 }  // namespace gpu

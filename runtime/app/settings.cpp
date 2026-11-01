@@ -21,6 +21,7 @@
 #include "app/app.h"
 #include "core/log.h"
 #include "core/host_path.h"
+#include "gpu/dlss.h"
 
 namespace app {
 
@@ -69,6 +70,8 @@ std::vector<GraphicsField> GraphicsFields(Settings::Graphics& g) {
         {"post", nullptr, &g.post, nullptr, 0, 1},
         {"anti_aliasing", nullptr, nullptr, &g.aa, 0, 1},
         {"anti_aliasing_strength", &g.aa_strength, nullptr, nullptr, 0, 1},
+        {"dlss", nullptr, nullptr, &g.dlss, 0, 5},
+        {"dlss_preset", nullptr, nullptr, &g.dlss_preset, 0, 13},
         {"sharpen", &g.sharpen, nullptr, nullptr, 0, 1},
         {"brightness", &g.brightness, nullptr, nullptr, -0.5f, 0.5f},
         {"contrast", &g.contrast, nullptr, nullptr, 0.5f, 1.5f},
@@ -473,6 +476,9 @@ Mode CachedOutput();
 // called every frame, so from the cached output
 Mode RenderResolution() {
     const Settings& s = Get();
+    // DLSS renders at its mode's share of the output and upscales to it (gpu/dlss.h)
+    if (s.graphics.dlss && gpu::dlss::Available())
+        return resolution::Scene({0, 0}, CachedOutput(), gpu::dlss::RenderPercent(gpu::dlss::Mode(s.graphics.dlss)));
     return resolution::Scene({s.graphics.scene_width, s.graphics.scene_height}, CachedOutput(), s.render_percent);
 }
 

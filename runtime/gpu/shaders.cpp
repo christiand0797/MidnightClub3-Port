@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cctype>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -65,6 +66,7 @@ const char* kCommonTail = R"(    float4 spread[4];
     float4 pbr;
     float4 pbr2;
     float4 zparams;
+    float4 taa;
 };
 )";
 
@@ -675,10 +677,12 @@ bool ReadsViewportOffset(const std::vector<uint32_t>& prog) {
     return false;
 }
 
-std::string VertexProgramHlsl(const std::vector<uint32_t>& prog, uint16_t regs, uint64_t decode) {
+std::string VertexProgramHlsl(const std::vector<uint32_t>& prog, uint16_t regs, uint64_t decode, bool velocity) {
     std::string s = Common();
     s += kVsHelpers;
-    s += VsInputs(regs, decode);
+    std::string inputs = VsInputs(regs, decode);
+    const size_t body_start = s.size() + inputs.size() + std::strlen(kVsPrologue);
+    s += inputs;
     s += kVsPrologue;
     for (size_t n = 0; n + 4 <= prog.size(); n += 4) {
         Tok k{&prog[n]};
@@ -712,6 +716,23 @@ std::string VertexProgramHlsl(const std::vector<uint32_t>& prog, uint16_t regs, 
             s += "    }\n";
         }
         if (k.f(3, 0, 1)) break;  // last instruction
+    }
+    if (velocity) {
+        // the same program on the previous frame's constants, for DLSS's motion vectors: only oPos is used, the
+        // compiler drops the rest
+        std::string body = s.substr(body_start), prev;
+        for (size_t i = 0; i < body.size(); i++) {
+            bool word = i && (std::isalnum(static_cast<unsigned char>(body[i - 1])) || body[i - 1] == '_');
+            if (!word && body.compare(i, 2, "c[") == 0) {
+                prev += "cprev[";
+                i++;
+            } else {
+                prev += body[i];
+            }
+        }
+        std::string fn = "cbuffer PV : register(b2) { float4 cprev[192]; };\nfloat4 PrevPos(VIn i) {" +
+                         std::string(kVsPrologue) + prev + "    return oPos;\n}\n";
+        s.insert(s.find(inputs) + inputs.find("VOut main("), fn);
     }
     s += kVsEpilogue;
     return s;
@@ -1066,6 +1087,69 @@ std::string ReversedDepthHlsl(std::string s) {
     if (entry != std::string::npos) s.insert(entry, kReversedClipHlsl);
     InsertAfter(s, "    o.pos = q;\n", "    o.pos.z = ReversedClip(q.z, q.w);\n");
     InsertAfter(s, "    o.pos = cp;\n", "    o.pos.z = ReversedClip(cp.z, cp.w);\n");
+    return s;
+}
+
+namespace {
+
+const char* kVelocityOutputs = "    float4 cur : TEXCOORD8;\n    float4 prev : TEXCOORD9;\n";
+
+// cur and prev go last in VOut, after any variant's own outputs (car paint's cn, cv): a plain pixel shader's inputs
+// stay a prefix of the velocity vertex shader's outputs
+void AddVelocityOutputs(std::string& s) {
+    size_t v = s.find("struct VOut {");
+    size_t end = v == std::string::npos ? v : s.find("};", v);
+    if (end != std::string::npos) s.insert(end, kVelocityOutputs);
+}
+
+bool ReplaceOnce(std::string& s, const char* at, const std::string& with) {
+    size_t p = s.find(at);
+    if (p == std::string::npos) return false;
+    s.replace(p, std::strlen(at), with);
+    return true;
+}
+
+}  // namespace
+
+std::string VelocityVertexHlsl(std::string s) {
+    AddVelocityOutputs(s);
+    // a program's screen position (oPos) as of the previous frame, to clip space the way the epilogue does
+    const char* program = "    o.pos.z = ReversedClip(q.z, q.w);\n";
+    const char* fixed = "    o.pos.z = ReversedClip(cp.z, cp.w);\n";
+    if (s.find("float4 PrevPos(VIn i)") != std::string::npos) {
+        InsertAfter(s, program, R"(    o.cur = q;
+    {
+        precise float4 pp = PrevPos(i);
+        pp.w = magclamp(pp.w);
+        o.prev = float4((pp.x * 2 / surf.x - 1) * pp.w, (1 - pp.y * 2 / surf.y) * pp.w, 0, pp.w);
+    }
+    o.pos.xy += taa.xy * o.pos.w;
+)");
+    } else {
+        InsertAfter(s, program, "    o.cur = q;\n    o.prev = q;\n    o.pos.xy += taa.xy * o.pos.w;\n");
+    }
+    InsertAfter(s, fixed, "    o.cur = cp;\n    o.prev = cp;\n    o.pos.xy += taa.xy * o.pos.w;\n");
+    return s;
+}
+
+std::string VelocityPixelHlsl(std::string s) {
+    AddVelocityOutputs(s);
+    ReplaceOnce(s, "float4 main(VOut i, bool front : SV_IsFrontFace) : SV_Target {",
+                R"(struct PsVelocity {
+    float4 c : SV_Target0;
+    float4 v : SV_Target1;  // the velocity target: previous minus current position in uv, HUD mask, own motion known
+};
+float4 Velocity(VOut i, float4 outc) {
+    // a HUD draw marks where DLSS keeps the current frame, by its own coverage (the target blends by that alpha)
+    if (taa.z > 0) return float4(0, 0, 1, saturate(max(outc.a, max(outc.r, max(outc.g, outc.b)))));
+    float2 c = i.cur.xy / i.cur.w, p = i.prev.xy / i.prev.w;
+    return float4((p - c) * float2(0.5, -0.5), 0, taa.w);
+}
+PsVelocity main(VOut i, bool front : SV_IsFrontFace) {)");
+    size_t r = s.rfind("return outc;\n}");
+    if (r != std::string::npos)
+        s.replace(r, std::strlen("return outc;\n}"),
+                  "PsVelocity pv;\npv.c = outc;\npv.v = Velocity(i, outc);\nreturn pv;\n}");
     return s;
 }
 

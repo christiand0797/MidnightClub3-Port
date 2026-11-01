@@ -1,5 +1,6 @@
 # Original Xbox static recompilation: xbe_recomp, the host runtime and add_xbe_image()
 include_guard(GLOBAL)
+include(${CMAKE_CURRENT_LIST_DIR}/DLSS.cmake)
 
 get_filename_component(XBE_SDK_DIR ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)
 # build scripts find the SDK's xdk folder and THIRD_PARTY.txt through this
@@ -136,6 +137,7 @@ function(add_xbe_image target xbe config partitions game_dir)
     target_compile_definitions(${target} PRIVATE UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
     target_link_libraries(${target} PRIVATE tomlplusplus::tomlplusplus $<LINK_ONLY:SDL3::SDL3-static> d3d12 dxgi dxguid d3dcompiler xaudio2 ole32 windowscodecs mfplat mfreadwrite mfuuid dbghelp winmm dwmapi ws2_32 shell32 comdlg32 uuid winhttp bcrypt)
     target_link_libraries(${target} PRIVATE ${GEN}/code.lib delayimp)
+    xbe_enable_dlss(${target})
     target_link_options(${target} PRIVATE -fuse-ld=lld -g -Wl,/delayload:${exe}.dll)
     # the executable's first start rebuilds a DLL older than it (runtime/app/game_code.cpp); one whose imports did not
     # change is not linked again, so it is marked current here, and one that did is linked after this anyway

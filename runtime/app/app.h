@@ -35,6 +35,10 @@ struct Settings {
         uint32_t scene_width = 0, scene_height = 0;  // 0/0 follows output; explicit scene can exceed the monitor
         bool post = true;           // the present runs the chain below; off: the console's picture as it was
         uint32_t aa = 1;            // 0 off, 1 FXAA
+        // NVIDIA DLSS Super Resolution (gpu/dlss.h Mode): 0 off, 1 DLAA, 2 Quality, 3 Balanced, 4 Performance, 5 Ultra
+        // Performance; while on, the scene renders at the mode's share of the output and FXAA is skipped
+        uint32_t dlss = 0;
+        uint32_t dlss_preset = 0;   // 0 the driver's choice, else NVSDK_NGX_DLSS_Hint_Render_Preset (10 J, 11 K, 12 L, 13 M)
         float aa_strength = 1.0f;   // 0..1
         float sharpen = 0.35f;      // AMD CAS, 0 off .. 1
         float brightness = 0.0f;    // -0.5..0.5 added

@@ -123,12 +123,12 @@ if(WIN32)
         ../templates/game/out/native/_deps/tomlplusplus-src/include
         ../templates/game/out/build/release/_deps/tomlplusplus-src/include)
     if(MC3_TOML_INCLUDE)
-        add_executable(settings_test settings_test.cpp ../runtime/app/settings.cpp)
+        add_executable(settings_test settings_test.cpp ../runtime/app/settings.cpp ../runtime/gpu/dlss.cpp)
         target_include_directories(settings_test PRIVATE ../runtime "${MC3_TOML_INCLUDE}")
         target_compile_features(settings_test PRIVATE cxx_std_20)
         target_compile_options(settings_test PRIVATE -UNDEBUG)
         add_test(NAME settings COMMAND settings_test)
-        add_executable(host_path_test host_path_test.cpp ../runtime/app/settings.cpp ../runtime/core/log.cpp ../runtime/core/host_path.cpp)
+        add_executable(host_path_test host_path_test.cpp ../runtime/app/settings.cpp ../runtime/gpu/dlss.cpp ../runtime/core/log.cpp ../runtime/core/host_path.cpp)
         target_include_directories(host_path_test PRIVATE ../runtime "${MC3_TOML_INCLUDE}")
         target_compile_features(host_path_test PRIVATE cxx_std_20)
         target_compile_options(host_path_test PRIVATE -UNDEBUG)
@@ -138,7 +138,7 @@ if(WIN32)
             ../templates/game/out/native/_deps/imgui-src
             ../templates/game/out/build/release/_deps/imgui-src)
         if(MC3_IMGUI_INCLUDE)
-            add_executable(graphics_menu_test graphics_menu_test.cpp ../runtime/app/settings.cpp
+            add_executable(graphics_menu_test graphics_menu_test.cpp ../runtime/app/settings.cpp ../runtime/gpu/dlss.cpp
                 ../runtime/app/tuning_profiles.cpp ../runtime/core/host_path.cpp
                 "${MC3_IMGUI_INCLUDE}/imgui.cpp" "${MC3_IMGUI_INCLUDE}/imgui_draw.cpp"
                 "${MC3_IMGUI_INCLUDE}/imgui_tables.cpp" "${MC3_IMGUI_INCLUDE}/imgui_widgets.cpp")
