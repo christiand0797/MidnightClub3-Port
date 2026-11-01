@@ -10,6 +10,10 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-11-01 (DLSS 4 Super Resolution / DLAA):** implemented and verified driving in San Diego on the RTX 3050
+(60 fps, no ghosting). Design, roles, motion vectors and what is still unchecked: `docs/notes/dlss_plan.md`. The dev
+install now runs DLAA (`[graphics] dlss = 1`; the pre-DLSS settings are in the session scratchpad only).
+
 **2026-11-01 00:10 (lead Claude session: live checks, scrape counter, a hang on an in-progress renderer):**
 - **Verified by driving (career free roam, Player 1 save untouched):** steady 60 fps in San Diego; minimap is a clean
   circle (no black square); pedestrians animate with limbs (a woman on the sidewalk changed pose between frames:

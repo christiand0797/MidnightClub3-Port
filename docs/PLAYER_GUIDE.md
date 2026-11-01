@@ -211,6 +211,8 @@ resolution, picture adjustments, effects, HD pack and camera settings.
 | Texture detail | As the console, **Full** default, Max | Full permits the sharpest mip with filtering. Max uses only the sharpest mip and can shimmer at a distance. |
 | Anti-aliasing | Off / **FXAA** default | Smooths edges in the post-processing pass. |
 | Anti-aliasing strength | **0–1**, default **1** | FXAA intensity; shown when FXAA is selected. |
+| NVIDIA DLSS | **Off**, DLAA, Quality, Balanced, Performance, Ultra Performance; a release's first start picks **DLAA** | DLSS 4 Super Resolution (never DLSS 5) on NVIDIA RTX cards. DLAA keeps full resolution for the cleanest edges; the other modes render at 67/58/50/33% and upscale for more fps. While on it replaces the render scale and FXAA. Greyed out without an RTX card, with the reason in its tooltip. |
+| DLSS model preset | **Default (driver)**, J, K, L, M | DLSS 4 transformer presets. K has the most detail; J ghosts a little less but flickers a little more; L and M suit the Performance modes. |
 | Sharpening (CAS) | **0–1**, default **0.35** | Contrast adaptive sharpening. High values can emphasize noise or halos. |
 | HD texture pack | Default **On** | Uses installed `textures/replace/<hash>.png` replacements where available. |
 | HD movies | Default **On** | Uses matching `video_hd` MP4s with original movie audio/timing where available. |

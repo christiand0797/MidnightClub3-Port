@@ -1,45 +1,41 @@
-# DLSS in the D3D12 renderer: what it takes
+# DLSS in the D3D12 renderer
 
-Status: assessed 2026-10-31, not implemented. DLSS 5 is excluded at the user's request.
+Status 2026-11-01: DLSS 4 Super Resolution and DLAA implemented and verified in game on an RTX 3050 (title backdrop,
+San Diego free roam while driving: 60 fps, no ghosting on the player car, traffic or HUD). DLSS 5 is excluded at the
+user's request; the NGX SDK is pinned at 310.9.16.
 
-## What DLSS needs, and what this renderer has
+## How it works
 
-| DLSS input | In this port today |
-| --- | --- |
-| Scene colour before HUD and post | No. The title draws 3D, its own glow/blur passes and the HUD into one console framebuffer; `D3D12Backend::Present` only sees the finished frame (`PostProcess`: grade, FXAA, CAS). |
-| Depth | Yes, per render target (reversed depth, `GeometryConstants::depth`, `zparams`). |
-| Per-pixel motion vectors | No. Nothing renders velocity. |
-| Sub-pixel camera jitter | No. |
-| Camera matrices | Partly: fixed-function draws carry world/view/projection (`State::transforms`, `kTsView`, `DrawConstants::wvp`); vertex-program draws (cars, characters, skinned) only have their constant registers. |
+- **SDK.** `cmake/DLSS.cmake` downloads the NGX headers, `nvsdk_ngx_d.lib` and `nvngx_dlss.dll` at configure time,
+  each SHA-256 checked, into the build's `_deps` (never committed: the SDK license forbids putting it under this
+  repository's license). `XBE_DLSS=OFF` builds the stub in `runtime/gpu/dlss.cpp`. The DLL and
+  `NVIDIA_DLSS_LICENSE.txt` are copied beside mc3.exe and into releases.
+- **Frame target.** Any of the last three presented surfaces (the title flips front buffers). Its draws bind a second
+  render target, the velocity target (RGBA16F): uv motion, HUD mask, and 1 where a draw's own motion is known.
+- **Roles** (`VelocityRole`, `PsoKey::vel`): depth-writing 3D draws are jittered and write motion; transparent 3D is
+  jittered and leaves the target; HUD draws (no depth test, no depth write) are not jittered and blend a mask by
+  their coverage; screen effects (a 4-vertex quad sampling a render target: glow, speed blur) leave it.
+- **Motion.** Vertex programs (cars, characters) run a second time on last frame's constants for the same object
+  (`VertexProgramHlsl(..., velocity)` adds `PrevPos` reading `cprev` in b2; objects keyed by program, buffers, range
+  and repeat count). Everything else, static world and the PBR path included, gets the camera's motion at Present
+  (`kDlssFillHlsl`): world position from depth (z buffer through the inverse view-projection, w buffer from the clip
+  w) reprojected with last frame's camera, recorded from the frame's first fixed function 3D draw.
+- **Jitter.** Halton(2,3), 8 phases times the upscale ratio squared; `DrawConstants::taa.xy` in the shaders,
+  folded into `model_to_clip` for PBR draws. `MC3_DLSS_JITTER=-1` flips the sign DLSS is told (diagnostic).
+- **Present.** `DlssFrame` makes motion (RG16F), mask (R8) and depth (R32F) from the velocity target and the frame's
+  depth buffer, evaluates DLSS into an RGBA8 output the size of the shown region, and the picture chain grades and
+  sharpens that instead of the frame target (FXAA is skipped). Reset on mode or size changes.
+- **Settings.** `[graphics] dlss` (0 off, 1 DLAA, 2 Quality, 3 Balanced, 4 Performance, 5 Ultra Performance) and
+  `dlss_preset` (0 driver, 10-13 J-M); F1 > Quality. While on, `app::RenderResolution` renders at the mode's share
+  of the output. Releases start with DLAA (`tools/release/default-settings.toml`); without an RTX card it is greyed out.
 
 ## Ray Reconstruction
 
-Ray Reconstruction is DLSS's denoiser for ray-traced lighting. The game, and this port, rasterise with baked lighting
-(the PBR path included), so there is no ray-traced signal for it to reconstruct. It needs a ray-traced lighting
-renderer first.
+Not applicable: it denoises ray-traced lighting, and this renderer rasterises with baked lighting.
 
-## Plan for Super Resolution / DLAA
+## Open
 
-1. **SDK.** NVIDIA Streamline (`sl.dlss`) or the NGX DLSS SDK, D3D12; ship `nvngx_dlss.dll` (redistributable) and
-   fall back to today's path on non-RTX GPUs.
-2. **Jitter.** Halton(2,3) sub-pixel offset added to clip-space xy of every 3D draw in the shader translator
-   (`shaders.cpp`), scaled by the scene target's size; none for screen-space and HUD draws.
-3. **Motion vectors.** A second render target written by 3D draws: current minus previous clip position.
-   - Fixed function: previous `wvp` per object, keyed by vertex buffer + world matrix + draw signature.
-   - Vertex programs: run the position computation a second time with the previous frame's constant registers,
-     matched by the same key.
-   - Unmatched draws: camera-only vectors from depth and the previous view-projection.
-4. **Insertion point.** Find the frame's last 3D draw (before the first screen-space/HUD draw) and run DLSS there,
-   upscaling the scene target to output size; the title's glow, blur and HUD then draw at output resolution. This
-   means switching the bound target's size mid-frame, the largest risk.
-5. **Settings.** F1 → Quality: Off / DLAA / Quality / Balanced / Performance, plus sharpness. Render scale then means
-   DLSS input resolution.
-
-## Expected benefit
-
-On an RTX 3050 at 200% render scale the frame is already 4x supersampled, which is cleaner than DLAA. DLSS mainly
-buys frame rate: near the same image at 50-67% input resolution. Weaker RTX GPUs gain the most. Wrong motion
-vectors (step 3) show as ghosting on cars and the HUD, so the feature must stay off by default until every draw
-class has verified vectors.
-
-Estimated effort: several days of renderer work plus validation per city and car type.
+- One "pipeline creation failed" was seen once while idling in free roam before the velocity outputs moved to the
+  end of `VOut` (a plain pixel shader under a car paint vertex shader would not have matched); the log now names the
+  pipeline if it recurs.
+- Not yet checked: Atlanta/Detroit/Tokyo, rain, replays and race starts with DLSS.

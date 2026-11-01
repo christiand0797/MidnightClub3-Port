@@ -9,6 +9,7 @@ vsync = true
 [graphics]
 anti_aliasing = 1
 anti_aliasing_strength = 1.0
+dlss = 1          # DLAA on NVIDIA RTX cards (ignored elsewhere, where the 200% render scale applies)
 car_paint = true
 car_reflection = 1.0
 car_relight = 1.0

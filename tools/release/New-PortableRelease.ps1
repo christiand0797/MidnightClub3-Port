@@ -41,6 +41,11 @@ if ((Test-Path -LiteralPath $stage) -or (Test-Path -LiteralPath $zip)) { throw "
 [void][IO.Directory]::CreateDirectory($stage)
 Copy-Item -LiteralPath $exe.FullName -Destination (Join-Path $stage 'mc3.exe')
 foreach ($dll in $crtDlls) { Copy-Item -LiteralPath $dll.FullName -Destination (Join-Path $stage $dll.Name) }
+# NVIDIA DLSS (cmake/DLSS.cmake): the NGX runtime and its license, when the build has them
+foreach ($name in @('nvngx_dlss.dll', 'NVIDIA_DLSS_LICENSE.txt')) {
+    $file = Join-Path $exe.DirectoryName $name
+    if (Test-Path -LiteralPath $file -PathType Leaf) { Copy-Item -LiteralPath $file -Destination (Join-Path $stage $name) }
+}
 # the compiler folder the build put beside mc3.exe: the recompiler, clang, lld, the game's configs, XDK layouts and the
 # headers the generated code includes, plus mc3.lib (the executable's exports). Never the work folder or PDBs.
 $compilerSource = Join-Path $exe.DirectoryName 'compiler'
