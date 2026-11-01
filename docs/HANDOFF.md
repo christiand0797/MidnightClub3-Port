@@ -10,6 +10,17 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-11-01 01:15 (lead handover):** the session that wrote the Make HD and DLSS entries is now the lead; the
+"Game GUI graphics polish" session's work is all committed (ede1598 scrape counter, 120d318 notes) and it is idle.
+Open items taken over:
+- **Open-road scrape test** (from the 00:10 entry): stock vs slammed (-0.45 m) on a straight road, reading the
+  `scrape:` lines. Not run yet: use Player 2 (San Diego, 0%) or Arcade; never drive Player 1.
+- **Player 1 note:** a 00:14 DLSS test meant to load Player 2 loaded Player 1 and drove Atlanta free roam; the game
+  autosaved Player 1 at 00:35 (932 bytes differ from the 2026-10-31 13:23 backup, which predates the user's own
+  evening play, so it was not restored). A copy of the current saves is in the lead session's scratchpad.
+- The other session's x4plus cutscene pass finished; the Remacri/BT.709 movie job (`build_hd.py --only 6`) is
+  redoing every movie and pauses while mc3.exe runs.
+
 **2026-11-01 (DLSS 4 Super Resolution / DLAA):** implemented and verified driving in San Diego on the RTX 3050
 (60 fps, no ghosting). Design, roles, motion vectors and what is still unchecked: `docs/notes/dlss_plan.md`. The dev
 install now runs DLAA (`[graphics] dlss = 1`; the pre-DLSS settings are in the session scratchpad only).
