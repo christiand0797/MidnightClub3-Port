@@ -25,6 +25,15 @@ folders. See [installation, offline setup and updates](INSTALL.md) for the full
 procedure. An emulator, Python and a compiler are not needed to play a packaged
 release.
 
+**New here? Read the [easy install steps](INSTALL.md#the-easy-way-start-here) first.**
+
+**Make HD.** An own-disc release asks "Make the game HD?" at start until its HD
+build is finished. **Yes** opens a window that makes HD textures, PBR materials
+and HD movies from your disc (a few hours; it pauses while the game runs; close it any time, and double-click
+**Make HD** in the game folder to carry on). New textures appear at the next
+start, and the game turns the PBR pack on by itself. **Cancel** stops the question;
+**Make HD** still works. Details: [what Make HD does](INSTALL.md#make-hd-what-it-does).
+
 A clean offline first-launch check installed all 7,188 content files, created
 the shortcut and automatically played the HD intro. This setup check is separate
 from the Golf R32 garage/street check; see [release validation](notes/release_validation.md).

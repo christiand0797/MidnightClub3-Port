@@ -3,54 +3,37 @@
 Play the native Windows x64 port with Direct3D 12 and XAudio2. The original x86
 game is translated to C++ ahead of time; no emulator is needed.
 
-## Download and play
+## Play it (easy steps)
 
-Use the **complete-content Windows portable ZIP** on the
-[v0.3.2 development release page](https://github.com/christiand0797/MidnightClub3-Port/releases/tag/v0.3.2-dev.20261025).
-Read its release notes for the available assets, tested features and known
-limitations. Choose `MidnightClub3-Native-…-win64.zip`.
+You need a Windows 10/11 PC, about 25 GB free, and your own copy of the original Xbox game
+**Midnight Club 3: DUB Edition Remix (USA)** as a disc image (`.iso`).
 
-1. Extract the entire ZIP into a writable folder.
-2. Double-click **mc3.exe**. First launch downloads and verifies the matching
-   content, creates a desktop shortcut and starts the game. Allow about 30 GB
-   free for the current content and setup's temporary files.
-3. Press **F1** or controller **Back + Y** for PC settings; **F2** opens Vehicle
-   tuning directly.
+1. Go to [**Releases**](https://github.com/christiand0797/MidnightClub3-Port/releases) and download
+   `MidnightClub3-Native-…-win64.zip` (not "Source code").
+2. Right-click the ZIP → **Extract All…** → **Extract**.
+3. Open the folder and double-click **mc3.exe**. Pick your `.iso` when it asks.
+   If Windows says "Windows protected your PC", click **More info** → **Run anyway**.
+4. The first start builds the game for your PC (a few minutes, once).
+5. When it asks **"Make the game HD?"**, click **Yes**. A window makes HD textures, realistic
+   materials and HD movies from your disc. It takes a few hours and pauses while you play, so leave it
+   on overnight. Start the game again when it says **ALL DONE!**
+6. Press **F1** any time for graphics and car settings.
 
-[Read the complete player guide](docs/PLAYER_GUIDE.md) for every Display, Vehicle,
-Input, Quality, Picture and Info option, units, defaults, saving and
-troubleshooting. [Installation instructions](docs/INSTALL.md) cover offline
-content, own-disc builds, updates and moving the game to another PC.
-
-The current native build passed a **Golf R32 garage-to-street check**: ride-height
-changes applied immediately, and ride, camber, wheel offset and engine-power
-values survived leaving the garage. The latest hotfix also passed native **'57 Bel Air** checks of an added
-tire profile on both axles and the private street chassis floor. **21 regression tests pass**, including original
-refresh, mesh-reader and floor-writer instructions. See the [hotfix validation](docs/notes/native_hotfix_20261023.md)
-and [earlier tuning record](docs/notes/live_vehicle_tuning.md) for the tested values and remaining limits.
-The ±2 m ride range is implemented; physical fit at every extreme on every car remains unverified.
-
-A clean offline first launch also installed all **7,188 content files**, created
-the desktop shortcut and automatically started the HD intro. See the
-[release validation record](docs/notes/release_validation.md). Windows may show
-its own network-permission prompt, which the user handles.
-
-GitHub's automatic **Source code** ZIP is for development. Use the named portable
-release asset to play. The additional media pass and all-car tuning validation
-are ongoing. [PBR materials and geometry foundations](docs/notes/pbr_system.md)
-are implemented in development; rendering integration remains unfinished.
+The [install guide](docs/INSTALL.md) walks through every step and lists the keys and fixes for
+common problems. The [player guide](docs/PLAYER_GUIDE.md) explains every setting.
 
 ## Screenshots
 
-Native captures (Xbox Game Bar, 1920×1080) from the current development builds.
+Native captures (Xbox Game Bar, 1920×1080) with the HD textures, PBR materials and enhanced car paint.
 
 | | |
 | --- | --- |
-| ![Lexus GS with neon underglow](docs/screenshots/2026-10-28-lexus-gs-neon-underglow.jpg)<br>Lexus GS with neon underglow | ![Tokyo cruise](docs/screenshots/2026-10-31-tokyo-cruise-jetta.jpg)<br>Tokyo cruise |
-| ![Impala on hydraulics](docs/screenshots/2026-10-29-impala-hydraulics-neon.jpg)<br>Impala on hydraulics | ![Headlights at night](docs/screenshots/2026-10-24-lexus-headlights-night.jpg)<br>Headlights at night |
-| ![Golf in Tokyo](docs/screenshots/2026-10-21-tokyo-golf-street.jpg)<br>Golf in Tokyo | !['57 Bel Air in a parking garage](docs/screenshots/2026-10-27-bel-air-parking-garage.jpg)<br>'57 Bel Air in a parking garage |
-| ![DUB Shop tire width](docs/screenshots/2026-10-23-dub-shop-tire-width.jpg)<br>DUB Shop tire width | ![DUB Shop vehicle menu](docs/screenshots/2026-10-24-dub-shop-golf.jpg)<br>DUB Shop vehicle menu |
-| ![Bel Air on oversized wheels](docs/screenshots/2026-10-24-bel-air-oversized-wheels.jpg)<br>Bel Air on oversized wheels | ![PBR material settings (F1)](docs/screenshots/2026-10-29-pbr-material-settings.jpg)<br>PBR material settings (F1) |
+| ![Impala headlights on a wet road](docs/screenshots/2026-10-31-impala-headlights-wet-road.jpg)<br>Impala headlights on a wet road | ![Impala on a PBR street in Atlanta](docs/screenshots/2026-10-31-impala-atlanta-pbr-street.jpg)<br>Atlanta streets with PBR materials |
+| ![Lexus GS vinyl](docs/screenshots/2026-10-31-lexus-gs-vinyl-atlanta.jpg)<br>Lexus GS with vinyl and neon | ![Tokyo street](docs/screenshots/2026-10-31-tokyo-street-pbr.jpg)<br>Tokyo at night |
+| ![Bel Air in Tokyo](docs/screenshots/2026-10-31-bel-air-tokyo-night.jpg)<br>'57 Bel Air in Tokyo | ![Bel Air fins](docs/screenshots/2026-10-31-bel-air-fins-tokyo-replay.jpg)<br>Replay camera |
+| ![Lexus GS with neon underglow](docs/screenshots/2026-10-28-lexus-gs-neon-underglow.jpg)<br>Neon underglow | ![Impala on hydraulics](docs/screenshots/2026-10-29-impala-hydraulics-neon.jpg)<br>Impala on hydraulics |
+| ![Headlights at night](docs/screenshots/2026-10-24-lexus-headlights-night.jpg)<br>Headlights at night | !['57 Bel Air in a parking garage](docs/screenshots/2026-10-27-bel-air-parking-garage.jpg)<br>'57 Bel Air in a parking garage |
+| ![DUB Shop tire width](docs/screenshots/2026-10-23-dub-shop-tire-width.jpg)<br>DUB Shop tire width | ![PBR material settings (F1)](docs/screenshots/2026-10-29-pbr-material-settings.jpg)<br>PBR material settings (F1) |
 
 ## Development
 

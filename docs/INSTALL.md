@@ -1,4 +1,53 @@
-# Download, extract, launch
+# How to install
+
+## The easy way (start here)
+
+You need: a Windows 10 or 11 PC, about **25 GB of free space**, and your own copy of
+**Midnight Club 3: DUB Edition Remix (USA)** for the original Xbox as a disc image
+(a file ending in `.iso`).
+
+1. **Download.** On the [Releases page](https://github.com/christiand0797/MidnightClub3-Port/releases),
+   click the file named `MidnightClub3-Native-…-win64.zip`. (Not "Source code".)
+2. **Unzip.** Right-click the ZIP → **Extract All…** → pick a folder such as
+   `Documents\Games\MidnightClub3` → **Extract**. Don't play from inside the ZIP.
+3. **Start.** Open the new folder and double-click **mc3.exe**.
+   - If Windows says "Windows protected your PC", click **More info** → **Run anyway**.
+   - When it asks for your game, pick your `.iso` file. (Tip: put the `.iso` in the
+     same folder as `mc3.exe` and it finds it by itself.)
+4. **Wait for the first start.** A window builds the game for your PC. This takes a few
+   minutes, **only the first time**.
+5. **Make it HD.** The game asks **"Make the game HD?"**. Click **Yes**. A black window
+   opens and works for a few hours, making HD textures, shiny realistic materials and HD
+   movies from your own disc. It pauses while you play and carries on when you close the
+   game, so the best is to leave it on overnight.
+   When it says **ALL DONE!**, start the game again. Now it looks like the pictures on the
+   GitHub page.
+6. **Play!** Next time, use the **Midnight Club 3 Remix (Native)** shortcut on your desktop.
+
+| Key | What it does |
+| --- | --- |
+| Arrow keys | Move in menus |
+| Space | Choose (A button) |
+| Escape | Go back (B button) |
+| Enter | Start / pause |
+| **F1** | PC settings (graphics, car tuning, and more) |
+| **F2** | Car tuning |
+
+A controller works too: plug it in before starting. **Back + Y** opens the PC settings.
+
+**Something wrong?**
+
+| Problem | Fix |
+| --- | --- |
+| The game is slow or choppy | Press **F1** → **Display** → lower **Render scale** (try 100%). |
+| Make HD window closed by accident | Double-click **Make HD** in the game folder. It carries on where it stopped. |
+| You said "don't ask again" to Make HD | Double-click **Make HD** in the game folder any time. |
+| "Could not find your game" | Start `mc3.exe` once and pick your `.iso`, then try Make HD again. |
+| Anything else | See the [player guide](PLAYER_GUIDE.md#troubleshooting). |
+
+Nothing from the game itself is downloaded: the HD look is made on your PC from your own disc.
+
+## Details
 
 Download the Windows x64 portable ZIP from [GitHub Releases](https://github.com/christiand0797/MidnightClub3-Port/releases). Use the named `MidnightClub3-Native-…-win64.zip` asset. GitHub's automatic “Source code” ZIP is for developers.
 
@@ -9,6 +58,26 @@ Download the Windows x64 portable ZIP from [GitHub Releases](https://github.com/
 The same executable completes setup and starts the game. It remembers the selected disc, creates a **Midnight Club 3 Remix (Native)** desktop shortcut, and creates save/settings folders automatically. On the first launch it also builds the game's code from your disc with the bundled `compiler` folder (a progress window, a few minutes, once; later launches start directly). Administrator rights, Python, an emulator and a separate installer are unnecessary; keep the `compiler` folder next to `mc3.exe`.
 
 Keep the supplied DLLs next to `mc3.exe`. Run from the extracted folder, rather than inside the ZIP. Use Windows 10/11 x64 with a Direct3D 12 capable GPU. Windows N editions need Microsoft's [Media Feature Pack](https://support.microsoft.com/en-us/windows/experience/platform-variants/media-feature-pack-for-windows-n) for Media Foundation movie playback.
+
+## Make HD (what it does)
+
+`Make HD.cmd` runs `enhance\tools\enhance\build_hd.py` with the release's own Python (in `enhance\python`),
+at below-normal priority. While any `mc3.exe` runs it suspends its tools, so play never stutters, and resumes them
+when the game closes. Each step resumes where it stopped:
+
+1. copies the files it reads off your disc image into `enhance\work` (about 4 GB, deleted when everything is done);
+2. extracts every texture into `textures\source`;
+3. upscales them 4x with Real-ESRGAN (UltraSharp model) into `textures\replace` (GPU, Vulkan);
+4. generates normal, height, roughness and AO maps for every city and prop texture (DeepBump and PBRify networks on
+   the CPU) into `textures\pbr`;
+5. builds the `pbr-cities` PBR pack and names it in `config\hd-pack.txt`; the game switches the pack on at its next
+   start;
+6. downloads a pinned ffmpeg build (checksum checked) and upscales the 106 movies with the Remacri model into
+   `video_hd`.
+
+Its log is `enhance\build_hd.log`. The first start of a fresh install uses `config\default-settings.toml`, the
+developer's HD settings (200% render scale, highest texture detail and LOD, enhanced car paint, PBR at Ultra).
+`enhance\done.txt` marks a finished build; the game stops offering it then.
 
 ## Complete-content setup
 

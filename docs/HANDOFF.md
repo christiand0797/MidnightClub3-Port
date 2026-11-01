@@ -10,6 +10,23 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-10-31 (Make HD: releases build the developer's look on the player's PC):**
+- **Why.** A fresh release looked like the console: the HD textures, PBR pack and HD movies on the dev install are
+  upscales/derivatives of the game's own art, so they are built per player from their disc, never shipped.
+- **Builder.** `tools/enhance/build_hd.py` (6 resumable steps: disc copy, extract_all, upscale UltraSharp, generate.py
+  over `tools/pbr/sets/hd_release.json` in parallel shards, `test_pack.py --cities`, movies). The tools honour
+  `MC3_NATIVE` / `MC3_ASSETS`. The release ships it in `enhance\` with an embeddable Python 3.12.10 (numpy, scipy,
+  Pillow, onnxruntime-directml), realesrgan-ncnn-vulkan with UltraSharp/Remacri, DeepBump and PBRify as ONNX
+  (`generate.py --export-onnx`; maps within 1/255 of the torch ones), plus `Make HD.cmd`. ffmpeg 9.0.2 essentials is
+  downloaded (SHA-256 pinned) by the movie step. Mutex `Local\MC3MakeHD`.
+- **Game.** `runtime/app/hd_build.cpp` asks "Make the game HD?" after the game code is ready (until `enhance\done.txt`,
+  or never again after Cancel: `config\hd-build-declined.txt`). `settings.cpp` adopts the pack named in
+  `config\hd-pack.txt` once (renamed `.adopted.txt`), and a first run with no settings.toml reads
+  `config\default-settings.toml` (`tools/release/default-settings.toml`: the dev's HD preset).
+- **Movies.** Remacri replaces x4plus (x4plus smears skin into plastic); `upscale_movies.py` pipeline v2 encodes with
+  the BT.709 matrix and tags (v1 wrote BT.601 untagged, which Media Foundation decodes as 709: faded colour). The dev
+  install's 106 movies are being redone with it.
+
 **2026-11-01 later (props in the PBR pack; coverage audit):**
 - **Audit.** By source over all 12,714 game textures:
   - City scenery: 3,260 in all four cities, Detroit's 901 included; every one with maps is in the pack.
