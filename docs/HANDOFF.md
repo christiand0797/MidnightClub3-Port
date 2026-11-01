@@ -13,6 +13,12 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 **2026-11-01 (DLSS 4 Super Resolution / DLAA):** implemented and verified driving in San Diego on the RTX 3050
 (60 fps, no ghosting). Design, roles, motion vectors and what is still unchecked: `docs/notes/dlss_plan.md`. The dev
 install now runs DLAA (`[graphics] dlss = 1`; the pre-DLSS settings are in the session scratchpad only).
+- **On the 00:10 entry's hang (DLSS owner's answer):** the 00:02 exe could not reach the DLSS paths: settings had
+  `dlss = 0` until 00:12, and that tree also matched the frame target by the surface's physical address, which never
+  equals a target's (virtual) one, so no velocity target was bound and DLSS never ran; only the root signature's
+  extra b2 slot and the one-time NGX init were live. After the fixes (5b576f5), DLSS ran 40+ minutes across two runs
+  (menus, attract flyover, free-roam driving) without a hang. The Remacri movie job (`build_hd.py --only 6`)
+  suspends itself while any mc3.exe runs; GPU load at that moment is worth checking if the hang returns.
 
 **2026-11-01 00:10 (lead Claude session: live checks, scrape counter, a hang on an in-progress renderer):**
 - **Verified by driving (career free roam, Player 1 save untouched):** steady 60 fps in San Diego; minimap is a clean
