@@ -132,7 +132,7 @@ $setupInstructions = if ($ContentManifest) {
     "3. When it asks for your game, pick your Midnight Club 3 DUB Edition Remix (USA) .iso file.`n   (Tip: put the .iso in this folder and it finds it by itself.)"
 }
 $hdInstructions = if ($NoEnhance) { '' } else {
-    "5. When it asks ""Make the game HD?"", click YES. A black window makes HD textures,`n   shiny realistic materials and HD movies from your own disc. It takes a few hours.`n   It pauses while you play, so leave it on overnight. When it says ALL DONE!,`n   start the game again. (Closed it? Double-click ""Make HD"" in this folder.)`n"
+    "5. When it asks ""Make the game HD?"", click YES. A black window makes HD textures,`n   shiny realistic materials and HD movies from your own disc. It takes a few hours.`n   It pauses while you play, so leave it on overnight. When it says ALL DONE!,`n   start the game again. (Closed it? Double-click ""Make HD"" in this folder.)"
 }
 [IO.File]::WriteAllText((Join-Path $stage 'START HERE.txt'), @"
 MIDNIGHT CLUB 3: DUB EDITION REMIX - PC VERSION
