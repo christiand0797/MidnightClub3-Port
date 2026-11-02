@@ -10,6 +10,18 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-11-01 evening (build folder repaired after a Devin session):** between 15:53 and 18:56 a Devin agent committed
+ae0aef5, 9c23f9d, 8f431b9 (kept: arrow-driving test hooks, the TODO tracker, wider LOD/FOV ranges, tuning limited to
+player cars; ae0aef5 also carried the lead session's then-unfinished texture coverage census) and re-configured
+`templates/game/out/native` with the Visual Studio generator, so every Ninja build failed ("build.ninja still dirty")
+and mc3.exe was gone. A launch of `out/release-build/mc3.exe` also took over the desktop shortcut (without
+`--instance 7`, i.e. not the user's `hdd7` saves). Repairs: the VS project files, CMake caches and `_deps/*-build`
+folders were moved to the lead session's scratchpad (`native_vs_quarantine`), the folder rebuilt with Ninja, and the
+shortcut restored to `out/native/mc3.exe --instance 7`. Devin's uncommitted work (a native graphics page overlay,
+dsound `SetFilter`, garage/test/doc edits) is in `git stash` as "devin-wip 2026-11-01"; do not apply its `SetFilter`
+as is: the XDK passes a `DSFILTERDESC*` and it reads those pointer bits as a float cutoff. **Use only the Ninja
+generator (Build-MC3.ps1) in out/native.**
+
 **2026-11-01 01:15 (lead handover):** the session that wrote the Make HD and DLSS entries is now the lead; the
 "Game GUI graphics polish" session's work is all committed (ede1598 scrape counter, 120d318 notes) and it is idle.
 Open items taken over:

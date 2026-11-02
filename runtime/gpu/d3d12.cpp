@@ -1789,7 +1789,7 @@ void D3D12Backend::WriteCoverage() {
             char line[128];
             while (std::fgets(line, sizeof(line), f)) {
                 unsigned long long h = 0, d = 0, b = 0;
-                if (std::sscanf(line, "%llx	%llu	%llu", &h, &d, &b) == 3) {
+                if (std::sscanf(line, "%llx\t%llu\t%llu", &h, &d, &b) == 3) {
                     coverage_[h].draws += d;
                     coverage_[h].pbr += b;
                 }
