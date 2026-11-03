@@ -1,5 +1,6 @@
 /out/
 /build/
+/tests/build/
 .vs/
 .vscode/
 .idea/

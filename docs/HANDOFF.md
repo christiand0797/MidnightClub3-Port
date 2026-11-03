@@ -677,14 +677,14 @@ percentages), `customdata/<car>.carcfg` and `customdata/<car>/*.mccarcustom` (lo
 Each agent owns specific files, does not build, and writes notes to `docs/notes/<topic>.md`. **When they finish the
 lead must: read each notes file, build (`Build-MC3.ps1`), fix compile errors, test, and fold results into this file.**
 
-| Agent topic | Owns | Notes file |
-|---|---|---|
-| DirectSound envelope (SetEG, hit by MC3) + LFO | runtime/xdk/dsound.cpp, runtime/audio/* | docs/notes/audio_envelope_lfo.md |
-| Verify every `= 0` symbol in game.toml against the XBE | templates/game/config/game.toml | docs/notes/symbol_audit.md |
-| P8/linear/.tex/.xbpf texture extraction | tools/texture_pack/*, textures/source output | docs/notes/texture_extraction.md |
-| LoadVertexShader/SelectVertexShader + pretransformed IM vertices | runtime/xdk/d3d8.cpp (+ state.h additive) | docs/notes/d3d8_shader_slots.md |
-| Placebo settings: implement (deadzones etc.) or remove; MC3Extension dead code | runtime/app/app.h, settings.cpp, settings_menu.cpp, runtime/core/input.*, runtime/gpu/mc3_extension.*, graphics_page.cpp, config/mc3_enhancements.toml | docs/notes/settings_cleanup.md |
-| LOD/draw distance + FOV reverse engineering | templates/game/src/game/lod.cpp, fov.cpp (new) | docs/notes/lod_fov.md |
+| Agent topic | Owns | Notes file | Status |
+|---|---|---|---|
+| DirectSound envelope (SetEG, hit by MC3) + LFO | runtime/xdk/dsound.cpp, runtime/audio/* | docs/notes/audio_envelope_lfo.md | Implemented (modulation.h + dsound.cpp), built into mc3.exe, needs in-ear playtest |
+| Verify every `= 0` symbol in game.toml against the XBE | templates/game/config/game.toml | docs/notes/symbol_audit.md | Complete — all 55 absent proven, nothing to change |
+| P8/linear/.tex/.xbpf texture extraction | tools/texture_pack/*, textures/source output | docs/notes/texture_extraction.md | Complete — source/ went from 4,776 to 12,714 PNGs; P8 (105), .tex (532), .xbpf (1,378 + 5,603 vinyls), XPR (20) all extracted |
+| LoadVertexShader/SelectVertexShader + pretransformed IM vertices | runtime/xdk/d3d8.cpp (+ state.h additive) | docs/notes/d3d8_shader_slots.md | Built; title renders; MC3 not seen calling slot functions yet |
+| Placebo settings: implement or remove; MC3Extension dead code | runtime/app/app.h, settings.cpp, settings_menu.cpp, runtime/core/input.*, runtime/gpu/mc3_extension.*, config/mc3_enhancements.toml | docs/notes/settings_cleanup.md | Complete — no placeholder settings remain; mc3_enhancements.toml holds only render + input settings |
+| LOD/draw distance + FOV reverse engineering | templates/game/src/game/lod.cpp, fov.cpp (new) | docs/notes/lod_fov.md | Wired: sub_0020B6F0 sets g_lod_scale / g_fov_scale every frame; needs playtest |
 
 Background shell jobs: texture upscale (`tools/texture_pack/upscale.py`), movie upscale
 (`tools/video/upscale_movies.py`, log `%TEMP%\movies.log`). Both resume when rerun.
@@ -696,18 +696,16 @@ Resume it (SendMessage to its id) or redo the task from its notes.
 
 ## 8. Known gaps / next steps (keep current)
 
-1. Confirm with the user: NPC limbs animate; Vehicle tab works; HD movies show.
-2. Integrate the six agents' work (§7), rebuild, test.
-3. Ride height in the game's Tuning menu (§4.3) and restrict tuning to the player's car.
-4. P8 & other textures into the pack (agent), then rerun `upscale.py` for new sources.
-5. LOD / FOV (agent), then remove the F1 "Level of detail" Pending item and wire the setting.
-6. Racer notification popup off-screen to the left (not investigated yet).
-7. Minimap black square (fix landed earlier, never confirmed in game).
-8. `graphics_page.cpp` native options page: disabled; needs a text page (HUD Options screen 0x08) rather than the
-   Audio slider screen, and the crash the opencode agent reported needs a repro.
-9. Bloom/SSAO/colour grading/UI scale: real post passes or game hooks, if kept.
-10. Commit: nothing from this session is committed (`git status` is large). Commit in logical pieces when the user
-    agrees; never commit the ISO, extracted assets or out/.
+1. **Confirm with the user:** NPC limbs animate; Vehicle tab works; HD movies show. — needs user playtest (U-1, U-2, U-3)
+2. **Integrate the six agents' work (§7), rebuild, test.** — done: build passes, all 59/59 ctest tests pass, mc3.exe rebuilt with the tuning.cpp ownership fix
+3. **Ride height in the game's Tuning menu (§4.3) and restrict tuning to the player's car.** — backend done (tuning.cpp restricts to player cars; garage.cpp extends Flash lists to 29 ride heights, all rim sizes, all profiles, all widths). Fixed: ride height now restored to original when a car loses player ownership. Still needs user playtest (U-2, U-7).
+4. **P8 & other textures into the pack (agent), then rerun `upscale.py` for new sources.** — done: 12,714 source PNGs extracted; rerun `upscale.py` to create replacements for new sources
+5. **LOD / FOV (agent), then remove the F1 "Level of detail" Pending item and wire the setting.** — wired: g_lod_scale / g_fov_scale set every frame in sub_0020B6F0; F1 Quality sliders exist; needs playtest (U-12)
+6. **Racer notification popup off-screen to the left** — not investigated yet; needs a race capture with F3/CAPTURE while it shows (U-6/U-15)
+7. **Minimap black square** — MaskedClear fix landed (post 2026-10-21 03:03), never confirmed in game (U-5)
+8. **`graphics_page.cpp` native options page** — the F1 / Back + Y ImGui settings menu already serves this purpose (Display, Vehicle, Quality, Picture, Capture, PBR, Info tabs); no separate page needed unless the user wants one inside the garage's Flash menu
+9. **Bloom/SSAO/colour grading/UI scale** — removed from settings (no placeholder settings remain); real post passes would be new work if the user wants them
+10. **Commit** — done: 0199c70 (TODO tracker statuses) and f129a0c (tuning.cpp ownership fix); never commit ISO, extracted assets, or out/
 
 ## 9. Pitfalls learned
 
