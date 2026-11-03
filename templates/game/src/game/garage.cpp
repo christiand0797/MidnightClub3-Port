@@ -427,6 +427,32 @@ void LogSuspension(uint32_t sim, uint32_t cfg) {
     LOGR("garage: player vehSim %08X %s", sim, line);
 }
 
+// Gets the current CarCfg for the selected garage car (for ride height logging).
+uint32_t GetCurrentCarCfg(uint32_t garage) {
+    if (!Plausible(garage) || !Committed(garage + kGarageCars, kGarageCurrent + 4 - kGarageCars)) return 0;
+    const uint32_t slot = R32(garage + kGarageCurrent);
+    if (slot >= 2) return 0;
+    const uint32_t car = R32(garage + kGarageCars + 4 * slot);
+    if (!Plausible(car) || !Committed(car + 0x64, 4)) return 0;
+    return R32(car + 0x64);  // CarCfg pointer at car+0x64
+}
+
+// Logs the front/rear ride height indices from a CarCfg, so a playtest can see
+// what the garage page is displaying. CarCfg: +0x16 RideHeight0 (front), +0x17 RideHeight1 (rear).
+void LogRideHeightValues(uint32_t cfg) {
+    if (!cfg || !Committed(cfg + 0x16, 2)) return;
+    const uint8_t front = G<uint8_t>(cfg + 0x16);
+    const uint8_t rear = G<uint8_t>(cfg + 0x17);
+    static std::mutex lock;
+    static std::string last;
+    char line[128];
+    std::snprintf(line, sizeof(line), "front idx %u, rear idx %u", unsigned(front), unsigned(rear));
+    std::lock_guard<std::mutex> guard(lock);
+    if (last == line) return;
+    last = line;
+    LOGR("garage: CarCfg %08X ride heights %s", cfg, line);
+}
+
 void UnregisterCar(uint32_t car) {
     std::vector<uint32_t> sims;
     std::vector<uint32_t> no_longer_player;
@@ -1014,6 +1040,11 @@ X86_EXTERN_FUNC(__imp__sub_001465E0);
 X86_FUNC(sub_001465E0) {
     RegisterGarageCar(ctx.ecx);
     if (Extended()) ExtendList(ctx, ctx.ecx);
+    if (Extended() && Plausible(ctx.ecx) && Committed(ctx.ecx + kGarageType, 4) &&
+        R32(ctx.ecx + kGarageType) == kTypeRide) {
+        uint32_t cfg = GetCurrentCarCfg(ctx.ecx);
+        if (cfg) LogRideHeightValues(cfg);
+    }
     __imp__sub_001465E0(ctx, base);
 }
 
