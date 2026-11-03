@@ -1137,7 +1137,20 @@ STREAM(Process, 3) {
         if (reported.fetch_add(1) < 16) LOGR("dsound: stream %08X refilled while stopping", v.obj);
     }
     // the stream's voice comes on with its first packet, not again at packet boundaries, nor while held
-    if (!v.active && !v.hold) v.mod.On();
+    if (!v.active && !v.hold) {
+        v.mod.On();
+        // XACT may have started this song on a new stream object while a previous
+        // song's stream is starved (ran out of packets during a hitch, waiting for
+        // a refill XACT will never send because it moved on). Stop that starved
+        // stream so the old song cannot refill and play over this one.
+        for (auto& other : g_voices) {
+            Voice& ov = other.second;
+            if (&ov == &v) continue;
+            if (ov.stream && ov.active && !ov.hold && !ov.paused && !ov.sync &&
+                !ov.stopping && ov.packets.empty() && ov.starved_at >= 0)
+                Deactivate(ov);
+        }
+    }
     // how long a starved stream was silent: a song that skips is a stereo stream refilled late, the log says when
     if (v.starved_at >= 0) {
         const int64_t silent = NowMs() - v.starved_at;
