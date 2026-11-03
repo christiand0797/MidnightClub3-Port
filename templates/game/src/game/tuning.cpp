@@ -647,12 +647,11 @@ void ApplyVehicleTuning() {
     static unsigned skip_log = 0;
     unsigned frame_skips = 0;
     for (auto it = g_tuned.begin(); it != g_tuned.end();) {
-        // Skip non-player vehicles entirely - traffic and opponents keep their original values
-        if (it->second.owner != 0 && !g_player_sims.count(it->second.owner)) {
-            ++it;
-            ++frame_skips;
-            continue;
-        }
+        // Non-player vehicles (traffic, opponents, or a car that just lost player
+        // ownership) keep or restore their original values: Target() returns t.original
+        // when the owner is not a player, and Apply() is a no-op when the value already
+        // matches. Skipping entirely would leave a recently de-playered car's tuned
+        // offset in place instead of restoring it.
         if (!Apply(it->first, it->second, SimSettings(bank, it->second.owner)))
             it = g_tuned.erase(it);  // the block was freed or reloaded: the visitor tracks it again if it comes back
         else
