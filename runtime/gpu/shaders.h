@@ -132,6 +132,9 @@ struct DrawConstants {
     // otherwise), z 1 for a HUD draw (DLSS keeps the current frame there), w 1 when the draw's own motion is known
     // (a vertex program run again on last frame's constants), 0 for the camera's
     float taa[4];
+    // x 1 on a train/tram shell draw (TrainWindowTexture in d3d12.cpp): its alpha-0 window texels, which the
+    // console's alpha test cuts open onto an interior the game draws only up close, draw as tinted glass
+    float glass[4];
 };
 
 }  // namespace gpu

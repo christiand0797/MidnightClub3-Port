@@ -3271,6 +3271,14 @@ void D3D12Backend::BuildPipelineKey(const State& s, const Assembled& a, uint64_t
 // alpha test off: compare always, in Cmp() minus 1 terms like the enabled test
 constexpr float kAlphaTestAlways = float(D3D12_COMPARISON_FUNC_ALWAYS - 1);
 
+// The trains' one texture (va_tram_sd, va_train_detroit, va_train_tokyo; console content hashes): the shell's
+// window texels are alpha 0, so its alpha test opens them onto the interior, ads and passengers, which the game
+// draws only when the camera is right beside the train. Everywhere else the windows were holes onto the street.
+bool TrainWindowTexture(uint64_t original_hash) {
+    return original_hash == 0xCBD7BFB78140A4B4ull || original_hash == 0xC2FD2BE826DD6218ull ||
+           original_hash == 0x463ED3177FE07761ull;
+}
+
 // D3DRS_FOGTABLEMODE values
 constexpr uint32_t kFogTableNone = 0;
 constexpr float kFogTableLinear = 3.0f;
@@ -3729,10 +3737,11 @@ void D3D12Backend::CaptureDraw(const State& s, uint32_t prim, uint32_t count, co
                                const DrawTextures& stages) {
     fprintf(cap_,
             "%04u draw rt %08X ds %08X prim %u count %u vs %08X ps %08X blend %u %X %X zen %u %X zwrite %u "
-            "zbias %d %.2f cull %u cw %X c0 %.3f %.3f %.3f %.3f op %X sten %u %X %X %X",
+            "zbias %d %.2f cull %u cw %X c0 %.3f %.3f %.3f %.3f op %X sten %u %X %X %X atest %u %X %u light %u",
             cap_i_++, s.rt.data, bound_ds_ ? s.zs.data : 0, prim, count, s.vs_handle, s.ps ? s.ps->handle : 0, k.blend,
             k.src, k.dst, k.zen, k.zfunc, k.zwrite, k.zbias, k.zslope, k.cull, k.wmask, c.pc[0][0], c.pc[0][1],
-            c.pc[0][2], c.pc[0][3], k.op, k.sten, k.sfunc, k.smask, k.swmask);
+            c.pc[0][2], c.pc[0][3], k.op, k.sten, k.sfunc, k.smask, k.swmask, SimpleState(s, kMAlphaTestEnable),
+            SimpleState(s, kMAlphaFunc), SimpleState(s, kMAlphaRef) & 0xFF, s.rs[kRsLighting]);
     CaptureTextures(s, stages);
 }
 
@@ -4208,6 +4217,9 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
         c.carpaint[2] = std::clamp(graphics.car_roughness, 0.05f, 0.8f);
         c.carpaint[3] = std::clamp(graphics.car_reflection, 0.0f, 2.0f);
     }
+    // the shell only (a vertex program): the interior and passenger passes keep their own cut-outs
+    if (sh.prog && SimpleState(s, kMAlphaTestEnable) && TrainWindowTexture(stages.photo_identity[0].original_hash))
+        c.glass[0] = 1;
     UploadConstants(s, sh, k, stages, size, c, evidence.get());
     // the camera of the frame's static world, for the motion of draws that do not write their own
     if (k.vel == 1 && sh.fixed_transform && !dlss_cam_.valid && !a.pretransformed) {

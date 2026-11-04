@@ -67,6 +67,7 @@ const char* kCommonTail = R"(    float4 spread[4];
     float4 pbr2;
     float4 zparams;
     float4 taa;
+    float4 glass;
 };
 )";
 
@@ -1022,7 +1023,13 @@ std::string PixelHlsl(const PixelKey& k) {
                 "    outc.rgb = lerp(outc.rgb, lit, fogin.a);\n"
                 "}\n";
     }
-    if (k.alphatest) body += "alphatest(outc.a);\n";
+    // train windows: dark glass over the art the window texels hold (the interior's ads), lit like the body
+    if (k.alphatest)
+        body += "if (glass.x != 0 && round(outc.a * 255) == 0) {\n"
+                "    outc.rgb = lerp(outc.rgb, outc.rgb * 0.3 + float3(0.035, 0.045, 0.05) * v0.rgb, 0.7 * fogin.a);\n"
+                "    outc.a = 1;\n"
+                "}\n"
+                "alphatest(outc.a);\n";
     body += "if (sblend.x != 0) {\n"
             "    float4 sb = round(saturate(outc) * 255);\n"
             "    float4 sv = (sb >= 128 ? sb - 256 : sb) / 255;\n"
