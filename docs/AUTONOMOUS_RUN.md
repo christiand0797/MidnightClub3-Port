@@ -26,7 +26,14 @@ remains on its current path until a real PBR integration is implemented and vali
 - **Not done:** Detroit is locked on this save. It opens after the hookmen Muscle_2_part_2 plus Culture_2_part_1 or
   Chopper_2_part_1 (`tune/progress/unlockingrules.csv`). Forcing it in Arcade alone crashes, and forcing it at profile
   load also opens it in the career (HANDOFF, 2026-11-01). Blended/alpha-tested/programmable/multi-texture draws stay legacy.
-- All 58 CTest checks and the two `tools/pbr` unittest suites pass. Nothing committed.
+- **Since 2026-10-30:** All commits since are in git (main is 80 commits ahead of origin). Key changes:
+  - `f129a0c` fix: restore ride height to original when car loses player ownership (tuning.cpp)
+  - `34efb85` feat: garage ride height logging diagnostics
+  - `1fc5dba` docs: HANDOFF + gitignore updates
+  - `0199c70` docs: TODO tracker statuses for resolved items
+  - `aca664a` fix: stop starved streams when a new stream starts, preventing overlapping songs (dsound.cpp)
+  - `522c41e` docs: record song-overlap fix and update tracker status
+- All 59 CTest checks pass. Build succeeds with `Build-MC3.ps1 -Jobs 8`.
 
 ## Earlier checkpoint — 2026-10-29 afternoon, PBR face normals, baked mode and fog (Claude session)
 
