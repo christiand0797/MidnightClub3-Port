@@ -22,6 +22,7 @@
 #include "app/app.h"
 #include "app/tuning_profiles.h"
 #include "app/pbr_menu.h"
+#include "app/updates.h"
 #include "core/diag.h"
 #include "core/input.h"
 #include "core/log.h"
@@ -543,6 +544,7 @@ void ReportGraphicsFailure(const char* reason) {
 }
 
 void DrawSettingsMenu(float fps) {
+    updates::DrawNotification();
     Settings& s = Get();
     ImGuiIO& io = ImGui::GetIO();
     if (g_confirm_display && DisplayClock::now() >= g_display_deadline) RevertDisplay();
@@ -694,6 +696,7 @@ void DrawSettingsMenu(float fps) {
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Info")) {
+            updates::DrawMenu();
             Check("Show frame rate", &s.graphics.show_fps, nullptr);
             ImGui::Text("%.1f fps", fps);
             ImGui::TextWrapped("F1 or Back + Y opens and closes this menu. Mouse, Tab / Shift+Tab, arrow keys and "

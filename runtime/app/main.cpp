@@ -20,6 +20,7 @@
 #include <backends/imgui_impl_win32.h>
 
 #include "app/app.h"
+#include "app/updates.h"
 #include "app/ui_font.h"
 #include "app/qa_startup_gate.h"
 #include "core/input.h"
@@ -342,6 +343,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         return 2;
     }
     app::Load();
+    app::updates::Startup(app::ExeDir());
     if (app::kGame.init) app::kGame.init();
     if (relaunched && !logx::kVerbose) LOGR("Relaunched: %s", IMAGE_XBE);
     else app::LogSystem();
@@ -397,5 +399,6 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     }
     if (app::g_mode_changed) ChangeDisplaySettingsW(nullptr, 0);
     logx::Flush();
+    app::updates::Shutdown();
     kernel::Shutdown(0);
 }

@@ -6,7 +6,39 @@ The latest user request authorizes PBR code/material-system development in paral
 New offline PBR asset generation still follows the media pass and a verified full backup. The renderer
 remains on its current path until a real PBR integration is implemented and validated.
 
-## Latest checkpoint — 2026-10-30, PBR for all four cities, replays, songs (Claude session)
+## Latest checkpoint — 2026-11-04, native build and browser/account continuation
+
+The historical Oct29 heartbeat checkpoint is stale. Inspect actual Git and live jobs before continuing.
+Current base is `3591c1a`; preserve its concurrent native relay, controller, browser and PBR changes.
+The `github` remote's main was `fa21373` at 14:18 UTC. Source publication is separate from a runnable release.
+
+- Isolated native build completed at `.local/continuation-20261104-r1/native-result-r4.json`, exit 0,
+  with no source-input hash changes during the build. EXE SHA-256 is
+  `d5f57d05c97d5368e39baa8d05a886881d120d50a028d7a28b418ce0afbf7539`; DLL is
+  `209de3f5a39e8c5ee5b8dae1bd64bcd306b7ab88fb647e07ce8f2ab62464cb14`.
+  The integrated CPU suite passes **60/60** in `ctest-r3.log`. This is compile/CPU evidence, not new native gameplay acceptance.
+  Canonical EXE/DLL were changed by concurrent work since the initial baseline and were preserved; settings and the vehicle texture list stayed unchanged.
+- The native updater uses separate Check, Download and Install-after-close actions. Packaged releases check at startup;
+  development checkouts do not. The player chooses each download/install. The helper verifies the fixed GitHub repository,
+  archive digest and manifest, preserves personal content, and retains transactional backups. Windows PowerShell 5.1
+  fixture validation passed 49 updater checks and 31 packaging checks. No new runtime release was published or installed.
+- Browser accounts, per-account opaque cloud save/config files, remembered device sessions, password visibility,
+  conflict handling and MC3-inspired menus are implemented and undergoing actual HTTP/browser security checks.
+  The browser currently displays a native-host stream; a local WebAssembly/WebGPU game port is not complete.
+  Cloud files can be downloaded; a running native game does not yet import them. A client-reported acknowledgement
+  is not proof that the original game validated or loaded a save. Do not write guessed career fields from network packets.
+- Three Codex agents own account API/security tests, browser UI verification, and original-save/network research
+  plus an explicit-instance snapshot collector. OpenCode/Claude transport work remains preserved and subject to review.
+  Root owns final integration, updater, deployment and documentation. Stream access/capture and the launcher still need review.
+- Actual media coordinator `25356` / worker `6060` is processing the new strict Remacri pass. At 14:14 UTC its encoder
+  was writing `story/.stokmout...part.mp4` with one NCNN worker. Discover identities again; preserve healthy jobs and partials.
+  No full-project backup verification or game was observed. Do not treat generated vehicle maps as adopted or the final backup gate as satisfied.
+
+Remaining acceptance includes two actual native clients racing through the relay, original Network menu/account integration,
+  safe native cloud restore, shared career authority/free-roam, browser-local execution/quality parity, vehicle PBR native proof,
+  true displacement coverage, remaining visual validation, final strict media audits and the verified full-project backup.
+
+## Earlier checkpoint — 2026-10-30, PBR for all four cities, replays, songs (Claude session)
 
 - **PBR is drawing in game.** Dedicated path active for baked world scenery in San Diego, Atlanta and Tokyo, ~60 fps
   (path ~3-8 ms for 300-760 material draws). Fixes on the way, each exact against the legacy shader and tested:

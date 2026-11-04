@@ -27,6 +27,16 @@ release.
 
 **New here? Read the [easy install steps](INSTALL.md#the-easy-way-start-here) first.**
 
+**Updates.** Open **F1 > Info > Check now**, or double-click **Update MC3.cmd**
+in the game folder, to check for a published playable build. Checking does not
+download or install it. New source commits are shown separately from runnable
+releases. **Download update** stages a published build; **Install after game
+closes** is a separate choice. Exit the game normally when ready. Apply waits
+for the game and Make HD to close, then updates distributed program/tool files
+while preserving saves, personal settings and generated game content. The
+included `update/README.md` has the manual commands and explains staging,
+backups and interrupted updates.
+
 **Make HD.** An own-disc release asks "Make the game HD?" at start until its HD
 build is finished. **Yes** opens a window that makes HD textures, PBR materials
 and HD movies from your disc (a few hours; it pauses while the game runs; close it any time, and double-click

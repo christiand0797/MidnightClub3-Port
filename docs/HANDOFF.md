@@ -10,6 +10,20 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-11-04 (published-runtime updater packaging):** portable packages now always
+include `update/Update-MC3.ps1`, `update/README.md` and the root **Update MC3.cmd**
+launcher, including `-NoEnhance` builds. The launcher explicitly passes its own
+installation directory and invokes **Check** only. Source commits and published
+runnable releases are reported separately; Stage and Apply are separate choices.
+Apply retains backups/journaling, waits for game/Make HD exit and preserves saves,
+preferences and generated content. Windows PowerShell 5.1 packaging validation
+passes **31 synthetic checks**, including the actual updater reading the ZIP,
+manifest coverage, Check-only launcher and preservation of personal fixtures.
+The ZIP writer now explicitly uses slash entry paths: .NET Framework's default
+writer used backslashes, incompatible with the strict updater path parser.
+Test inputs are a synthetic local PE/compiler/CRT fixture; no downloads, native
+launch or publication occurred. This is not live-update acceptance.
+
 **2026-11-04 (trams, max-detail PBR pack):**
 - **Train windows.** The trams/subways are `va_` vehicles (`vehicle/va_tram_sd`, `va_train_detroit`, `va_train_tokyo`,
   one 128x128 DXT5 each: hashes CBD7BFB78140A4B4, C2FD2BE826DD6218, 463ED3177FE07761). The shell (`main.mesh`,

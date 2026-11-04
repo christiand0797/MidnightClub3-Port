@@ -64,6 +64,17 @@ Get-ChildItem -LiteralPath $compilerSource -Recurse -File | Where-Object {
 # xbe_recomp.exe needs the C++ runtime beside it
 foreach ($dll in $crtDlls) { Copy-Item -LiteralPath $dll.FullName -Destination (Join-Path $compilerStage $dll.Name) }
 if (Get-ChildItem -LiteralPath $stage -Recurse -File -Filter 'mc3.dll') { throw 'mc3.dll (recompiled game code) must not be packaged.' }
+# Updates are independent of Make HD: a small own-disc/-NoEnhance package can still check for published builds.
+# The launcher is check-only. Stage/download and Apply stay separate explicit choices in the updater/native UI.
+$updateSource = Join-Path $projectRoot 'tools/update'
+$updateStage = Join-Path $stage 'update'
+[void][IO.Directory]::CreateDirectory($updateStage)
+foreach ($name in @('Update-MC3.ps1', 'README.md')) {
+    $source = Join-Path $updateSource $name
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Runtime update tools are missing $name." }
+    Copy-Item -LiteralPath $source -Destination (Join-Path $updateStage $name)
+}
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Update MC3.cmd') -Destination (Join-Path $stage 'Update MC3.cmd')
 # "Make HD" (tools/enhance/build_hd.py): the HD textures, PBR pack and HD movies built on the player's PC from their own
 # disc. enhance\ holds a private Python with the packages the tools import, the tools as laid out in the repository,
 # the Real-ESRGAN upscaler with the models the pipeline uses and the PBR networks (DeepBump, PBRify as ONNX). No game
@@ -164,6 +175,12 @@ PROBLEMS?
   Don't delete or move anything in this folder (the DLLs, compiler and enhance folders are needed).
   More help: INSTALL.md and PLAYER_GUIDE.md in this folder.
 
+UPDATES
+  Double-click "Update MC3" to check for a published build. Checking changes no game files.
+  New source commits are reported separately; they are not downloaded as a runnable update.
+  Download and install are separate choices. The update tool waits for the game and Make HD to close.
+  Your saves, settings, disc files, HD textures and movies stay in place. More: update\README.md.
+
 Version: $Version   Source revision: $SourceRevision
 Your saves and settings stay on this PC. Nothing from the game is downloaded: the HD look is made from your disc.
 This is a fan-made development build; the GitHub release notes list what was tested.
@@ -194,7 +211,16 @@ $manifest = [ordered]@{
 }
 [IO.File]::WriteAllText((Join-Path $stage 'release-manifest.json'), ($manifest | ConvertTo-Json -Depth 6), $utf8)
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-[IO.Compression.ZipFile]::CreateFromDirectory($stage, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+Add-Type -AssemblyName System.IO.Compression
+# .NET Framework's CreateFromDirectory uses backslashes for nested names on Windows.
+# ZIP entries are portable slash paths, matching the release manifest and update validator.
+$archive = [IO.Compression.ZipFile]::Open($zip, [IO.Compression.ZipArchiveMode]::Create)
+try {
+    foreach ($file in (Get-ChildItem -LiteralPath $stage -Recurse -File)) {
+        $entry = $file.FullName.Substring($stage.Length + 1).Replace('\', '/')
+        [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $entry, [IO.Compression.CompressionLevel]::Optimal)
+    }
+} finally { $archive.Dispose() }
 $checksum = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText(($zip + '.sha256'), "$checksum  $([IO.Path]::GetFileName($zip))`n", $utf8)
 [pscustomobject]@{ Version = $Version; Zip = $zip; SHA256 = $checksum; UnpackedDirectory = $stage; SourceRevision = $SourceRevision }

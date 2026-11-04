@@ -11,11 +11,12 @@ durable journal remain in the stage directory. Re-run Apply on an interrupted st
 [CmdletBinding()]
 param(
     [ValidateSet('Check','Stage','Apply')][string]$Mode='Check',
-    [string]$InstallDirectory=(Join-Path $PSScriptRoot '../..'),
+    [string]$InstallDirectory,
     [string]$StageDirectory,
     [long]$ReleaseId=0,
     [int]$ParentProcessId=0,
     [ValidateRange(0,86400)][int]$WaitSeconds=900,
+    [string]$ResultPath,
     [switch]$LibraryOnly
 )
 Set-StrictMode -Version Latest
@@ -23,6 +24,7 @@ $ErrorActionPreference='Stop'
 $script:Mc3Repo='christiand0797/MidnightClub3-Port'
 $script:Mc3Utf8=[Text.UTF8Encoding]::new($false,$true)
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+Add-Type -AssemblyName System.IO.Compression
 
 function Assert-Mc3([bool]$Condition,[string]$Message){if(-not $Condition){throw $Message}}
 function Get-Mc3Hash([string]$Path){return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()}
@@ -66,7 +68,7 @@ function Get-Mc3FilePolicy([string]$Name){
     Assert-Mc3 ($name -notmatch '(?i)(^|/)(hdd[^/]*|saves?|settings(?:\.toml(?:\..*)?)?|assets|textures|video_hd|shadercache|captures|work|logs)(/|$)') 'Player data/content is forbidden in runtime updates.'
     if($name -eq 'release-manifest.json'){return 'Apply'}
     if($name -match '^(?i:mc3\.exe|Check-PbrMaterials\.exe|nvngx_dlss\.dll|(?:concrt140|msvcp140(?:_1|_2|_atomic_wait|_codecvt_ids)?|vccorlib140|vcruntime140(?:_1|_threads)?)\.dll)$'){return 'Apply'}
-    if($name -in @('LICENSE','THIRD_PARTY.txt','INSTALL.md','PLAYER_GUIDE.md','START HERE.txt','NVIDIA_DLSS_LICENSE.txt','Make HD.cmd')){return 'Apply'}
+    if($name -in @('LICENSE','THIRD_PARTY.txt','INSTALL.md','PLAYER_GUIDE.md','START HERE.txt','NVIDIA_DLSS_LICENSE.txt','Make HD.cmd','Update MC3.cmd')){return 'Apply'}
     if($name -match '^(?i:compiler)/' -and $name -notmatch '(?i)\.(pdb|xbe|iso|bik|mp4|png|dds)$'){return 'Apply'}
     if($name -match '^(?i:enhance)/(python/|tools/(enhance|texture_pack|pbr|video)/|upscale_tools/)' -and
        $name -notmatch '(?i)/(source|replace|overrides)/' -and $name -notmatch '(?i)\.(xbe|iso|bik|mp4|png|dds)$'){return 'Apply'}
@@ -79,7 +81,7 @@ function Write-Mc3Json([string]$Path,$Value){
     $data=$script:Mc3Utf8.GetBytes(($Value|ConvertTo-Json -Depth 12))
     $file=[IO.FileStream]::new($temporary,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try{$file.Write($data,0,$data.Length);$file.Flush($true)}finally{$file.Dispose()}
-    if(Test-Path -LiteralPath $Path){[IO.File]::Replace($temporary,$Path,$null)}else{[IO.File]::Move($temporary,$Path)}
+    if(Test-Path -LiteralPath $Path){[IO.File]::Replace($temporary,$Path,[NullString]::Value)}else{[IO.File]::Move($temporary,$Path)}
 }
 function Read-Mc3Json([string]$Path){
     [void](Assert-Mc3NoReparse $Path)
@@ -109,6 +111,18 @@ function Get-Mc3TagRevision($Release){
     }
     throw 'Release tag chain exceeds its bound.'
 }
+function Get-Mc3LatestSource {
+    $commit=Invoke-Mc3Api 'commits/main'
+    Assert-Mc3 ([string]$commit.sha-match '^[0-9a-fA-F]{40}$') 'Invalid published main source revision.'
+    return ([string]$commit.sha).ToLowerInvariant()
+}
+function Get-Mc3RevisionRelation([string]$Current,[string]$Candidate){
+    Assert-Mc3 ($Current-match '^[0-9a-fA-F]{7,40}$' -and $Candidate-match '^[0-9a-fA-F]{7,40}$') 'Invalid source revision comparison.'
+    if(Test-Mc3Revision $Current $Candidate){return 'identical'}
+    $comparison=Invoke-Mc3Api ('compare/'+$Current+'...'+$Candidate)
+    Assert-Mc3 ($comparison.status-in @('ahead','behind','identical','diverged')) 'Unknown source comparison status.'
+    return [string]$comparison.status
+}
 function Get-Mc3Asset($Release){
     Assert-Mc3 (-not $Release.draft -and $Release.published_at) 'Draft/unpublished releases cannot update the game.'
     $assets=@($Release.assets|Where-Object {$_.name-match '^MidnightClub3-Native-.+-win64\.zip$' -and $_.state-eq 'uploaded'})
@@ -122,9 +136,15 @@ function Get-Mc3Asset($Release){
 }
 function Read-Mc3Archive([string]$Zip,[string]$ExpectedHash,[long]$ExpectedSize,[string]$Destination=''){
     [void](Assert-Mc3NoReparse $Zip)
-    Assert-Mc3 ($ExpectedHash-match '^[0-9a-fA-F]{64}$' -and (Get-Item -LiteralPath $Zip).Length-eq $ExpectedSize -and
-        (Get-Mc3Hash $Zip)-eq $ExpectedHash) 'Runtime ZIP differs from its GitHub asset digest/size.'
-    $archive=[IO.Compression.ZipFile]::OpenRead($Zip)
+    Assert-Mc3 ($ExpectedHash-match '^[0-9a-fA-F]{64}$') 'Invalid GitHub asset digest.'
+    # Hash and parse the same read-locked handle; no hash/open replacement gap.
+    $zipStream=[IO.File]::Open($Zip,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    $hasher=[Security.Cryptography.SHA256]::Create()
+    try{
+        $hash=([BitConverter]::ToString($hasher.ComputeHash($zipStream))).Replace('-','').ToLowerInvariant()
+        Assert-Mc3 ($zipStream.Length-eq $ExpectedSize -and $hash-eq $ExpectedHash) 'Runtime ZIP differs from its GitHub asset digest/size.'
+        $zipStream.Position=0;$archive=[IO.Compression.ZipArchive]::new($zipStream,[IO.Compression.ZipArchiveMode]::Read,$false)
+    }catch{$zipStream.Dispose();throw}finally{$hasher.Dispose()}
     try{
         Assert-Mc3 ($archive.Entries.Count-gt 1 -and $archive.Entries.Count-le 50000) 'Archive entry count exceeds its bound.'
         $entries=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::OrdinalIgnoreCase);$total=[long]0
@@ -190,6 +210,7 @@ function Get-Mc3Busy([string]$Install,[int]$ParentId){
         $exe=[string]$process.ExecutablePath;$cmd=[string]$process.CommandLine
         $inside=$exe.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)
         if(($process.Name-ieq 'mc3.exe' -and ($inside -or -not $exe)) -or
+           ($inside -and $process.Name-match '^(?i:python(?:w)?|realesrgan-ncnn-vulkan|ffmpeg|texconv)\.exe$') -or
            ($cmd-match '(?i)(build_hd\.py|Make HD\.cmd|generate\.py|upscale_movies\.py|upscale\.py)' -and
             ($inside -or $cmd.IndexOf($Install,[StringComparison]::OrdinalIgnoreCase)-ge 0 -or $cmd-notmatch '(?i)--native\s+'))){$busy+=$process}
     }
@@ -218,7 +239,7 @@ function Restore-Mc3Transaction([string]$Stage,$Journal){
             if($row.before_exists){$backup=Join-Mc3Child (Join-Path $Stage 'backup') $row.path
                 Assert-Mc3 ((Get-Mc3Hash $backup)-eq $row.before_sha256) 'Backup hash changed.'
                 $temp=$target+'.mc3-restore-'+$Journal.id+'.tmp';Copy-Mc3Durable $backup $temp $row.before_sha256
-                if($exists){[IO.File]::Replace($temp,$target,$null)}else{[IO.File]::Move($temp,$target)}
+                if($exists){[IO.File]::Replace($temp,$target,[NullString]::Value)}else{[IO.File]::Move($temp,$target)}
             }elseif($exists){Remove-Item -LiteralPath $target -Force} # Only a new transaction-owned leaf with its exact after hash.
             $row.state='restored'
         }catch{$errors+=$_.Exception.Message}
@@ -243,10 +264,10 @@ function Invoke-Mc3Apply([string]$Install,[string]$Stage,[int]$ParentId,[int]$Se
         $journalPath=Join-Path $Stage 'transaction.json'
         if(Test-Path -LiteralPath $journalPath){$journal=Read-Mc3Json $journalPath
             Assert-Mc3 ($journal.install-ieq $Install -and $journal.id-ceq $token) 'Transaction belongs to another install.'
-            if($journal.state-in @('applying','rolling_back','recovery_required')){Restore-Mc3Transaction $Stage $journal;return [pscustomobject]@{status='rolled_back';message='Interrupted update restored. Choose Apply again to install.'}}
+            if($journal.state-in @('applying','rolling_back','recovery_required')){Restore-Mc3Transaction $Stage $journal;return [pscustomobject]@{schema=1;status='rolled_back';message='Interrupted update restored. Stage a fresh update before applying.'}}
             Assert-Mc3 ($journal.state-ne 'rolled_back') 'This stage was rolled back. Stage a fresh update before applying.'
             Assert-Mc3 ($journal.state-eq 'applied') 'Unknown transaction state.'
-            return [pscustomobject]@{status='already_applied';source_revision=$receipt.source_revision}
+            return [pscustomobject]@{schema=1;status='already_applied';source_revision=$receipt.source_revision}
         }
         $release=Get-Mc3PublishedRelease ([long]$receipt.release_id);$asset=Get-Mc3Asset $release
         Assert-Mc3 ([long]$asset.id-eq [long]$receipt.asset_id -and $asset.digest-ceq $receipt.digest -and [long]$asset.size-eq [long]$receipt.size) 'Published asset changed after staging.'
@@ -274,28 +295,57 @@ function Invoke-Mc3Apply([string]$Install,[string]$Stage,[int]$ParentId,[int]$Se
                 Assert-Mc3 ($exists-eq $row.before_exists -and (-not $exists -or (Get-Mc3Hash $target)-eq $row.before_sha256)) 'Target changed before replacement.'
                 $temp=$target+'.mc3-update-'+$token+'.tmp';Copy-Mc3Durable $source $temp $row.after_sha256
                 $row.state='intent';Write-Mc3Json $journalPath $journal
-                if($exists){[IO.File]::Replace($temp,$target,$null)}else{[IO.File]::Move($temp,$target)}
+                if($exists){[IO.File]::Replace($temp,$target,[NullString]::Value)}else{[IO.File]::Move($temp,$target)}
                 $row.state='applied';Write-Mc3Json $journalPath $journal
             }
             $journal.state='applied';Write-Mc3Json $journalPath $journal
         }catch{$failure=$_.Exception.Message;Restore-Mc3Transaction $Stage $journal;throw "Update rolled back: $failure"}
-        return [pscustomobject]@{status='applied';source_revision=$manifest.source_revision;backups=(Join-Path $Stage 'backup');files=$files.Count}
+        return [pscustomobject]@{schema=1;status='applied';source_revision=$manifest.source_revision;backups=(Join-Path $Stage 'backup');files=$files.Count}
     }finally{
         $lock.Dispose()
-        if($owned -and (Test-Path -LiteralPath $lockPath) -and [IO.File]::ReadAllText($lockPath,$script:Mc3Utf8)-ceq $token){Remove-Item -LiteralPath $lockPath -Force}
+        $recoveryPending=$false
+        if(Test-Path -LiteralPath (Join-Path $Stage 'transaction.json')){
+            try{$saved=Read-Mc3Json (Join-Path $Stage 'transaction.json');$recoveryPending=$saved.state-in @('applying','rolling_back','recovery_required')}
+            catch{$recoveryPending=$true}
+        }
+        if($owned -and -not $recoveryPending -and (Test-Path -LiteralPath $lockPath) -and [IO.File]::ReadAllText($lockPath,$script:Mc3Utf8)-ceq $token){Remove-Item -LiteralPath $lockPath -Force}
     }
 }
 function Invoke-Mc3Updater {
+    if(-not $InstallDirectory){
+        $packaged=Join-Path $PSScriptRoot '..'
+        $InstallDirectory=if(Test-Path -LiteralPath (Join-Path $packaged 'mc3.exe')){$packaged}else{Join-Path $PSScriptRoot '../..'}
+    }
     $install=Assert-Mc3NoReparse $InstallDirectory
     Assert-Mc3 (Test-Path -LiteralPath (Join-Path $install 'mc3.exe') -PathType Leaf) 'Select an existing MC3 install.'
     if($Mode-eq 'Apply'){Assert-Mc3 ([bool]$StageDirectory) 'Apply requires the explicitly selected stage directory.';return Invoke-Mc3Apply $install $StageDirectory $ParentProcessId $WaitSeconds}
-    $release=Get-Mc3PublishedRelease $ReleaseId;$revision=Get-Mc3TagRevision $release
     $current=$null;$currentPath=Join-Path $install 'release-manifest.json'
     if(Test-Path -LiteralPath $currentPath){$current=Read-Mc3Json $currentPath}
+    $source='';$sourceMessage=''
+    if($Mode-eq 'Check'){
+        try{$source=Get-Mc3LatestSource}catch{$sourceMessage='The source-commit check is unavailable; published runtime checking continues.'}
+    }
+    try{$release=Get-Mc3PublishedRelease $ReleaseId;$revision=Get-Mc3TagRevision $release}
+    catch{
+        if($Mode-ne 'Check' -or -not $source){throw}
+        return [pscustomobject]@{schema=1;status='source_only';release_id=0;tag='';source_revision='';latest_source_revision=$source;
+            current_source_revision=$(if($current){$current.source_revision}else{''});source_ahead=($null-eq $current -or -not (Test-Mc3Revision $current.source_revision $source));
+            url=('https://github.com/'+$script:Mc3Repo+'/commits/main');message='Source commits are available, but no eligible published runtime ZIP was found. Source code is never downloaded or executed as an update.'}
+    }
     if($Mode-eq 'Check'){
         $same=$null-ne $current -and (Test-Mc3Revision ([string]$current.source_revision) $revision)
-        return [pscustomobject]@{status=$(if($same){'current'}else{'available'});release_id=$release.id;tag=$release.tag_name;source_revision=$revision;
-            current_source_revision=$(if($current){$current.source_revision}else{''});url=$release.html_url;message='Published runtime release only. Download and installation require separate player choices.'}
+        $binaryNewer=-not $same;$sourceAhead=$source -and ($null-eq $current -or -not (Test-Mc3Revision ([string]$current.source_revision) $source))
+        if($current){
+            if(-not $same){
+                try{$binaryNewer=(Get-Mc3RevisionRelation $current.source_revision $revision)-eq 'ahead'}
+                catch{$binaryNewer=$false;$sourceMessage='Runtime ordering could not be verified; no installation is offered.'}
+            }
+            if($sourceAhead){try{$sourceAhead=(Get-Mc3RevisionRelation $current.source_revision $source)-eq 'ahead'}catch{$sourceAhead=$false}}
+        }
+        $status=if($binaryNewer){'available'}elseif($sourceAhead){'source_only'}else{'current'}
+        $message=if($status-eq 'source_only'){'New source commits exist; no newer published runtime is ready. Source code is never downloaded or executed as an update.'}else{'Published runtime release only. Download and installation require separate player choices.'}
+        return [pscustomobject]@{schema=1;status=$status;release_id=$release.id;tag=$release.tag_name;source_revision=$revision;latest_source_revision=$source;source_ahead=[bool]$sourceAhead;
+            current_source_revision=$(if($current){$current.source_revision}else{''});url=$release.html_url;message=$message;source_check_message=$sourceMessage}
     }
     $asset=Get-Mc3Asset $release
     if(-not $StageDirectory){$StageDirectory=Join-Path $env:LOCALAPPDATA ('MidnightClub3-Port/updates/'+[Guid]::NewGuid().ToString('N'))}
@@ -307,6 +357,18 @@ function Invoke-Mc3Updater {
     Assert-Mc3 (Test-Mc3Revision $manifest.source_revision $revision) 'Manifest source is not the published release tag.'
     Write-Mc3Json (Join-Path $stage 'stage.json') ([ordered]@{format=1;id=[Guid]::NewGuid().ToString('N');repo=$script:Mc3Repo;install=$install;
         release_id=$release.id;asset_id=$asset.id;digest=$asset.digest;size=[long]$asset.size;source_revision=$manifest.source_revision})
-    return [pscustomobject]@{status='staged';stage=$stage;source_revision=$manifest.source_revision;message='Nothing installed. Close the game and choose Apply to install this staged release.'}
+    return [pscustomobject]@{schema=1;status='staged';stage_directory=$stage;release_id=$release.id;tag=$release.tag_name;source_revision=$manifest.source_revision;message='Nothing installed. Close the game and choose Apply to install this staged release.'}
 }
-if(-not $LibraryOnly){try{Invoke-Mc3Updater|ConvertTo-Json -Depth 6}catch{Write-Error $_.Exception.Message;exit 1}}
+if(-not $LibraryOnly){
+    $exitCode=0
+    try{$result=Invoke-Mc3Updater}catch{$message=$_.Exception.Message;if($message.Length-gt 2048){$message=$message.Substring(0,2048)}
+        $result=[pscustomobject]@{schema=1;status='error';message=$message};$exitCode=1}
+    if($ResultPath){
+        Assert-Mc3 ([IO.Path]::IsPathRooted($ResultPath)) 'ResultPath must be absolute.'
+        $fullResult=Assert-Mc3NoReparse $ResultPath
+        Assert-Mc3 (-not (Test-Path -LiteralPath $fullResult)) 'ResultPath already exists; previous evidence was preserved.'
+        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($fullResult));Write-Mc3Json $fullResult $result
+    }
+    $result|ConvertTo-Json -Depth 6
+    exit $exitCode
+}

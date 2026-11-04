@@ -51,6 +51,7 @@ include(pbr_scene.cmake)
 include(pbr_legacy_surface.cmake)
 include(car_paint.cmake)
 include(vehicle_pbr.cmake)
+include(updates.cmake)
 if(WIN32)
     include(draw_evidence.cmake)
 endif()
@@ -140,13 +141,14 @@ if(WIN32)
             ../templates/game/out/build/release/_deps/imgui-src)
         if(MC3_IMGUI_INCLUDE)
             add_executable(graphics_menu_test graphics_menu_test.cpp ../runtime/app/settings.cpp ../runtime/gpu/dlss.cpp
+                ../runtime/app/updates.cpp
                 ../runtime/app/tuning_profiles.cpp ../runtime/core/host_path.cpp
                 "${MC3_IMGUI_INCLUDE}/imgui.cpp" "${MC3_IMGUI_INCLUDE}/imgui_draw.cpp"
                 "${MC3_IMGUI_INCLUDE}/imgui_tables.cpp" "${MC3_IMGUI_INCLUDE}/imgui_widgets.cpp")
             target_include_directories(graphics_menu_test PRIVATE ../runtime "${MC3_TOML_INCLUDE}" "${MC3_IMGUI_INCLUDE}")
             target_compile_features(graphics_menu_test PRIVATE cxx_std_20)
             target_compile_options(graphics_menu_test PRIVATE -UNDEBUG)
-            target_link_libraries(graphics_menu_test PRIVATE user32 imm32 shell32)
+            target_link_libraries(graphics_menu_test PRIVATE user32 imm32 shell32 ole32)
             add_test(NAME graphics_menu COMMAND graphics_menu_test)
         endif()
     endif()
