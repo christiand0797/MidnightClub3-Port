@@ -17,7 +17,7 @@ int main() {
     const std::string a(64,'a'),b(64,'b');
     LibraryCache cache([&](const std::filesystem::path& p,const LoadPolicy& policy){
         const int n=++calls;
-        assert(policy.enabled&&policy.max_materials==4096&&policy.max_decoded_bytes==(1536ull<<20));
+        assert(policy.enabled&&policy.max_materials==4096&&policy.max_decoded_bytes==(4096ull<<20));
         if(n==1){entered.set_value();released.wait();assert(p=="old");}
         Library l;l.status=LoadStatus::Ready;l.manifest_sha256=policy.approved_manifest_sha256;return l;
     });

@@ -10,6 +10,8 @@
 #include <windows.h>
 #include <bcrypt.h>
 #include <wincodec.h>
+
+#include <cstring>
 #include <wrl/client.h>
 #include <toml++/toml.hpp>
 
@@ -167,9 +169,33 @@ Map LoadMap(const toml::table& record,std::string_view key,MapRole role,const fs
     Require(Text(*entry,"color_space")==std::string(color?"srgb":"linear"),"Incorrect material channel color space");
     map.color_space=color?ColorSpace::Srgb:ColorSpace::Linear;
     map.storage=role==MapRole::Height?Storage::R16Unorm:Storage::Rgba8;
-    Require(fs::path(map.file).extension()==".png","Only explicitly reviewed PNG maps are supported in schema1");
+    const auto extension=fs::path(map.file).extension();
+    Require(extension==".png"||(extension==".dds"&&(role==MapRole::Normal||role==MapRole::Orm)),
+            "Maps are PNG, or a DDS for normal (BC5) and ORM (BC7)");
     auto encoded=Read(SafeFile(root,map.file),policy.max_encoded_file);
     Require(Sha256(encoded)==map.sha256,"Material map digest mismatch");
+    if(extension==".dds") {
+        // DX10 header: the block-compressed levels as the pack builder wrote them, mips included
+        Require(encoded.size()>148&&std::memcmp(encoded.data(),"DDS ",4)==0,"Invalid DDS map");
+        auto u32=[&](size_t at){uint32_t v;std::memcpy(&v,encoded.data()+at,4);return v;};
+        const uint32_t height=u32(12),width=u32(16),mips=std::max(1u,u32(28)),fourcc=u32(84),dxgi=u32(128);
+        Require(fourcc==0x30315844u,"DDS map must carry a DX10 header");  // "DX10"
+        const uint32_t want=role==MapRole::Normal?83u:98u;  // DXGI_FORMAT_BC5_UNORM, DXGI_FORMAT_BC7_UNORM
+        Require(dxgi==want,"DDS map format must be BC5 (normal) or BC7 (ORM)");
+        Require(width&&height&&width<=policy.max_dimension&&height<=policy.max_dimension&&mips<=15,"Invalid DDS map dimensions");
+        map.storage=role==MapRole::Normal?Storage::Bc5:Storage::Bc7;
+        size_t at=148;uint32_t w=width,h=height;
+        for(uint32_t i=0;i<mips;++i) {
+            const uint64_t bytes=uint64_t(std::max(1u,(w+3)/4))*std::max(1u,(h+3)/4)*16;
+            Require(at+bytes<=encoded.size(),"DDS map is shorter than its levels");
+            Budget(bytes,used,policy);
+            Mip level;level.width=w;level.height=h;level.pixels.assign(encoded.begin()+ptrdiff_t(at),encoded.begin()+ptrdiff_t(at+bytes));
+            map.levels.push_back(std::move(level));at+=size_t(bytes);
+            w=std::max(1u,w/2);h=std::max(1u,h/2);
+        }
+        Require(map.levels.back().width==1&&map.levels.back().height==1,"DDS map needs its full mip chain");
+        return map;
+    }
     ComPtr<IWICStream> stream;ComPtr<IWICBitmapDecoder> decoder;ComPtr<IWICBitmapFrameDecode> frame;
     Require(SUCCEEDED(wic->CreateStream(&stream)) &&
             SUCCEEDED(stream->InitializeFromMemory(encoded.data(),DWORD(encoded.size()))) &&

@@ -12,13 +12,14 @@ namespace gpu::pbr {
 
 enum class ColorSpace { Linear, Srgb };
 enum class MapRole { Albedo, Normal, Orm, Height, Emission };
-enum class Storage { Rgba8, R16Unorm };
+// Bc5 (normal x, y) and Bc7 (ORM) come block-compressed with their mips from a DDS file, at full generated detail
+enum class Storage { Rgba8, R16Unorm, Bc5, Bc7 };
 enum class NormalConvention { OpenGl, DirectX };
 enum class SurfaceClass { World, Vehicle };
 
 struct Mip {
     uint32_t width = 0, height = 0;
-    std::vector<uint8_t> pixels; // RGBA8, or little-endian R16_UNORM for height.
+    std::vector<uint8_t> pixels; // RGBA8, little-endian R16_UNORM for height, or 16-byte 4x4 blocks (Bc5/Bc7).
 };
 struct Map {
     MapRole role = MapRole::Albedo;
@@ -58,7 +59,7 @@ struct LoadPolicy {
     std::string approved_manifest_sha256;
     // Sized for a whole city's materials with HD albedos (decoded mips stay in system memory while the pack is used).
     uint32_t max_materials = 4096, max_dimension = 8192;
-    uint64_t max_encoded_file = 128ull << 20, max_decoded_bytes = 1536ull << 20;
+    uint64_t max_encoded_file = 128ull << 20, max_decoded_bytes = 4096ull << 20;
 };
 enum class LoadStatus { Disabled, Ready, Rejected };
 struct Library {

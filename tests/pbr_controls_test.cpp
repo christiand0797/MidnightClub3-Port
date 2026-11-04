@@ -73,7 +73,7 @@ void SettingsPolicy() {
     }
     s.materials.clear();for(size_t i=0;i<kMaxMaterials+5;++i){auto row=first;row.key.assignment.original_texture=i+1;s.materials.push_back(row);}
     Sanitize(s);assert(s.materials.size()==kMaxMaterials);
-    assert(kMaxMaterials==8192&&LoadPolicy{}.max_materials==4096&&LoadPolicy{}.max_decoded_bytes==(1536ull<<20));
+    assert(kMaxMaterials==8192&&LoadPolicy{}.max_materials==4096&&LoadPolicy{}.max_decoded_bytes==(4096ull<<20));
     PreparedSettings index(s);assert(index.settings().materials.size()==8192);
     for(size_t i:{size_t(0),size_t(4096),size_t(8191)}) {
         auto assignment=AssignmentOf(i+1);auto found=index.Find(assignment,std::string(64,'A'));assert(found&&!found->enabled);

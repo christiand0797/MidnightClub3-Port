@@ -28,14 +28,19 @@ bool PlanMap(const Map* m,MapRole role,MapPlan& result){
     result.format=role==MapRole::Height?DXGI_FORMAT_R16_UNORM:Color(role)?DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:DXGI_FORMAT_R8G8B8A8_UNORM;
     const uint32_t stride=role==MapRole::Height?2:4;
     if(!m){result.width=result.height=result.levels=1;result.pixel_bytes=stride;result.upload_bytes=512;result.resident_estimate=65536;return true;}
+    // block-compressed normal (BC5) and ORM (BC7) maps: rows of 4x4 blocks, 16 bytes each
+    const bool bc=(m->storage==Storage::Bc5&&role==MapRole::Normal)||(m->storage==Storage::Bc7&&role==MapRole::Orm);
+    if(bc)result.format=m->storage==Storage::Bc5?DXGI_FORMAT_BC5_UNORM:DXGI_FORMAT_BC7_UNORM;
     if(m->role!=role||m->color_space!=(Color(role)?ColorSpace::Srgb:ColorSpace::Linear)||
-       m->storage!=(role==MapRole::Height?Storage::R16Unorm:Storage::Rgba8)||!controls::ValidDigest(m->sha256)||m->levels.empty()||m->levels.size()>15)return false;
+       (!bc&&m->storage!=(role==MapRole::Height?Storage::R16Unorm:Storage::Rgba8))||!controls::ValidDigest(m->sha256)||m->levels.empty()||m->levels.size()>15)return false;
+    result.blocks=bc;
     uint32_t width=m->levels[0].width,height=m->levels[0].height;
     if(!width||!height||width>16384||height>16384)return false;
     result.width=width;result.height=height;result.levels=uint32_t(m->levels.size());
     for(size_t i=0;i<m->levels.size();++i){const auto& level=m->levels[i];
-        if(level.width!=width||level.height!=height||uint64_t(width)*height*stride!=level.pixels.size())return false;
-        result.pixel_bytes+=level.pixels.size();result.upload_bytes=Align(result.upload_bytes,512)+Align(uint64_t(width)*stride,256)*height;
+        const uint64_t row=bc?uint64_t(std::max(1u,(width+3)/4))*16:uint64_t(width)*stride,rows=bc?std::max(1u,(height+3)/4):height;
+        if(level.width!=width||level.height!=height||row*rows!=level.pixels.size())return false;
+        result.pixel_bytes+=level.pixels.size();result.upload_bytes=Align(result.upload_bytes,512)+Align(row,256)*rows;
         if(width==1&&height==1){if(i+1!=m->levels.size())return false;}else if(i+1==m->levels.size())return false;
         width=std::max(1u,width/2);height=std::max(1u,height/2);
     }
@@ -268,11 +273,14 @@ StagedTexture StageTexture(const Context& context,const MapPlan& p,ID3D12Resourc
     const std::array<uint8_t,4> neutral_height{0,128,0,0},neutral_emission{0,0,0,255};
     for(uint32_t i=0;i<p.levels;++i){auto& f=staged.footprints[i];uint32_t stride=p.role==MapRole::Height?2:4;
         uint32_t width=p.map?p.map->levels[i].width:1,height=p.map?p.map->levels[i].height:1;
-        Require(f.Footprint.Format==p.format&&f.Footprint.Width==width&&f.Footprint.Height==height&&f.Footprint.Depth==1&&
-            rows[i]==height&&row_bytes[i]==uint64_t(width)*stride&&f.Footprint.RowPitch>=row_bytes[i]&&
-            f.Offset<=p.upload_bytes&&uint64_t(f.Footprint.RowPitch)*height<=p.upload_bytes-f.Offset,Status::UploadFailure);
+        // block maps: the footprint counts rows of blocks and a width rounded up to the block
+        const uint32_t block_rows=p.blocks?std::max(1u,(height+3)/4):height;
+        const uint64_t want_row=p.blocks?uint64_t(std::max(1u,(width+3)/4))*16:uint64_t(width)*stride;
+        Require(f.Footprint.Format==p.format&&f.Footprint.Width>=width&&f.Footprint.Height>=height&&f.Footprint.Depth==1&&
+            rows[i]==block_rows&&row_bytes[i]==want_row&&f.Footprint.RowPitch>=row_bytes[i]&&
+            f.Offset<=p.upload_bytes&&uint64_t(f.Footprint.RowPitch)*block_rows<=p.upload_bytes-f.Offset,Status::UploadFailure);
         const uint8_t* source=p.map?p.map->levels[i].pixels.data():p.role==MapRole::Height?neutral_height.data():neutral_emission.data();
-        for(uint32_t row=0;row<height;++row)std::memcpy(staged.upload.cpu+f.Offset+uint64_t(row)*f.Footprint.RowPitch,source+uint64_t(row)*row_bytes[i],size_t(row_bytes[i]));
+        for(uint32_t row=0;row<block_rows;++row)std::memcpy(staged.upload.cpu+f.Offset+uint64_t(row)*f.Footprint.RowPitch,source+uint64_t(row)*row_bytes[i],size_t(row_bytes[i]));
         f.Offset+=staged.upload.offset;
     }return staged;
 }

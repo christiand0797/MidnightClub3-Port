@@ -16,7 +16,7 @@ const char* StatusText(Status);
 struct Limits {
     // Default-heap map allocations are accounted with GetResourceAllocationInfo; driver-internal PSO
     // storage is not queryable here. Descriptor heaps/PSOs additionally have hard entry/count bounds.
-    uint64_t resident_bytes=1536ull<<20, draw_upload_bytes=256ull<<20;
+    uint64_t resident_bytes=2048ull<<20, draw_upload_bytes=256ull<<20;
     uint32_t materials=4096, psos=256, samplers=256, srv_descriptors=40960;
     bool operator==(const Limits&) const = default;
 };
@@ -48,6 +48,7 @@ struct MapPlan {
     DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;
     uint32_t width=0,height=0,levels=0;
     uint64_t pixel_bytes=0,upload_bytes=0,resident_estimate=0;
+    bool blocks=false;  // BC5/BC7 levels: rows of 4x4 blocks
 };
 struct Plan {
     std::shared_ptr<const Library> owner;

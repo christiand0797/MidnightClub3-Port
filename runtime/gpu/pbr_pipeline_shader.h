@@ -271,7 +271,9 @@ float4 main(PbrRaster i) : SV_Target0 {
     const float3 n_geo=n; // the surface's own normal, before the normal map
     PbrGeoFrame frame;
     if(pbr_maps.x!=0&&pbr_surface.z>0&&PbrGeoCotangentFrame(dx,dy,tx,ty,n,frame)) {
-        float3 map=saturate(pbr_normal.SampleGrad(pbr_sampler,uv,tx,ty).xyz)*2-1;
+        // x and y only (BC5 normal maps carry no z): z from the unit length, the same for RGBA8 maps
+        float2 nxy=saturate(pbr_normal.SampleGrad(pbr_sampler,uv,tx,ty).xy)*2-1;
+        float3 map=float3(nxy,sqrt(saturate(1-dot(nxy,nxy))));
         map.xy*=pbr_surface.z;if(pbr_options.x==0)map.y=-map.y;
         if(pbr_scene_info.z==1)map.xy+=PbrDetail(uv,tx,ty)*pbr_surface.z; // baked city surfaces: fine grain
         float3 mapped; // Common-scale cotangents preserve skew UV metric; never normalize T/B separately.

@@ -1101,7 +1101,8 @@ private:
     bool BindVelocity(bool on);
     uint32_t VelocityRole(const PsoKey& k, const DrawShaders& sh, float (&taa)[4]) const;
     void DlssPreviousConstants(const State& s, uint32_t prim, uint32_t start, uint32_t count, DrawConstants& c);
-    float pbr_jitter_[2] = {};  // DLSS's clip-space jitter for the PBR draw being tried
+    float pbr_jitter_[2] = {};
+    bool pbr_evict_ = false;  // a PBR draw hit the resident map budget: Present releases the maps  // DLSS's clip-space jitter for the PBR draw being tried
     bool DlssFrame(Target& t, uint32_t out_w, uint32_t out_h);
     void DlssNextFrame(const Surface& front, const Target* t);
     D3D12_RESOURCE_STATES lut_state_ = D3D12_RESOURCE_STATE_COPY_DEST;
@@ -5097,6 +5098,14 @@ void D3D12Backend::Present(const Surface& front) {
     DrawFrame(t, bi);
     present_src_ = nullptr;
     DlssNextFrame(front, t);
+    if (pbr_evict_) {
+        // the resident maps reached their budget (full-detail maps of more than one city): drop them all once the GPU
+        // is idle; the materials on screen upload again over the next frames
+        pbr_evict_ = false;
+        Flush();
+        pbr_device_.ResetGpuIdle();
+        LOGR("pbr: resident map budget reached, maps released");
+    }
     if (CoverageOn() && presents_ % 600 == 599) WriteCoverage();
     if (photo.capture) CapturePhoto(photo, bi);
     photo_observed_ = {};
@@ -5509,6 +5518,7 @@ bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShader
         if(result.draw_call_recorded&&result.status!=pbr::device::Status::Recorded) {
             CheckGpu(dev_.Get(),FAILED(result.error)?result.error:E_FAIL,"recording the dedicated PBR draw");
         }
+        if(result.status==pbr::device::Status::BudgetExceeded)pbr_evict_=true; // another city's maps fill the GPU budget
         if(result.status!=pbr::device::Status::Recorded||!result.draw_call_recorded) {
             trace(std::string("record: ")+pbr::device::StatusText(result.status));continue;
         }
