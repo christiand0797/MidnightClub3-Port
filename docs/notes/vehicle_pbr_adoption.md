@@ -17,8 +17,19 @@ writes per draw (d3d12.cpp `CaptureShaders`).
 | Pack | `tools/pbr/vehicle_pack.py` builds the vehicle material proposal from captures + inventory. It also requires a **gate receipt** (`mc3-offline-pbr-gate-v1`: strict movie audit 106/106 and a verified full project backup) whose SHA the caller supplies after reviewing it. No such receipt exists; the tool cannot and must not be fed an invented one. |
 | Install | The proposal's materials join the city pack's manifest; its new digest goes in settings.toml `[pbr] approved_manifest_sha256`. |
 
+| Gate receipt | `tools/pbr/gate_receipt.py audit` → `backup` → `receipt` builds it only from the real `upscale_movies.py --audit-only --model remacri-4x --require-original-provenance` report and an all-file SHA-256 verified backup marker (`G:\MC3_Backups`, helpers from `overnight_pipeline.py`); nothing is typed in by hand. State in `.local/pbr_gate/`. Do not use `overnight_pipeline.py --run` for this: it still hardcodes x4plus and runs `generate.py --force` on starter50, overwriting `textures/pbr/manifest.json`. |
+
+## Movie pass (started 2026-11-04)
+
+Strict Remacri status at start: 42/106, 76,829 frames left (~3 s/frame on the RTX 3050, so 2–3 days). It runs as
+`upscale_movies.py --model remacri-4x --require-original-provenance` with report `.local/movie_pass/progress.json`
+and a pause file that a wrapper sets while MC3 (or another GPU game) runs. The 37 old x4plus movies are redone too
+(x4plus looked plastic and pipeline v1 had BT.601 colours).
+
 ## Next
 
 1. Captures with cars (needs the game, so not while another agent is driving it).
-2. The two audits behind the gate (movies, full backup), reviewed by the user, then the receipt.
+2. When the movie pass finishes: `gate_receipt.py audit`, then `backup` while no other agent is writing to the
+   project (the copy refuses a source that changes mid-copy), then `receipt`; the user reviews it before its SHA
+   goes to `vehicle_pack.py --gate-sha256`.
 3. `vehicle_pack.py`, merge into the installed pack, install, check `VehicleMappedLighting` in the log and a capture.
