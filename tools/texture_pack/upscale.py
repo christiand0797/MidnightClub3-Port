@@ -322,6 +322,9 @@ def main():
             publish_json(passes, passes_path)
         print(f"  {min(i + args.batch, len(todo))}/{len(todo)}: {done} upscaled, {skipped} skipped, {failed} failed")
     print(f"done: {done} replacements written to {replace}")
+    sys.path.insert(0, str(Path(__file__).parent))  # -I leaves this folder off the path
+    import train_windows  # the trains' windows: passengers behind glass instead of holes (train_windows.py)
+    train_windows.main(["--textures", str(args.textures)])
     return 1 if failed else 0
 
 

@@ -92,7 +92,7 @@ if (-not $NoEnhance) {
     Get-ChildItem -LiteralPath $sitePackages -Directory | Where-Object Name -In 'bin' | Remove-Item -Recurse -Force
     $toolFiles = @(
         'tools/enhance/build_hd.py',
-        'tools/texture_pack/extract_all.py', 'tools/texture_pack/upscale.py', 'tools/texture_pack/xiso.py',
+        'tools/texture_pack/extract_all.py', 'tools/texture_pack/upscale.py', 'tools/texture_pack/train_windows.py', 'tools/texture_pack/xiso.py',
         'tools/texture_pack/dave.py', 'tools/texture_pack/texfile.py', 'tools/texture_pack/xbpf.py', 'tools/texture_pack/xbtex.py',
         'tools/pbr/pbrlib.py', 'tools/pbr/generate.py', 'tools/pbr/test_pack.py', 'tools/pbr/sets/hd_release.json',
         'tools/video/upscale_movies.py')

@@ -17,9 +17,13 @@ notes land in `docs/notes/*.md` (see "Work in flight").
   `interior.mesh` (#2, same UV layout as the shell), `florecent_ads.mesh` (#1) and `people.mesh` (#3). Every capture
   (dozens of trams at 230+ units) drew only the shell (174 stitched strip indices = main.mesh); the other passes were
   seen once, right beside a tram (log gate lines), with the interior pass itself alpha tested (NOTEQUAL 0), so even
-  then the windows open onto holes. Fix: `TrainWindowTexture` (d3d12.cpp) sets `DrawConstants::glass.x` on the shell
-  draw; `PixelHlsl` turns its alpha-0 texels into dark glass over the art there (the interior ads), lit by v0, before
-  `alphatest()`. Captures now print `atest <enable> <func> <ref> light <0/1>` on each draw line.
+  then the windows open onto holes. The window texels' own art is the interior's ads, so making them opaque shows brand
+  logos (a shader glass attempt did; reverted). Fix: `tools/texture_pack/train_windows.py` (run by upscale.py, shipped
+  in Make HD) fills each alpha-0 window area outside the passenger block (u 0.5..1, v 0..0.5) of the HD replacement
+  with the texture's own passengers over a dim interior behind a glass tint, opaque; PNGs carry an `mc3` text mark so
+  it runs once. The game's segment draw sub_0007AE80 draws the model for passes 0 and 1 (loop at 0x7B4B0) and keeps an
+  unread "within 40 m" list (0x5046B8); where the interior is drawn from is still unknown. Captures now print
+  `atest <enable> <func> <ref> light <0/1>` on each draw line.
 - **Max-detail pack.** `test_pack.py --cities` now writes BC5 normal / BC7 ORM DDS (texconv, full mips, 512-1024)
   plus 16-bit height PNGs: `pbr-cities-max`, 3,695 materials, 3.1 GB, digest `0d20eeb9…`, installed in settings.toml
   (the previous `pbr-cities` digest `87231d8e…` is in settings.toml.bak). The release ships `upscale_tools/texconv.exe`
