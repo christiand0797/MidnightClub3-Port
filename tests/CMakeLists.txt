@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 project(MC3RuntimeTests LANGUAGES CXX)
 enable_testing()
-foreach(test voice3d winsock_version shader_stage texture_target capture_control input_mapping timing tuning modulation garage camera_lod resolution stream_status)
+foreach(test voice3d winsock_version shader_stage texture_target capture_control input_mapping timing tuning modulation garage camera_lod resolution stream_status remote_pad)
     add_executable(${test}_test ${test}_test.cpp)
     target_include_directories(${test}_test PRIVATE ../runtime)
     target_compile_features(${test}_test PRIVATE cxx_std_20)

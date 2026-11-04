@@ -27,14 +27,25 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
+const { installAccountRoutes, atomicJson } = require('./account_service');
+const { TransportSecurity, validateRoomRequest, originAllowed } = require('./transport_security');
 
 // ---------- Configuration ----------
 const PORT = parseInt(process.env.RELAY_PORT, 10) || 8080;
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+fs.mkdirSync(DATA_DIR, { recursive: true });
+const secretFile = path.join(DATA_DIR, '.session-secret');
+if (!process.env.JWT_SECRET && !fs.existsSync(secretFile))
+  fs.writeFileSync(secretFile, crypto.randomBytes(48).toString('hex'), { flag: 'wx', mode: 0o600 });
+const JWT_SECRET = process.env.JWT_SECRET || fs.readFileSync(secretFile, 'utf8').trim();
+if (JWT_SECRET.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters.');
+const CORS_ORIGIN = process.env.CORS_ORIGIN || '';
 const MAX_PLAYERS = parseInt(process.env.MAX_PLAYERS, 10) || 8;
 const GAME_TIMEOUT = parseInt(process.env.GAME_TIMEOUT, 10) || 3600;
+const MAX_SAVE_BYTES = 16 * 1024 * 1024;  // matches account_service.js cloud file cap
+if (!Number.isInteger(MAX_PLAYERS) || MAX_PLAYERS < 1 || MAX_PLAYERS > 32) throw new Error('MAX_PLAYERS must be between 1 and 32.');
+const security = new TransportSecurity({ maxPlayers: MAX_PLAYERS });
+const allowedOrigin = req => originAllowed(req.headers.origin, req.headers.host, CORS_ORIGIN, process.env.NODE_ENV !== 'production');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -46,6 +57,7 @@ function loadDB() {
     const raw = fs.readFileSync(DB_FILE, 'utf8');
     return JSON.parse(raw);
   } catch (e) {
+    if (e.code !== 'ENOENT') throw e; // Preserve an unreadable database instead of erasing accounts.
     return {
       users: [],
       games: [],
@@ -59,10 +71,12 @@ function loadDB() {
 }
 
 function saveDB(db) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+  atomicJson(DB_FILE, db);
 }
 
 let db = loadDB();
+for (const table of ['users','games','game_players','cloud_saves','career_progress','car_setups','match_history'])
+  if (!Array.isArray(db[table])) db[table] = [];
 
 // Helper: find by id
 function findById(table, id) {
@@ -101,13 +115,13 @@ function makeToken(user) {
   return jwt.sign(
     { id: user.id, username: user.username },
     JWT_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: '30m' }
   );
 }
 
 function verifyToken(token) {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
   } catch (e) {
     return null;
   }
@@ -115,8 +129,16 @@ function verifyToken(token) {
 
 // ---------- Express App ----------
 const app = express();
-app.use(cors({ origin: CORS_ORIGIN }));
-app.use(express.json({ limit: '10kb' }));
+app.disable('x-powered-by');
+app.set('trust proxy', false); // Rate limits use the direct peer, never an untrusted forwarded address.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  if (!allowedOrigin(req)) return res.status(403).json({ error: 'Origin is not allowed.' });
+  next();
+});
+app.use(cors((req, callback) => callback(null, { origin: !!req.headers.origin && allowedOrigin(req), credentials: true })));
 
 // Rate limiting
 const apiLimiter = rateLimit({
@@ -125,77 +147,34 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests, please try again later.' }
 });
 app.use('/api/', apiLimiter);
-
-// ---------- Auth Routes ----------
-app.post('/api/register', (req, res) => {
-  const { username, password, email } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required' });
-  }
-  if (username.length < 3 || username.length > 20) {
-    return res.status(400).json({ error: 'Username must be 3-20 characters' });
-  }
-  if (password.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
-  }
-
-  const existing = findBy('users', 'username', username);
-  if (existing) {
-    return res.status(409).json({ error: 'Username already taken' });
-  }
-
-  const id = uuidv4();
-  const passwordHash = crypto.pbkdf2Sync(password, 'mc3-salt', 100000, 64, 'sha512').toString('hex');
-  const user = {
-    id,
-    username,
-    password_hash: passwordHash,
-    email: email || null,
-    created_at: now(),
-    last_seen: now(),
-    games_played: 0,
-    rating: 1000
-  };
-  push('users', user);
-  const token = makeToken({ id, username });
-  res.json({ token, user: { id, username, email: email || null } });
+app.use('/api/cloud', express.json({ limit: '24mb' }));
+app.use(express.json({ limit: '10kb' }));
+app.use((error, req, res, next) => {
+  if (error.type === 'entity.too.large') return res.status(413).json({ error: 'Request body exceeds its limit.' });
+  if (error instanceof SyntaxError) return res.status(400).json({ error: 'Malformed JSON request.' });
+  next(error);
 });
-
-app.post('/api/login', (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required' });
-  }
-
-  const user = findBy('users', 'username', username);
-  if (!user) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-  const passwordHash = crypto.pbkdf2Sync(password, 'mc3-salt', 100000, 64, 'sha512').toString('hex');
-  if (user.password_hash !== passwordHash) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-
-  user.last_seen = now();
-  saveDB(db);
-  const token = makeToken({ id: user.id, username: user.username });
-  res.json({
-    token,
-    user: { id: user.id, username: user.username, email: user.email || null, rating: user.rating }
-  });
+app.use('/api/', (req, res, next) => {
+  if (['POST', 'PUT', 'PATCH'].includes(req.method) && (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)))
+    return res.status(400).json({ error: 'A JSON object is required.' });
+  next();
 });
+installAccountRoutes(app, { db, dataDirectory: DATA_DIR, persist: saveDB, makeToken, verifyToken });
+app.use(express.static(path.join(__dirname, '../browser'), { index: 'index.html' }));
 
+// Auth routes are supplied exclusively by account_service (salted scrypt + legacy migration).
 function authMiddleware(req, res, next) {
   const header = req.headers['authorization'];
-  if (!header || !header.startsWith('Bearer ')) {
+  if (typeof header !== 'string' || header.length > 8192 || !header.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Authentication required' });
   }
   const token = header.slice(7);
   const payload = verifyToken(token);
-  if (!payload) {
+  const user = payload && typeof payload === 'object' && typeof payload.id === 'string' && findById('users', payload.id);
+  if (!user) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
-  req.user = payload;
+  req.user = { id: user.id, username: user.username };
   next();
 }
 
@@ -211,14 +190,14 @@ app.get('/api/games', (req, res) => {
 
 app.post('/api/games', authMiddleware, (req, res) => {
   const { name, max_players = MAX_PLAYERS, region = 'global' } = req.body;
-  if (!name || name.length < 1 || name.length > 50) {
-    return res.status(400).json({ error: 'Invalid game name' });
-  }
+  const checked = validateRoomRequest({ name, maxPlayers: max_players, region }, MAX_PLAYERS);
+  if (!checked.ok) return res.status(400).json({ error: checked.reason });
+  if (!canCreateGame(req.user.id)) return res.status(429).json({ error: 'Room quota exceeded.' });
 
   const id = uuidv4();
   const game = {
     id,
-    name,
+    name: checked.room.name,
     host_id: req.user.id,
     host_username: req.user.username,
     status: 'waiting',
@@ -251,7 +230,7 @@ app.post('/api/games/:gameId/join', authMiddleware, (req, res) => {
   }
 
   const players = filterBy('game_players', 'game_id', gameId);
-  if (players.length >= game.max_players) {
+  if (!Number.isInteger(game.max_players) || game.max_players < 1 || game.max_players > MAX_PLAYERS || players.length >= game.max_players) {
     return res.status(400).json({ error: 'Game is full' });
   }
 
@@ -281,11 +260,10 @@ app.post('/api/games/:gameId/leave', authMiddleware, (req, res) => {
   }
 
   // Remove player
-  const playerIdx = filterBy('game_players', 'game_id', gameId).findIndex(p => p.user_id === req.user.id);
+  const playerIdx = db.game_players.findIndex(p => p.game_id === gameId && p.user_id === req.user.id);
   if (playerIdx === -1) {
     return res.json({ ok: true });
   }
-  const leaving = filterBy('game_players', 'game_id', gameId)[playerIdx];
   db['game_players'].splice(playerIdx, 1);
   saveDB(db);
 
@@ -299,10 +277,9 @@ app.post('/api/games/:gameId/leave', authMiddleware, (req, res) => {
   } else if (game.host_id === req.user.id) {
     // Transfer host
     const newHost = remaining[0];
-    updateById('game_players', newHost.id, { role: 'host' });
-    // Actually newHost.id is game_players id, need user_id
+    newHost.role = 'host';
     const newHostUser = findBy('users', 'id', newHost.user_id);
-    updateById('games', gameId, { host_id: newHost.user_id, host_username: newHostUser.username });
+    updateById('games', gameId, { host_id: newHost.user_id, host_username: newHostUser ? newHostUser.username : newHost.username, player_count: remaining.length });
     // Broadcast host transfer handled in WS
   } else {
     game.player_count = remaining.length;
@@ -347,53 +324,93 @@ app.get('/api/saves/:slot', authMiddleware, (req, res) => {
   res.json({ save });
 });
 
+function validateSaveData(save_data) {
+  // save_data is caller-supplied opaque JSON, but we sanity-check its shape so a
+  // corrupted payload cannot bloat the database or be misread by the native game.
+  if (!save_data || typeof save_data !== 'object' || Array.isArray(save_data)) return 'save_data must be a JSON object';
+  const serialized = JSON.stringify(save_data);
+  if (Buffer.byteLength(serialized) > MAX_SAVE_BYTES) return 'save_data exceeds the 16 MiB save cap';
+  const saveMoney = save_data.money;
+  if (saveMoney !== undefined && (!Number.isSafeInteger(saveMoney) || saveMoney < 0)) return 'save_data.money must be a non-negative integer';
+  if (saveMoney !== undefined && save_data.playtime !== undefined &&
+      (!Number.isSafeInteger(save_data.playtime) || save_data.playtime < 0)) return 'save_data.playtime must be a non-negative integer';
+  return null;
+}
+
 app.post('/api/saves', authMiddleware, (req, res) => {
   const { slot, save_name, save_data, thumbnail, playtime, money, rating } = req.body;
   if (slot === undefined || save_data === undefined) {
     return res.status(400).json({ error: 'slot and save_data required' });
   }
 
-  const slotNum = parseInt(slot);
+  const slotNum = typeof slot === 'string' && /^\d{1,2}$/.test(slot) ? Number(slot) : slot;
+  const saveErr = validateSaveData(save_data);
+  if (!Number.isInteger(slotNum) || slotNum < 1 || slotNum > 16 ||
+      (save_name !== undefined && (typeof save_name !== 'string' || save_name.length > 80)) ||
+      (thumbnail !== undefined && thumbnail !== null && (typeof thumbnail !== 'string' || thumbnail.length > 8192)) ||
+      [playtime, money, rating].some(value => value !== undefined && (!Number.isSafeInteger(value) || value < 0)) ||
+      saveErr)
+    return res.status(400).json({ error: saveErr || 'Invalid save slot or metadata.' });
+  if (money !== undefined && save_data.money !== undefined && save_data.money !== money) {
+    return res.status(400).json({ error: 'save_data.money does not match top-level money metadata.' });
+  }
   const existing = filterBy('cloud_saves', 'user_id', req.user.id).find(s => s.slot === slotNum);
   const nowTs = now();
   try {
+    const payload = {
+      save_name: save_name || 'Untitled',
+      save_data: JSON.stringify(save_data),
+      thumbnail: thumbnail || null,
+      playtime: playtime || 0,
+      money: money || 0,
+      rating: rating || 0,
+      updated_at: nowTs,
+      native_ack: false,
+    };
     if (existing) {
-      Object.assign(existing, {
-        save_name: save_name || 'Untitled',
-        save_data: JSON.stringify(save_data),
-        thumbnail: thumbnail || null,
-        playtime: playtime || 0,
-        money: money || 0,
-        rating: rating || 0,
-        updated_at: nowTs
-      });
+      Object.assign(existing, payload);
       saveDB(db);
-      res.json({ success: true, slot: slotNum, message: 'Save updated' });
+      res.json({ success: true, slot: slotNum, message: 'Save updated', native_ack: existing.native_ack });
     } else {
       const id = uuidv4();
       push('cloud_saves', {
         id,
         user_id: req.user.id,
         slot: slotNum,
-        save_name: save_name || 'Untitled',
-        save_data: JSON.stringify(save_data),
-        thumbnail: thumbnail || null,
-        playtime: playtime || 0,
-        money: money || 0,
-        rating: rating || 0,
+        ...payload,
         created_at: nowTs,
-        updated_at: nowTs
+        native_ack: false,
       });
-      res.json({ success: true, id, slot: slotNum, message: 'Save created' });
+      saveDB(db);
+      res.json({ success: true, id, slot: slotNum, message: 'Save created', native_ack: false });
     }
   } catch (e) {
     res.status(500).json({ error: 'Failed to save game' });
   }
 });
 
+// Native save-import acknowledgment. The native game (or its stream proxy) calls
+// this after it has successfully imported/loaded a cloud save, so HTTP 200 on
+// /api/saves no longer means "game loaded the save" — only native_ack == true does.
+app.post('/api/saves/:slot/ack', authMiddleware, (req, res) => {
+  const { slot } = req.params;
+  const slotNum = typeof slot === 'string' && /^\d{1,2}$/.test(slot) ? Number(slot) : slot;
+  if (!Number.isInteger(slotNum) || slotNum < 1 || slotNum > 16) {
+    return res.status(400).json({ error: 'Invalid save slot.' });
+  }
+  const save = db.cloud_saves.find(s => s.user_id === req.user.id && s.slot === slotNum);
+  if (!save) {
+    return res.status(404).json({ error: 'Save not found.' });
+  }
+  save.native_ack = true;
+  save.native_acked_at = now();
+  saveDB(db);
+  res.json({ success: true, slot: slotNum, native_ack: true, native_acked_at: save.native_acked_at });
+});
+
 app.delete('/api/saves/:slot', authMiddleware, (req, res) => {
   const { slot } = req.params;
-  const idx = filterBy('cloud_saves', 'user_id', req.user.id).findIndex(s => s.slot === parseInt(slot));
+  const idx = db.cloud_saves.findIndex(s => s.user_id === req.user.id && s.slot === parseInt(slot));
   if (idx === -1) {
     return res.status(404).json({ error: 'Save not found' });
   }
@@ -421,12 +438,17 @@ app.get('/api/career', authMiddleware, (req, res) => {
     };
     push('career_progress', career);
   }
-  career.cities_unlocked = JSON.parse(career.cities_unlocked || '[]');
-  res.json({ career });
+  let cities = career.cities_unlocked || [];
+  if (typeof cities === 'string') { try { cities = JSON.parse(cities); } catch (_) { cities = []; } }
+  res.json({ career: { ...career, cities_unlocked: Array.isArray(cities) ? cities : [] } });
 });
 
 app.post('/api/career', authMiddleware, (req, res) => {
   const { total_races, races_won, total_money_earned, current_money, cars_owned, cities_unlocked, difficulty, last_played } = req.body;
+  if ([total_races, races_won, total_money_earned, current_money, cars_owned, last_played].some(value => value !== undefined && (!Number.isSafeInteger(value) || value < 0)) ||
+      (difficulty !== undefined && !['easy', 'medium', 'hard', 'custom'].includes(difficulty)) ||
+      (cities_unlocked !== undefined && (!Array.isArray(cities_unlocked) || cities_unlocked.length > 16 || cities_unlocked.some(city => typeof city !== 'string' || !/^[A-Za-z0-9 _-]{1,50}$/.test(city)))))
+    return res.status(400).json({ error: 'Invalid career metadata.' });
   let career = findBy('career_progress', 'user_id', req.user.id);
   if (!career) {
     const id = uuidv4();
@@ -448,17 +470,20 @@ app.post('/api/career', authMiddleware, (req, res) => {
 // ---------- Car Setups ----------
 app.get('/api/car-setups', authMiddleware, (req, res) => {
   const setups = filterBy('car_setups', 'user_id', req.user.id).sort((a, b) => b.updated_at - a.updated_at);
-  for (const s of setups) {
-    s.setup_data = JSON.parse(s.setup_data || '{}');
-  }
-  res.json({ setups });
+  res.json({ setups: setups.map(setup => {
+    let data = setup.setup_data || {};
+    if (typeof data === 'string') { try { data = JSON.parse(data); } catch (_) { data = {}; } }
+    return { ...setup, setup_data: data };
+  }) });
 });
 
 app.post('/api/car-setups', authMiddleware, (req, res) => {
   const { car_name, setup_data, is_equipped } = req.body;
-  if (!car_name || !setup_data) {
+  if (typeof car_name !== 'string' || !car_name.trim() || car_name.length > 80 || !setup_data || typeof setup_data !== 'object' || Array.isArray(setup_data) ||
+      (is_equipped !== undefined && typeof is_equipped !== 'boolean')) {
     return res.status(400).json({ error: 'car_name and setup_data required' });
   }
+  if (filterBy('car_setups', 'user_id', req.user.id).length >= 64) return res.status(429).json({ error: 'Car setup quota exceeded.' });
   const id = uuidv4();
   const nowTs = now();
   try {
@@ -479,24 +504,33 @@ app.post('/api/car-setups', authMiddleware, (req, res) => {
 
 // ---------- HTTP Server + WebSocket ----------
 const server = http.createServer(app);
+server.headersTimeout = 15000;
+server.requestTimeout = 30000;
+server.maxHeadersCount = 64;
 
 // WebSocket server for real-time relay
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({ server, path: '/ws', ...security.wsOptions, verifyClient: info => allowedOrigin(info.req) });
 
 // Connected clients: ws -> { id, type ('game' | 'browser'), userId, gameId, role, username, color }
 const clients = new Map();
 
 // Games in memory (synced with DB)
 const activeGames = new Map(); // gameId -> { id, name, hostId, players: Map(wsId -> client), spectators: Set(wsId) }
+function playerCount(game) { return new Set([...game.players.values()].map(player => player.id)).size; }
+function canCreateGame(userId) {
+  const all = new Map(db.games.filter(game => ['waiting', 'playing'].includes(game.status)).map(game => [game.id, game.host_id]));
+  for (const game of activeGames.values()) all.set(game.id, game.hostId);
+  return all.size < security.limits.maxRooms && [...all.values()].filter(owner => owner === userId).length < security.limits.maxRoomsPerUser;
+}
 
 function broadcastToGame(gameId, message, excludeWs = null) {
   const game = activeGames.get(gameId);
   if (!game) return;
   const targets = new Set([...game.players.keys(), ...game.spectators.keys()]);
   if (excludeWs) targets.delete(excludeWs);
-  const data = typeof message === 'string' ? message : JSON.stringify(message);
+  const data = typeof message === 'string' ? JSON.parse(message) : message;
   for (const ws of targets) {
-    if (ws.readyState === 1) ws.send(data);
+    security.send(ws, data);
   }
 }
 
@@ -509,13 +543,13 @@ function sendGameListUpdate() {
       host_username: game.hostUsername,
       status: game.status,
       max_players: game.maxPlayers,
-      player_count: game.players.size,
+      player_count: playerCount(game),
       region: game.region
     });
   }
-  const msg = JSON.stringify({ type: 'gameList', games });
+  const msg = { type: 'gameList', games };
   for (const ws of clients.keys()) {
-    if (ws.readyState === 1) ws.send(msg);
+    security.send(ws, msg);
   }
 }
 
@@ -537,6 +571,7 @@ function createGame(id, name, hostId, hostUsername, maxPlayers, region) {
 }
 
 function removeGame(gameId) {
+  security.removeRoom(gameId);
   activeGames.delete(gameId);
 }
 
@@ -555,15 +590,17 @@ function assignColor() {
 }
 
 function leaveGame(client, ws) {
+  security.leaveRoom(ws);
   const game = activeGames.get(client.gameId);
-  if (!game) return;
+  if (!game) { client.gameId = null; client.role = null; client.color = null; return; }
 
   const wasHost = game.hostId === client.userId;
   game.players.delete(ws);
   game.spectators.delete(ws);
 
   // Update DB
-  db['game_players'] = db['game_players'].filter(p => !(p.game_id === client.gameId && p.user_id === client.user.id));
+  const userStillPresent = [...game.players.values()].some(player => player.id === client.userId);
+  if (!userStillPresent) db['game_players'] = db['game_players'].filter(p => !(p.game_id === client.gameId && p.user_id === client.userId));
   saveDB(db);
 
   if (game.players.size === 0 && game.spectators.size === 0) {
@@ -574,17 +611,17 @@ function leaveGame(client, ws) {
   } else {
     const gameObj = findBy('games', 'id', client.gameId);
     if (gameObj) {
-      gameObj.player_count = game.players.size;
-      updateById('games', client.gameId, { player_count: game.players.size });
+      gameObj.player_count = playerCount(game);
+      updateById('games', client.gameId, { player_count: playerCount(game) });
     }
 
-    if (wasHost && game.players.size > 0) {
+    if (wasHost && !userStillPresent && game.players.size > 0) {
       const [newHostWs] = game.players.keys();
       const newHost = game.players.get(newHostWs);
       game.hostId = newHost.id;
       game.hostUsername = newHost.username;
       // Update game_players role
-      const npIdx = filterBy('game_players', 'game_id', client.gameId).findIndex(p => p.user_id === newHost.id);
+      const npIdx = db.game_players.findIndex(p => p.game_id === client.gameId && p.user_id === newHost.id);
       if (npIdx !== -1) {
         db['game_players'][npIdx].role = 'host';
         saveDB(db);
@@ -595,13 +632,14 @@ function leaveGame(client, ws) {
         newHost: newHost.username
       });
     } else if (gameObj) {
-      updateById('games', client.gameId, { player_count: game.players.size });
+      updateById('games', client.gameId, { player_count: playerCount(game) });
     }
 
     broadcastToGame(client.gameId, {
       type: 'player_left',
       username: client.username,
-      playerCount: game.players.size
+      id: client.id,
+      playerCount: playerCount(game)
     });
   }
 
@@ -616,23 +654,19 @@ wss.on('connection', (ws, req) => {
   const clientId = uuidv4();
   let client = null;
 
-  ws.isAlive = true;
-  ws.on('pong', () => { ws.isAlive = true; });
-
-  ws.on('message', (raw) => {
+  security.attach(ws, req, data => {
     try {
-      const data = typeof raw === 'string' ? JSON.parse(raw) : null;
-      if (!data) return;
-
       switch (data.type) {
         case 'auth': {
           const token = data.token;
           const payload = verifyToken(token);
-          if (!payload) {
-            ws.send(JSON.stringify({ type: 'error', error: 'Invalid token' }));
-            ws.close();
+          if (!payload || typeof payload !== 'object' || typeof payload.id !== 'string' || typeof payload.username !== 'string' || !findById('users', payload.id)) {
+            security.send(ws, { type: 'error', error: 'Invalid token' });
+            security.reject(ws, { code: 1008, reason: 'Invalid token' });
             return;
           }
+          const authenticated = security.markAuthenticated(ws, payload.id);
+          if (!authenticated.ok) { security.reject(ws, authenticated); return; }
           client = {
             id: clientId,
             type: data.clientType || 'browser',
@@ -643,40 +677,69 @@ wss.on('connection', (ws, req) => {
             color: null
           };
           clients.set(ws, client);
-          ws.send(JSON.stringify({ type: 'auth_ok', user: { id: payload.id, username: payload.username } }));
+          security.send(ws, { type: 'auth_ok', user: { id: payload.id, username: payload.username } });
+          break;
+        }
+
+        case 'join': {
+          // Guest attachment (no token). Local adapters (game/stream proxies) identify
+          // themselves as 'game' clients with a display name; browsers may also use it.
+          if (client) { security.send(ws, { type: 'error', error: 'Already authenticated' }); return; }
+          const name = data.name || 'Guest';
+          const guestId = 'guest-' + clientId;
+          const authenticated = security.markAuthenticated(ws, guestId);
+          if (!authenticated.ok) { security.reject(ws, authenticated); return; }
+          client = {
+            id: clientId,
+            type: data.clientType || 'browser',
+            userId: guestId,
+            username: name,
+            gameId: null,
+            role: null,
+            color: null
+          };
+          clients.set(ws, client);
+          security.send(ws, { type: 'auth_ok', user: { id: guestId, username: name } });
           break;
         }
 
         case 'create_game': {
           if (!client) return;
+          if (client.gameId || !canCreateGame(client.userId)) { security.send(ws, { type: 'error', error: 'Leave the current room or wait for room quota.' }); return; }
           const id = uuidv4().slice(0, 8);
+          const reserved = security.createRoom(ws, id, data);
+          if (!reserved.ok) { security.send(ws, { type: 'error', error: reserved.reason }); return; }
           const color = assignColor();
           const game = createGame(id, data.name, client.userId, client.username, data.maxPlayers || MAX_PLAYERS, data.region || 'global');
           client.gameId = id;
           client.role = 'host';
           client.color = color;
           game.players.set(ws, { id: client.userId, username: client.username, role: 'host', color, ready: false });
-          ws.send(JSON.stringify({
+          security.send(ws, {
             type: 'game_created',
             game: { id, name: data.name, hostId: client.userId, hostUsername: client.username, maxPlayers: game.maxPlayers, playerCount: 1, region: game.region },
             role: 'host',
             color
-          }));
+          });
           sendGameListUpdate();
           break;
         }
 
         case 'join_game': {
           if (!client) return;
+          if (client.gameId) { security.send(ws, { type: 'error', error: 'Leave the current room first.' }); return; }
           const game = activeGames.get(data.gameId);
           if (!game || game.status !== 'waiting') {
-            ws.send(JSON.stringify({ type: 'error', error: 'Game not found or not waiting' }));
+            security.send(ws, { type: 'error', error: 'Game not found or not waiting' });
             return;
           }
-          if (game.players.size >= game.maxPlayers) {
-            ws.send(JSON.stringify({ type: 'error', error: 'Game is full' }));
+          const alreadyPresent = [...game.players.values()].some(player => player.id === client.userId);
+          if (!alreadyPresent && playerCount(game) >= game.maxPlayers) {
+            security.send(ws, { type: 'error', error: 'Game is full' });
             return;
           }
+          const joined = security.joinRoom(ws, data.gameId);
+          if (!joined.ok) { security.send(ws, { type: 'error', error: joined.reason }); return; }
           const color = assignColor();
           client.gameId = data.gameId;
           client.role = 'player';
@@ -684,17 +747,17 @@ wss.on('connection', (ws, req) => {
           game.players.set(ws, { id: client.userId, username: client.username, role: 'player', color, ready: false });
           const gObj = findBy('games', 'id', data.gameId);
           if (gObj) {
-            gObj.player_count = game.players.size;
-            updateById('games', data.gameId, { player_count: game.players.size });
+            gObj.player_count = playerCount(game);
+            updateById('games', data.gameId, { player_count: playerCount(game) });
           }
-          push('game_players', {
+          if (!db.game_players.some(player => player.game_id === data.gameId && player.user_id === client.userId)) push('game_players', {
             game_id: data.gameId,
             user_id: client.userId,
             username: client.username,
             role: 'player',
             joined_at: now()
           });
-          ws.send(JSON.stringify({
+          security.send(ws, {
             type: 'game_joined',
             game: {
               id: game.id,
@@ -702,17 +765,17 @@ wss.on('connection', (ws, req) => {
               hostId: game.hostId,
               hostUsername: game.hostUsername,
               maxPlayers: game.maxPlayers,
-              playerCount: game.players.size,
+              playerCount: playerCount(game),
               region: game.region
             },
             role: 'player',
             color
-          }));
+          });
           broadcastToGame(data.gameId, {
             type: 'player_joined',
             username: client.username,
             color,
-            playerCount: game.players.size
+            playerCount: playerCount(game)
           });
           sendGameListUpdate();
           break;
@@ -743,7 +806,7 @@ wss.on('connection', (ws, req) => {
         case 'start_game': {
           if (!client || !client.gameId) return;
           const game = activeGames.get(client.gameId);
-          if (!game || game.hostId !== client.userId) return;
+          if (!game || game.status !== 'waiting' || game.hostId !== client.userId) return;
           game.status = 'playing';
           updateById('games', client.gameId, { status: 'playing', started_at: now() });
           broadcastToGame(client.gameId, {
@@ -758,15 +821,21 @@ wss.on('connection', (ws, req) => {
           if (!client || !client.gameId) return;
           const game = activeGames.get(client.gameId);
           if (!game) return;
-          const msg = JSON.stringify({
+          const msg = {
             type: 'input',
             from: client.username,
+            fromId: client.id, // relay-assigned, unlike the self-chosen name: proxies route by this
             data: data.data,
             ts: Date.now()
-          });
+          };
+          // `to` (a relay client id) sends a datagram to one player in the room; otherwise everyone gets it.
+          const to = typeof data.to === 'string' ? data.to : null;
           for (const gws of game.players.keys()) {
-            if (gws.readyState === 1 && clients.get(gws)?.type === 'game') {
-              gws.send(msg);
+            if (gws === ws) continue; // never echo a peer's own datagram back to it
+            const peer = clients.get(gws);
+            if (to !== null && peer?.id !== to) continue;
+            if (gws.readyState === 1 && peer?.type === 'game') {
+              security.send(gws, msg);
             }
           }
           break;
@@ -784,19 +853,22 @@ wss.on('connection', (ws, req) => {
         }
 
         case 'ping':
-          ws.send(JSON.stringify({ type: 'pong', ts: data.ts }));
+          security.send(ws, { type: 'pong', ts: data.ts });
+          break;
+        case 'list':
+          sendGameListUpdate();
           break;
       }
     } catch (e) {
-      console.error('WS message error:', e.message);
+      console.error('WS message handler failed.');
+      security.reject(ws, { code: 1011, reason: 'Message handler failed' });
     }
   });
 
   ws.on('close', () => {
-    if (client && client.gameId) {
-      leaveGame(client, ws);
-    }
-    clients.delete(ws);
+    try { if (client && client.gameId) leaveGame(client, ws); }
+    catch (_) { console.error('WS room cleanup failed.'); }
+    finally { clients.delete(ws); }
   });
 
   ws.on('error', (e) => {
@@ -805,15 +877,16 @@ wss.on('connection', (ws, req) => {
 });
 
 // Heartbeat
-const interval = setInterval(() => {
-  for (const ws of wss.clients) {
-    if (ws.isAlive === false) return ws.terminate();
-    ws.isAlive = false;
-    ws.ping();
-  }
-}, 30000);
+const interval = setInterval(() => security.tick(), 5000);
 
 wss.on('close', () => clearInterval(interval));
+
+// Express catches synchronous route errors; return bounded JSON instead of leaking a stack or input.
+app.use((error, req, res, next) => {
+  if (res.headersSent) return next(error);
+  console.error('HTTP request failed.');
+  res.status(500).json({ error: 'Request could not be completed.' });
+});
 
 // ---------- Start ----------
 server.listen(PORT, () => {

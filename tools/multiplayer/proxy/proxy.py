@@ -1,124 +1,232 @@
 #!/usr/bin/env python3
 """
-MC3 UDP↔WebSocket Proxy
+MC3 UDP <-> WebSocket relay proxy (one per running game).
 
-Sits between the MC3 game and the multiplayer relay server.
-- Receives UDP packets from the game (with a 4-byte magic header + game port)
-- Forwards them to the relay as WebSocket binary messages
-- Receives WebSocket binary from the relay, sends as UDP to the game's bound port
+The native game (runtime/xdk/xnet.cpp) sends every System Link broadcast, plus every datagram for a relay
+player, to this proxy on 127.0.0.1. The proxy carries them over the relay to the other players in the same
+relay room and hands their datagrams back to the game. Each remote player gets a peer number (1-254); the game
+sees that player at the virtual address 127.0.1.<peer>.
+
+Datagram header, both directions on the local UDP hop ("MC3R", little-endian):
+    magic[4] | src port u16 | dst port u16 | peer u32 (0 = everyone in the room)
+The older 8-byte "MC3P" header (magic | src | dst) from the game is still accepted and treated as peer 0.
 
 Usage:
-    python proxy.py --relay ws://relay:8080 --proxy-udp 30741 --game-udp 3074
+    py -3.12 proxy.py --relay ws://relay:8080 [--instance N] [--room NAME | --join GAME_ID]
+Instance N listens on 30741 + N (xnet.cpp kProxyPort + instance). Without --join the proxy joins the first open
+relay game named --room, or creates it.
 """
 
+import argparse
 import asyncio
+import base64
 import json
 import socket
 import struct
-import sys
-import argparse
+import time
+
 import websockets
 
-# Protocol header: magic "MC3P" (4 bytes) + game_udp_port (2 bytes, little-endian)
-MAGIC = b'MC3P'
-HEADER_SIZE = 6  # 4 magic + 2 port
+MAGIC = b'MC3P'           # legacy 8-byte header, game -> proxy only
+RELAY_MAGIC = b'MC3R'     # 12-byte header, both directions
+HEADER_SIZE = 8
+RELAY_HEADER_SIZE = 12
+BASE_PORT = 30741
+MAX_PEER = 254
 
 
 class Proxy:
-    def __init__(self, relay_url, proxy_udp_port, game_udp_port):
+    def __init__(self, relay_url, proxy_udp_port, game_udp_port, room=None, join_id=None, name=None,
+                 verbose=False, game_ip='127.0.0.1'):
         self.relay_url = relay_url
         self.proxy_udp_port = proxy_udp_port
-        self.game_udp_port = game_udp_port
+        self.game_udp_port = game_udp_port  # fallback target port when a datagram names none
+        self.room = room
+        self.join_id = join_id
+        self.verbose = verbose
         self.ws = None
         self.udp_sock = None
-        self.game_port = None  # learned from the game's outgoing packets
+        self.game_port = None   # the game's socket port, learned from its datagrams
+        self.game_ip = game_ip  # instance N binds 127.0.0.N; updated from the address the game sends from
+        self.client_name = name
         self.running = False
+        self.peers = {}          # relay client id -> peer number
+        self.peer_names = {}     # peer number -> relay client id
+        # Test/observability hooks
+        self.incoming = asyncio.Queue()  # envelopes received from the relay
+        self.auth_ok = asyncio.Event()
+        self.ws_connected = asyncio.Event()
+        self.game_id = None
+        self.game_id_event = asyncio.Event()
 
-    def make_header(self, port):
-        return MAGIC + struct.pack('<H', port)
+    def log(self, text):
+        if self.verbose:
+            print(text, flush=True)
+
+    # ---- framing ----
+    def make_header(self, src_port, dst_port=0):
+        return MAGIC + struct.pack('<HH', src_port, dst_port)
+
+    def make_relay_header(self, src_port, dst_port, peer):
+        return RELAY_MAGIC + struct.pack('<HHI', src_port & 0xFFFF, dst_port & 0xFFFF, peer)
 
     def parse_header(self, data):
-        if len(data) < HEADER_SIZE:
-            return None, data
-        magic = data[:4]
-        if magic != MAGIC:
-            return None, data
-        port = struct.unpack('<H', data[4:6])[0]
-        return port, data[HEADER_SIZE:]
+        """Return (src_port, dst_port, payload); src_port is None when there is no 8-byte MC3P header."""
+        if len(data) < HEADER_SIZE or data[:4] != MAGIC:
+            return None, None, data
+        src_port, dst_port = struct.unpack('<HH', data[4:8])
+        return src_port, dst_port, data[HEADER_SIZE:]
 
+    def parse_game_datagram(self, data):
+        """Return (src_port, dst_port, peer, payload) for MC3R or MC3P; None for anything else."""
+        if len(data) >= RELAY_HEADER_SIZE and data[:4] == RELAY_MAGIC:
+            src_port, dst_port, peer = struct.unpack('<HHI', data[4:12])
+            return src_port, dst_port, peer, data[RELAY_HEADER_SIZE:]
+        src_port, dst_port, payload = self.parse_header(data)
+        if src_port is None:
+            return None
+        return src_port, dst_port, 0, payload
+
+    def peer_for(self, name):
+        """Stable peer number for a relay client id (None when all 254 are taken)."""
+        if name in self.peers:
+            return self.peers[name]
+        for peer in range(1, MAX_PEER + 1):
+            if peer not in self.peer_names:
+                self.peers[name] = peer
+                self.peer_names[peer] = name
+                self.log(f"[proxy] {name} is peer {peer} (127.0.1.{peer})")
+                return peer
+        return None
+
+    # ---- game -> relay ----
     async def udp_reader(self):
-        """Read UDP packets from the game and forward to relay."""
-        print(f"[proxy] UDP listener on 0.0.0.0:{self.proxy_udp_port}")
+        print(f"[proxy] UDP listener on 127.0.0.1:{self.proxy_udp_port}", flush=True)
+        loop = asyncio.get_running_loop()
         while self.running:
             try:
-                data, addr = await asyncio.get_event_loop().sock_recvfrom(self.udp_sock, 65535)
+                data, addr = await loop.sock_recvfrom(self.udp_sock, 65535)
             except OSError:
                 break
-
-            # Check if this is a control/header packet from the game
-            port, payload = self.parse_header(data)
-            if port is not None:
-                # The game is telling us its port
-                self.game_port = port
-                print(f"[proxy] learned game port: {port}")
+            if addr[1] == self.proxy_udp_port:
+                continue  # our own delivery bounced back; forwarding it would loop through the relay
+            parsed = self.parse_game_datagram(data)
+            if parsed is None:
+                continue  # not from the game's tunnel; never echoed (no feedback loop)
+            src_port, dst_port, peer, payload = parsed
+            if self.game_port != src_port:
+                print(f"[proxy] game socket {addr[0]}:{src_port}", flush=True)
+            self.game_port, self.game_ip = src_port, addr[0]
+            if not payload or not self.ws:
                 continue
+            envelope = {'type': 'input', 'data': json.dumps({
+                'payload': base64.b64encode(payload).decode('ascii'),
+                'src_port': src_port, 'dst_port': dst_port, 't': time.time() * 1000})}
+            if peer:
+                target = self.peer_names.get(peer)
+                if target is None:
+                    continue  # that player left
+                envelope['to'] = target
+            try:
+                await self.ws.send(json.dumps(envelope))
+                self.log(f"[proxy] -> relay {envelope.get('to', 'room')}: {len(payload)} bytes "
+                         f"{src_port}->{dst_port}")
+            except Exception as e:
+                print(f"[proxy] relay send error: {e}", flush=True)
 
-            # It's a game packet - forward to relay
-            if self.ws and self.ws.open:
-                await self.ws.send(payload)
-                print(f"[proxy] → relay: {len(payload)} bytes from game")
+    # ---- relay -> game ----
+    def deliver(self, name, payload, src_port, dst_port):
+        peer = self.peer_for(name or '?')
+        target_port = dst_port or self.game_port or self.game_udp_port
+        if not peer or not target_port or target_port == self.proxy_udp_port or not self.udp_sock:
+            return False
+        packet = self.make_relay_header(src_port or 0, target_port, peer) + payload
+        try:
+            self.udp_sock.sendto(packet, (self.game_ip, target_port))
+        except OSError as e:
+            print(f"[proxy] UDP send error: {e}", flush=True)
+            return False
+        self.log(f"[proxy] <- relay {name} (peer {peer}): {len(payload)} bytes -> {self.game_ip}:{target_port}")
+        return True
+
+    async def handle_relay_input(self, msg):
+        src = msg.get('from')
+        peer_id = msg.get('fromId') or src  # route by the relay-assigned id; names are self-chosen
+        try:
+            inner = json.loads(msg.get('data', '{}'))
+            payload = base64.b64decode(inner.get('payload', ''), validate=True)
+            src_port = int(inner.get('src_port') or 0)
+            dst_port = int(inner.get('dst_port') or 0)
+            send_ts = inner.get('t')
+        except Exception:
+            return
+        if not payload or not (0 <= src_port <= 0xFFFF and 0 <= dst_port <= 0xFFFF):
+            return
+        self.incoming.put_nowait({'from': src, 'payload': payload, 'src_port': src_port, 'dst_port': dst_port,
+                                  'send_ts': send_ts, 'recv_ts': time.time() * 1000})
+        self.deliver(peer_id, payload, src_port, dst_port)
+
+    async def enter_room(self, ws):
+        if self.join_id:
+            await ws.send(json.dumps({'type': 'join_game', 'gameId': self.join_id}))
+        elif self.room:
+            await ws.send(json.dumps({'type': 'list'}))
 
     async def ws_handler(self):
-        """WebSocket connection to relay - receive packets, send to game."""
-        print(f"[proxy] connecting to relay: {self.relay_url}")
+        print(f"[proxy] connecting to relay: {self.relay_url}", flush=True)
         async with websockets.connect(self.relay_url) as ws:
             self.ws = ws
-            # Identify as a game proxy
-            await ws.send(json.dumps({
-                'type': 'join',
-                'name': f'game-{socket.gethostname()}',
-            }))
-
-            async for message in ws:
-                if isinstance(message, bytes):
-                    # Binary packet from relay - forward to game
-                    port, payload = self.parse_header(message)
-                    target_port = port if port else self.game_port
-                    if target_port and self.udp_sock:
+            if not self.client_name:
+                self.client_name = f'game-{socket.gethostname()}-{self.proxy_udp_port}'
+            # Guest attach: a proxy has no account; the relay grants room transport only, no saves/cloud.
+            await ws.send(json.dumps({'type': 'join', 'clientType': 'game', 'name': self.client_name}))
+            self.ws_connected.set()
+            try:
+                async for message in ws:
+                    if isinstance(message, bytes):
                         try:
-                            self.udp_sock.sendto(payload, ('127.0.0.1', target_port))
-                            print(f"[proxy] ← relay: {len(payload)} bytes → game port {target_port}")
-                        except OSError as e:
-                            print(f"[proxy] UDP send error: {e}")
-                    else:
-                        print(f"[proxy] no game port known, dropping {len(message)} bytes")
-                else:
-                    # Text message from relay
+                            message = message.decode('utf-8')
+                        except UnicodeDecodeError:
+                            continue
                     try:
                         msg = json.loads(message)
                     except json.JSONDecodeError:
                         continue
-                    if msg.get('type') == 'joined':
-                        print(f"[proxy] joined relay as {msg.get('role', '?')}")
-                    elif msg.get('type') == 'gameList':
-                        pass  # ignore for now
-                    elif msg.get('type') == 'error':
-                        print(f"[proxy] relay error: {msg.get('error')}")
+                    kind = msg.get('type')
+                    if kind == 'auth_ok':
+                        self.auth_ok.set()
+                        print(f"[proxy] attached to relay as {self.client_name}", flush=True)
+                        await self.enter_room(ws)
+                    elif kind == 'gameList' and self.room and not self.game_id:
+                        games = [g for g in msg.get('games', []) if g.get('name') == self.room
+                                 and (g.get('player_count') or 0) < (g.get('max_players') or 8)]
+                        if games:
+                            await ws.send(json.dumps({'type': 'join_game', 'gameId': games[0]['id']}))
+                        else:
+                            await ws.send(json.dumps({'type': 'create_game', 'name': self.room, 'maxPlayers': 8}))
+                        self.room = None  # decide once; later lists are only informational
+                    elif kind in ('game_created', 'game_joined'):
+                        self.game_id = msg.get('game', {}).get('id')
+                        self.game_id_event.set()
+                        print(f"[proxy] in relay game {self.game_id}", flush=True)
+                    elif kind == 'input':
+                        await self.handle_relay_input(msg)
+                    elif kind == 'player_left':
+                        peer = self.peers.pop(msg.get('id'), None)
+                        if peer:
+                            self.peer_names.pop(peer, None)
+                    elif kind == 'error':
+                        print(f"[proxy] relay error: {msg.get('error')}", flush=True)
+            finally:
+                print(f"[proxy] {self.client_name} websocket connection ended", flush=True)
 
     async def run(self):
         self.running = True
-
-        # Create UDP socket
         self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.udp_sock.setblocking(False)
-        self.udp_sock.bind(('0.0.0.0', self.proxy_udp_port))
-
-        # Run UDP reader and WebSocket handler concurrently
-        await asyncio.gather(
-            self.udp_reader(),
-            self.ws_handler(),
-        )
+        # Loopback only: nothing on the LAN may inject datagrams into the game's tunnel.
+        self.udp_sock.bind(('127.0.0.1', self.proxy_udp_port))
+        await asyncio.gather(self.udp_reader(), self.ws_handler())
 
     def stop(self):
         self.running = False
@@ -127,13 +235,21 @@ class Proxy:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='MC3 UDP↔WebSocket Proxy')
-    parser.add_argument('--relay', default='ws://localhost:8080', help='Relay WebSocket URL')
-    parser.add_argument('--proxy-udp', type=int, default=30741, help='UDP port to receive from game')
-    parser.add_argument('--game-udp', type=int, default=3074, help='Game UDP port to send back to')
+    parser = argparse.ArgumentParser(description='MC3 UDP <-> WebSocket relay proxy')
+    parser.add_argument('--relay', default='ws://localhost:8080', help='relay WebSocket URL')
+    parser.add_argument('--instance', type=int, default=0, help='game instance (mc3.exe --instance N)')
+    parser.add_argument('--proxy-udp', type=int, help='UDP port to receive from the game (default 30741 + instance)')
+    parser.add_argument('--game-udp', type=int, default=3074, help='fallback game UDP port')
+    room = parser.add_mutually_exclusive_group()
+    room.add_argument('--room', default='MC3 Free Roam', help='join or create the relay game with this name')
+    room.add_argument('--join', help='join this relay game id')
+    parser.add_argument('--name', help='name shown to the other players')
+    parser.add_argument('--verbose', action='store_true', help='log every datagram')
     args = parser.parse_args()
-
-    proxy = Proxy(args.relay, args.proxy_udp, args.game_udp)
+    port = args.proxy_udp or BASE_PORT + args.instance
+    proxy = Proxy(args.relay, port, args.game_udp, room=None if args.join else args.room, join_id=args.join,
+                  name=args.name, verbose=args.verbose,
+                  game_ip=f'127.0.0.{args.instance}' if args.instance else '127.0.0.1')
     try:
         asyncio.run(proxy.run())
     except KeyboardInterrupt:

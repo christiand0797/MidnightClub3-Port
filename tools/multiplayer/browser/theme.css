@@ -1,0 +1,445 @@
+/* MC3 browser shell: visual references are the original DUB-shop/main-menu captures in docs/screenshots.
+   This uses system fonts as an approximation. It does not redistribute the game's embedded Flash font/art.
+   Load after the legacy inline CSS. Network, account and emulator behavior is deliberately independent. */
+:root {
+  color-scheme: dark;
+  --mc3-black: #030403;
+  --mc3-panel: #10110f;
+  --mc3-ink: #f0f0e6;
+  --mc3-muted: #b9bcb1;
+  --mc3-frame: #8d9182;
+  --mc3-line: #484c41;
+  --mc3-cyan: #66cfdf;
+  --mc3-amber: #e5ce7c;
+  --mc3-accept: #bbdf40;
+  --mc3-back: #f56d61;
+  --mc3-display: "Arial Black", "Arial Bold", Arial, sans-serif;
+  --mc3-copy: "Trebuchet MS", Verdana, Arial, sans-serif;
+  --mc3-checker: linear-gradient(90deg, transparent 88%, #020302 88%),
+    linear-gradient(0deg, transparent 86%, #020302 86%),
+    repeating-conic-gradient(from 90deg, #1d1f19 0% 25%, #080a07 0% 50%);
+}
+html, body {
+  background: var(--mc3-black);
+  color: var(--mc3-ink);
+  font-family: var(--mc3-copy);
+  font-size: 16px;
+  line-height: 1.45;
+  touch-action: auto;
+  -webkit-text-size-adjust: 100%;
+}
+button, input, select, textarea { font: inherit; }
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+button, a { touch-action: manipulation; }
+button { position: relative; }
+button:not(:disabled), a { cursor: pointer; }
+a { color: var(--mc3-cyan); text-underline-offset: 4px; }
+a:hover { color: #bde9ed; text-decoration: underline; }
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--mc3-amber);
+  outline-offset: 4px;
+}
+:where(button, a, input, select, textarea, [tabindex]) { scroll-margin: 20px; }
+::selection { color: #fff; background: #6e602f; }
+[hidden] { display: none !important; }
+
+/* The console's broad silver frame, charcoal checker and cyan-on-black caption replace blue/purple cards. */
+.screen, #settings {
+  background-color: var(--mc3-black);
+  background-image: var(--mc3-checker);
+  background-size: 61px 53px, 61px 53px, 244px 212px;
+  padding: max(28px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+    max(76px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  overflow: auto;
+  overscroll-behavior: contain;
+  align-items: center;
+  justify-content: center;
+  scrollbar-color: var(--mc3-frame) #090b08;
+}
+.screen::before, #settings::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(110deg, #0000 18%, #0009 50%, #0000 82%);
+  pointer-events: none;
+  z-index: -1;
+}
+.card, .menu-card, .settings-card, .mc3-panel, .account-panel, .cloud-panel,
+.account-cloud-panel {
+  position: relative;
+  color: var(--mc3-ink);
+  width: min(100%, 680px);
+  max-width: 680px;
+  max-height: calc(100dvh - 104px);
+  overflow: auto;
+  padding: 64px clamp(22px, 5vw, 52px) 30px;
+  border: 3px solid var(--mc3-frame);
+  border-radius: 48px 14px 42px 12px;
+  background: linear-gradient(100deg, #11140ff0, #030503f5 75%);
+  box-shadow: 0 0 0 2px #020302 inset, 0 20px 56px #000a;
+}
+.card::before, .menu-card::before, .settings-card::before {
+  position: absolute;
+  top: 18px;
+  left: clamp(22px, 5vw, 52px);
+  right: 20px;
+  color: var(--mc3-ink);
+  font: 900 clamp(12px, 1.7vw, 17px)/1.1 var(--mc3-display);
+  letter-spacing: .07em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card::before { content: "MIDNIGHT CLUB 3 \\ ONLINE"; }
+.menu-card::before { content: "MAIN MENU \\ MULTIPLAYER"; }
+.settings-card::before { content: "OPTIONS \\ SETTINGS"; }
+.card h1, .menu-card h1, .settings-card h2,
+.mc3-panel > h1, .mc3-panel > h2, .account-panel > h2, .cloud-panel > h2 {
+  margin: 0 0 16px;
+  padding: 10px 16px 14px;
+  border: 1px solid #666b5b;
+  border-top: 0;
+  border-radius: 0 0 42px 42px;
+  background: #010201;
+  color: var(--mc3-cyan);
+  font-family: var(--mc3-display);
+  font-size: clamp(1.35rem, 3.2vw, 1.9rem);
+  font-weight: 900;
+  line-height: 1.12;
+  letter-spacing: .055em;
+  text-align: center;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.card .subtitle, .menu-card .subtitle {
+  color: var(--mc3-muted);
+  margin: 0 0 25px;
+  font-size: .9rem;
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* Selection has the game's warm translucent arrow/highlight; cyan is reserved for the caption and values. */
+.btn, .menu-btn, .settings-btns button, .save-btn, .account-panel button,
+.cloud-panel button, .account-cloud-panel button, .mc3-action {
+  min-height: 46px;
+  padding: 12px 18px;
+  border: 1px solid #74796a;
+  border-radius: 8px 4px 13px 4px;
+  background: #090c08;
+  color: var(--mc3-ink);
+  font-family: var(--mc3-display);
+  font-size: .9rem;
+  font-weight: 900;
+  letter-spacing: .04em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  box-shadow: 0 1px 0 #d4d8c41c inset;
+  transition: background-color .12s, border-color .12s, color .12s;
+}
+.btn.primary, .menu-btn.primary, .save-btn.load, .settings-btns .close {
+  background: #151a0e;
+  border-color: #939c70;
+  color: var(--mc3-ink);
+}
+.btn.secondary, .menu-btn.secondary {
+  background: #080b08;
+  border-color: #646b5b;
+  color: #e1e3d6;
+}
+.btn:hover:not(:disabled), .menu-btn:hover:not(:disabled),
+.save-btn:hover:not(:disabled), .settings-btns button:hover:not(:disabled),
+.account-panel button:hover:not(:disabled), .cloud-panel button:hover:not(:disabled),
+.account-cloud-panel button:hover:not(:disabled), .mc3-action:hover:not(:disabled),
+.btn:focus-visible, .menu-btn:focus-visible, .save-btn:focus-visible {
+  transform: none;
+  background: linear-gradient(90deg, #4b411bd4, #1a1b0f);
+  border-color: var(--mc3-amber);
+  color: #fff9db;
+}
+.menu-btn:hover:not(:disabled)::after, .menu-btn:focus-visible::after {
+  content: "";
+  position: absolute;
+  right: 13px;
+  top: 50%;
+  width: 20px;
+  height: 25px;
+  transform: translateY(-50%);
+  clip-path: polygon(0 15%, 48% 15%, 48% 0, 100% 50%, 48% 100%, 48% 85%, 0 85%);
+  background: #ddc4638c;
+  pointer-events: none;
+}
+.btn.primary::before, .menu-btn.primary::before {
+  content: "A";
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 10px;
+  border: 1px solid #efff8f;
+  border-radius: 50%;
+  background: var(--mc3-accept);
+  color: #192100;
+  font: 900 15px/1 Arial, sans-serif;
+  vertical-align: middle;
+  box-shadow: 0 0 0 2px #111608;
+}
+.btn:disabled, .menu-btn:disabled, .save-btn:disabled,
+.account-panel button:disabled, .cloud-panel button:disabled {
+  background: #151710;
+  color: #a1a394;
+  border-color: #44483b;
+  box-shadow: none;
+  transform: none;
+  opacity: .7;
+  cursor: not-allowed;
+}
+.save-btn.delete { color: #ffbab1; border-color: #9b675d; background: #281a17; }
+.save-btn.delete:hover { background: #492921; color: #fff; }
+.actions, .menu-actions { gap: 9px; }
+.menu-actions { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 22px; }
+.menu-actions .primary { grid-column: 1 / -1; }
+.menu-actions .menu-btn { min-width: 0; padding-inline: 14px; }
+.menu-actions #btnLogout { color: #eeaaa0; }
+
+.input-group { margin-bottom: 18px; }
+.input-group label, .settings-row label, .account-panel label, .cloud-panel label,
+.account-cloud-panel label, .cloud-settings label {
+  color: #d7dacd;
+  font-size: .78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .065em;
+}
+.input-group input, .account-panel input:not([type=checkbox]):not([type=range]),
+.cloud-panel input:not([type=checkbox]):not([type=range]),
+.account-cloud-panel input:not([type=checkbox]):not([type=range]),
+.cloud-settings input:not([type=checkbox]):not([type=range]),
+.mc3-panel input:not([type=checkbox]):not([type=range]),
+.screen select, .screen textarea {
+  min-width: 0;
+  min-height: 46px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid #686e5d;
+  border-radius: 5px;
+  background: #040603;
+  color: #f2f4ea;
+  font-family: var(--mc3-copy);
+  font-size: 1rem;
+  box-shadow: 0 2px 5px #0008 inset;
+}
+.input-group .input-wrapper input { padding-right: 70px; }
+input::placeholder, textarea::placeholder { color: #a6ad99; opacity: 1; }
+.input-group input:focus, .screen input:focus, .screen select:focus, .screen textarea:focus {
+  border-color: var(--mc3-amber);
+}
+.toggle-password {
+  right: 3px;
+  min-width: 52px;
+  min-height: 42px;
+  padding: 7px;
+  border: 0;
+  border-radius: 4px;
+  color: #d6daca;
+  background: transparent;
+  font-size: .75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.toggle-password:hover { color: var(--mc3-cyan); background: #282d20; }
+.toggle-text { color: var(--mc3-muted); font-size: .85rem; line-height: 1.6; }
+.toggle-text a { color: var(--mc3-cyan); }
+.remember-row, .auth-options, .cloud-settings .check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-block: 10px 16px;
+  color: var(--mc3-muted);
+  font-size: .85rem;
+}
+input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--mc3-accept); flex: none; }
+input[type=range] { accent-color: var(--mc3-accept); min-height: 30px; }
+input[type=file] { max-width: 100%; color: var(--mc3-muted); }
+input[type=file]::file-selector-button {
+  min-height: 42px; margin-right: 12px; border: 1px solid var(--mc3-frame);
+  border-radius: 4px; padding: 8px 12px; color: var(--mc3-ink); background: #171c12;
+}
+
+.game-list, .save-list, .cloud-file-list {
+  padding: 8px;
+  border: 1px solid var(--mc3-frame);
+  border-radius: 12px 4px 22px 4px;
+  background: #030603;
+  scrollbar-color: #8b927b #090c07;
+}
+.game-list { max-height: min(34dvh, 310px); }
+.game-item, .save-item, .cloud-file-row {
+  min-width: 0;
+  width: 100%;
+  padding: 13px 16px;
+  margin-bottom: 7px;
+  border: 1px solid #4d5544;
+  border-radius: 5px;
+  background: #10160d;
+  color: var(--mc3-ink);
+  font-family: var(--mc3-copy);
+}
+.game-item:last-child, .save-item:last-child, .cloud-file-row:last-child { margin-bottom: 0; }
+.game-item:hover, .game-item:focus-visible, .save-item:hover, .cloud-file-row:hover {
+  background: #2b2a14;
+  border-color: var(--mc3-amber);
+}
+.game-item .game-id, .save-name, .cloud-file-name { color: var(--mc3-cyan); font-weight: 900; letter-spacing: .03em; }
+.game-item .game-info, .save-item .save-info .save-meta,
+.cloud-file-meta, .account-muted, .cloud-muted { color: var(--mc3-muted); font-size: .8rem; }
+.save-info, .cloud-file-info { min-width: 0; overflow-wrap: anywhere; }
+.save-item .save-info .save-name { color: var(--mc3-ink); }
+.save-actions, .cloud-file-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.save-btn { min-height: 42px; padding: 8px 13px; font-size: .72rem; }
+
+/* Full menu pages keep the same frame/caption grammar instead of floating unrelated panels. */
+#savesScreen, #careerScreen {
+  display: grid;
+  grid-template-columns: minmax(0, 1080px);
+  align-content: center;
+  align-items: stretch;
+  gap: 0;
+}
+#savesScreen { grid-template-rows: auto minmax(100px, min(65dvh, 660px)); }
+#careerScreen { grid-template-rows: auto auto minmax(80px, min(40dvh, 380px)); }
+.saves-header, .career-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px clamp(18px, 4vw, 36px);
+  border: 3px solid var(--mc3-frame);
+  border-bottom: 1px solid var(--mc3-line);
+  border-radius: 40px 12px 0 0;
+  background: #030603;
+}
+.saves-header h2, .career-header h2 {
+  margin: 0;
+  color: var(--mc3-cyan);
+  font: 900 clamp(1.15rem, 3vw, 1.6rem)/1.2 var(--mc3-display);
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+#btnNewSave { background: #151a0e !important; color: var(--mc3-ink) !important; width: auto; }
+.saves-content, .career-content {
+  min-height: 0;
+  padding: clamp(16px, 3vw, 32px);
+  border: 3px solid var(--mc3-frame);
+  border-top: 0;
+  border-radius: 0 0 40px 12px;
+  background: #080c07f5;
+  overflow: auto;
+}
+.save-list { max-height: none; }
+.career-stats {
+  min-width: 0;
+  padding: 22px clamp(16px, 3vw, 32px) 0;
+  gap: 12px;
+  border-inline: 3px solid var(--mc3-frame);
+  background: #080c07f5;
+}
+.career-stat { padding: 17px 10px; background: #020502; border-color: #626a56; border-radius: 5px; }
+.career-stat .stat-value, .stat-value { color: var(--mc3-cyan); font-family: var(--mc3-display); font-size: clamp(1.15rem, 3vw, 1.7rem); }
+.career-stat .stat-label { color: var(--mc3-muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; }
+.career-content { line-height: 1.7; }
+.settings-card { width: min(680px, 100%); }
+.settings-row { gap: 10px; margin-bottom: 21px; }
+.settings-row .val { color: var(--mc3-cyan); }
+.settings-btns { border-top: 1px solid var(--mc3-line); padding-top: 20px; }
+.account-panel, .cloud-panel, .account-cloud-panel { max-width: 1080px; }
+.cloud-file-row { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+.cloud-settings { border-top: 1px solid var(--mc3-line); margin-top: 24px; padding-top: 22px; }
+.cloud-settings textarea { min-height: 160px; resize: vertical; font: .85rem/1.5 Consolas, monospace; }
+.cloud-error, .account-error, [role=alert] { color: #ffb3a3; }
+.cloud-success, .account-success { color: #cae490; }
+.cloud-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 18px; }
+.cloud-toolbar .btn { width: auto; flex: 1 1 180px; font-size: .75rem; }
+.cloud-status { margin-block: 12px; color: var(--mc3-cyan); font-size: .85rem; }
+.cloud-conflict { padding: 18px; margin-block: 18px; border: 1px solid var(--mc3-amber); border-radius: 5px; background: #29250e; }
+.cloud-conflict h3 { color: var(--mc3-amber); font-family: var(--mc3-display); text-transform: uppercase; font-size: 1rem; margin-bottom: 10px; }
+.cloud-conflict p { color: #e0dcc3; margin-bottom: 14px; }
+.cloud-conflict .btn { margin-top: 8px; }
+.hardware-panel { border-top: 1px solid var(--mc3-line); padding-top: 20px; margin-top: 24px; }
+.hardware-panel h3 { color: var(--mc3-cyan); font: 900 1rem/1.4 var(--mc3-display); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 10px; }
+.hardware-panel p { color: var(--mc3-muted); font-size: .85rem; }
+.hardware-panel dl { display: grid; grid-template-columns: minmax(100px, .7fr) minmax(0, 1.6fr); gap: 9px 14px; padding-block: 18px; font-size: .8rem; }
+.hardware-panel dt { color: #e1e6d7; font-weight: 800; }
+.hardware-panel dd { color: var(--mc3-muted); margin: 0; overflow-wrap: anywhere; }
+.hardware-panel button { min-height: 44px; padding: 10px 15px; border: 1px solid var(--mc3-frame); border-radius: 5px; color: var(--mc3-ink); background: #171c12; }
+
+/* Shared footer can be populated by account-ui without adding input handlers or changing gameplay controls. */
+.mc3-footer {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 16px 30px;
+  color: var(--mc3-ink); padding: 15px 20px; font: 900 .85rem/1.3 var(--mc3-display);
+  letter-spacing: .055em; text-transform: uppercase;
+}
+.mc3-key { display: inline-grid; place-items: center; width: 26px; height: 26px; margin-right: 8px;
+  color: #111; background: #ddd; border: 1px solid #f4f4de; border-radius: 50%; box-shadow: 0 0 0 2px #191b14; }
+.mc3-key.accept { background: var(--mc3-accept); }
+.mc3-key.back { background: var(--mc3-back); }
+.mc3-footer kbd { color: var(--mc3-ink); background: #151a11; border: 1px solid #747d65; padding: 3px 6px; border-radius: 3px; }
+
+/* Gameplay HUD stays compact. Theme changes never apply an additional colour grade to the game's image. */
+#gameContainer { touch-action: none; }
+#gameScreen { filter: none; }
+.hud-pill { background: #050804d9; border-color: #838a75; border-radius: 7px; backdrop-filter: none; }
+.hud-pill.game, .hud-pill.stream { border-color: #838a75; }
+.hud-label { color: #c8cdbb; }
+.hud-value, .hud-fps { color: var(--mc3-cyan); }
+.indicator.online { background: var(--mc3-accept); box-shadow: none; }
+.indicator.streaming { background: var(--mc3-amber); box-shadow: none; }
+.indicator.offline { background: var(--mc3-back); box-shadow: none; }
+.ctrl-hint { color: #d4d9c9; text-shadow: 0 1px 3px #000; }
+.ctrl-hint kbd { background: #12180e; border-color: #7c856b; color: #e0e9ca; border-radius: 3px; }
+#chat { border-color: #8b927d; border-radius: 14px 4px 18px 4px; background: #030603e8; backdrop-filter: none; }
+#chat .chat-header, #chat .chat-input-wrap { border-color: #555e49; }
+#chat .chat-header { color: var(--mc3-cyan); font-family: var(--mc3-display); }
+#chat .chat-msg.system { color: #bcc5ad; }
+#chat .chat-msg.me { color: #e5f2d1; background: #354024; }
+#chat input { min-width: 0; border-color: #707c5d; background: #060905; color: #eee; }
+#notif { max-width: calc(100vw - 30px); color: var(--mc3-cyan); border-radius: 0 0 24px 24px; border-color: var(--mc3-frame); background: #030603f2; text-align: center; }
+
+@media (max-width: 700px) {
+  .screen, #settings { padding: max(12px, env(safe-area-inset-top)) 12px max(28px, env(safe-area-inset-bottom)); }
+  .card, .menu-card, .settings-card, .mc3-panel, .account-panel, .cloud-panel, .account-cloud-panel {
+    max-height: calc(100dvh - 36px); padding: 55px 20px 24px; border-width: 2px;
+    border-radius: 32px 8px 28px 8px;
+  }
+  .card::before, .menu-card::before, .settings-card::before { left: 20px; top: 17px; font-size: 11px; }
+  .card h1, .menu-card h1, .settings-card h2 { font-size: clamp(1.1rem, 6vw, 1.5rem); padding-inline: 9px; }
+  .menu-actions { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .menu-actions .menu-btn { font-size: .73rem; padding-inline: 8px; }
+  .game-item .gi-top { gap: 8px; align-items: flex-start; }
+  .game-item .game-info { text-align: right; }
+  .saves-header, .career-header { padding: 16px; border-width: 2px; border-radius: 28px 8px 0 0; }
+  .saves-header h2, .career-header h2 { font-size: 1.05rem; }
+  .saves-content, .career-content { padding: 12px; border-width: 2px; border-radius: 0 0 28px 8px; }
+  .career-stats { padding: 16px 12px 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border-inline-width: 2px; }
+  .save-item, .cloud-file-row { align-items: flex-start; flex-direction: column; gap: 14px; }
+  .save-actions, .cloud-file-actions { width: 100%; }
+  .save-actions button, .cloud-file-actions button { flex: 1; }
+  .hud-top { padding: 0 8px; gap: 5px; top: max(7px, env(safe-area-inset-top)); }
+  .hud-pill { gap: 5px; padding: 5px 7px; font-size: .65rem; }
+  .hud-pill .hud-label { display: none; }
+  .hud-pill .indicator { width: 7px; height: 7px; }
+  #chat { right: 9px; bottom: 60px; width: min(300px, calc(100vw - 18px)); height: 160px; }
+  .ctrl-hint { bottom: max(10px, env(safe-area-inset-bottom)); padding-inline: 12px; font-size: .65rem; line-height: 1.8; }
+  .mc3-footer { gap: 10px 16px; padding: 12px 0; font-size: .68rem; }
+}
+@media (max-height: 600px) {
+  .screen { align-items: flex-start; padding-block: 12px; }
+  .card, .menu-card, .settings-card { max-height: calc(100dvh - 24px); }
+  #savesScreen, #careerScreen { align-content: start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+@media (forced-colors: active) {
+  .screen, .card, .menu-card, .settings-card, .btn, .menu-btn, .save-item, .game-item { background: Canvas; color: CanvasText; border-color: CanvasText; }
+}

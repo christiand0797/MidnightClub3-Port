@@ -1,9 +1,8 @@
 # Network/browser integration review — 2026-11-04
 
-This is a source review for coordination with the active OpenCode browser/network
-owner. It does not start servers, launch a game, capture the desktop, touch saves,
-or establish successful multiplayer. The browser/relay files are concurrently
-edited foreign work; recheck them before applying any finding.
+This source snapshot records the interfaces present during the active OpenCode
+browser/network work. This review started no servers or games and touched no
+saves. Concurrent changes may already supersede individual observations below.
 
 The present stack has UI, HTTP storage and forwarding fragments. The inspected
 fragments do not yet connect the game's Network menu to native/browser peers, and
@@ -12,24 +11,23 @@ browser build of the renderer.
 
 ## Concrete transport mismatches
 
-| Boundary | Inspected behavior | Required integration |
+| Boundary | Inspected behavior | Current mismatch |
 | --- | --- | --- |
-| Native proxy address | `runtime/xdk/xnet.cpp:55,271` assigns `0x7F000001` directly to `sin_addr.s_addr`. On this little-endian host those bytes address `1.0.0.127`. | Construct the address with `htonl`/`inet_pton`; test the actual four wire bytes. |
-| Native header magic | `xnet.cpp:56,265` copies integer `0x4D433350` into the packet, yielding `P3CM`; both Python proxies expect literal `MC3P`. | One versioned byte-defined protocol, with identical C++/Python fixtures. |
-| Native source port | `xnet.cpp:584` retains network-order `me.sin_port`, then copies it at `:266`; Python parses `<H`. | Define the wire order explicitly. Keep host-order and network-order variables distinct. |
-| Proxy port | Native sends UDP to `30741`; the launcher starts stream proxy UDP `8765` / WS `8766`. The separate UDP proxy defaults to `30741`, but the launcher does not start it. | Select one transport adapter/endpoint and pass it consistently. |
-| Header/payload handling | `proxy/proxy.py:51-60` and `stream/stream_proxy.py:326-330` learn the header's port and `continue`, dropping the payload carried in that same datagram. | Registration and datagram records need separate types, or parse-and-forward a combined record. |
-| Relay message framing | `relay/server.js:622-626` only parses messages when `typeof raw === 'string'`. Installed `ws` emits text as a Buffer with `isBinary=false` (`node_modules/ws/lib/receiver.js:633`). Binary datagrams are ignored too. | Use `(raw,isBinary)`, bounded UTF-8 JSON for text, and a separately validated datagram path. |
-| Relay session handshake | Both Python adapters send `{type:'join', name:...}`. The relay expects `auth`, then `create_game` / `join_game`; there is no `join` case. | One authenticated host/proxy attach flow bound to a selected room and native instance. |
-| Discovery versus game traffic | `xnet.cpp:SendOnce` forwards only broadcast sends. Established unicast traffic continues to the ordinary IP path. | Tunnel both discovery and subsequent datagrams, preserving virtual peer address/port identity and replies. |
-| Browser input | Browser sends `[type,key,pressed,0]` or button/axis packets. Stream proxy sends `MC3P + port + input` to the game's gameplay UDP socket. Native `Recv` passes these bytes to the original game with no input decoder. | A distinct authenticated native remote-input endpoint must feed the additive pad path, never the original gameplay datagram parser. |
+| Native proxy address | `runtime/xdk/xnet.cpp:55,271` assigns `0x7F000001` directly to `sin_addr.s_addr`. On this little-endian host those bytes address `1.0.0.127`. | Python listens locally, not at that address. |
+| Native header magic | `xnet.cpp:56,265` copies integer `0x4D433350` into the packet, yielding `P3CM`; both Python proxies expect literal `MC3P`. | Byte sequences differ. |
+| Native source port | `xnet.cpp:584` retains network-order `me.sin_port`, then copies it at `:266`; Python parses `<H`. | Parsed port is byte-swapped. |
+| Proxy port | Native sends UDP to `30741`; the launcher starts stream proxy UDP `8765` / WS `8766`. The separate UDP proxy defaults to `30741`, but the launcher does not start it. | Sender and launched receiver endpoints differ. |
+| Header/payload handling | `proxy/proxy.py:51-60` and `stream/stream_proxy.py:326-330` learn the header's port and `continue`, dropping the payload carried in that same datagram. | Native sends a combined header+payload, not a separate registration. |
+| Relay message framing | `relay/server.js:622-626` only parses messages when `typeof raw === 'string'`. Installed `ws` emits text as a Buffer with `isBinary=false` (`node_modules/ws/lib/receiver.js:633`). Binary datagrams are ignored too. | Current handler returns for both delivered Buffer forms. |
+| Relay session handshake | Both Python adapters send `{type:'join', name:...}`. The relay expects `auth`, then `create_game` / `join_game`; there is no `join` case. | Adapter has no matching attach/session response. |
+| Discovery versus game traffic | `xnet.cpp:SendOnce` forwards only broadcast sends. Established unicast traffic continues to the ordinary IP path. | Current tunnel covers discovery only. |
+| Browser input | Browser sends `[type,key,pressed,0]` or button/axis packets. Stream proxy sends `MC3P + port + input` to the game's gameplay UDP socket. Native `Recv` passes these bytes to the original game with no input decoder. | Browser pad protocol and original MC3 datagrams are different protocols. |
 
 `g_game_udp_port` is one global updated by every bind, including binds not checked
 as UDP; it cannot identify several native instances/sockets. Replies are sent to
-`127.0.0.1`, whereas `--instance 7` binds `127.0.0.7`. A bridge must preserve an
-explicit instance/socket mapping. A source endpoint must also retain each remote
-peer's identity; collapsing all tunneled peers onto one localhost source is not
-an eight-player session.
+`127.0.0.1`, whereas `--instance 7` binds `127.0.0.7`. The current adapter has no
+explicit per-instance/socket mapping or distinct virtual source identity for
+several remote peers.
 
 ## Browser quality and player ownership
 
@@ -45,14 +43,11 @@ latest-frame queue or slow-client policy despite the adaptive-stream comments.
 The browser sends FPS settings, but the handler updates only quality/scale, not
 `fps` and `frame_interval`.
 
-The native game should remain the renderer, with each playing browser assigned
-an owned native process/profile or a proven original local-player slot. A
-spectator may intentionally share a stream. The host should explicitly choose
-which owned game window/output is sent; capture must not expose an unrelated
-monitor. Native render resolution, encoder resolution/codec/bitrate and browser
-display size are separate settings. Full graphics features remain native-side;
-stream quality and latency require their own measured acceptance. Hardware video
-encoding/audio transport, reconnect and backpressure remain implementation work.
+The implemented browser client displays a native-rendered image. Native render
+resolution, encoder resolution/codec/bitrate and browser display size are
+separate settings. Independent playing clients, selected-window capture,
+hardware video/audio transport and reconnect/backpressure behavior have no
+end-to-end proof in this review.
 
 ## Career, saves and car meets
 
@@ -64,47 +59,38 @@ encoding/audio transport, reconnect and backpressure remain implementation work.
   mission/race result, garage roster or reward event is connected to it.
 - `/api/saves/:slot` deletion finds an index in a user-filtered list and uses
   that index in the global `cloud_saves` array (`server.js:396-400`), which can
-  delete a different user's row. Fix before allowing real save storage.
+  delete a different user's row.
 - `GET /api/career` mutates `cities_unlocked` from JSON text into an array, then
-  attempts to parse the same in-memory value on later reads. Keep persisted and
-  response representations separate.
+  attempts to parse the same in-memory value on later reads.
 
-Preserve the original career writer/format. Start with explicit, independently
-backed-up per-session copies and read-only state snapshots. A real import needs
-the native process closed or its original supported load boundary, a verified
-original-format payload, identity/size/hash checks, an independent previous-copy
-backup and an actual native acknowledgment. A database row or HTTP 200 does not
-establish that the game loaded a save.
+No inspected path exports/imports original-format career files or acknowledges a
+successful load in the native process. HTTP 200 currently means the database
+operation succeeded, rather than that the game loaded a save. The reviewed root
+PBR changes do not alter the original career writer/format.
 
 Original system-link play and persistent shared-career free roam are distinct
 systems. A relay can carry existing session datagrams; it does not make the
 single-player career co-operative or synchronize roaming car transforms,
-collisions, customization, event state or rewards. Car meets need a defined
-authoritative session/ownership model and real remote actors, rather than only
-lobby membership. The local UG2 folder was inspected only for relevant short
+collisions, customization, event state or rewards. Lobby membership alone has no
+corresponding remote actor in the inspected native implementation. The local UG2
+folder was inspected only for relevant short
 documentation; no source/protocol contract establishing UG2 career/car-meet
 semantics was found, so no such implementation is inferred from its name.
 
-## Proposed owner contract and first acceptance slice
+## Integration surfaces visible from this snapshot
 
-1. Agree one bounded `MC3` tunnel envelope: version/type, native instance/socket
-   token, room/peer identifiers, source/destination virtual IPv4+ports, payload
-   length and bytes. Specify integer order, max datagram size and control types.
-   Keep controller input and media off the original game datagram channel.
-2. Native owns socket/peer mapping and original Network-menu lifecycle. Relay
-   owns authentication, room membership and destination validation. A proxy owns
-   only the explicitly attached local native instance, not an arbitrary port.
-3. Browser input uses full bounded pad snapshots with sequence/lease and release
-   on blur/disconnect, applied additively to the authorized native instance.
-   Preserve physical keyboard/controller input. The current 16 ms global key
-   cooldown can drop a release; do not rely on individual lossy key edges.
-4. Prove two independent native copies discover, join, exchange bidirectional
-   unicast, drive, disconnect and rejoin through the original Network menu. Then
-   prove one browser controls its assigned native player while a second native
-   client remains independent. Use private saves and retain original career data.
-5. Measure actual displayed game output, audio, input latency, resolution and
-   encoder drops. Only then expand to career synchronization and persistent car
-   meets, with source-backed original event/actor contracts.
+- The native XNet layer has socket and virtual address information; the relay
+  has room/member identities. The six-byte `MC3P` record currently carries only
+  one port and payload, with no room, instance or remote peer identity.
+- The runtime already has additive physical/scripted pad handling. The browser
+  protocol currently has key edges and digital axis directions, with no native
+  receiver, sequence/lease or disconnect release. Its 30 ms global key cooldown
+  can drop a release immediately following another key event.
+- The original game Network-menu session and native-to-native bidirectional
+  unicast have no observed relay integration in this review. There is likewise
+  no observed independent browser/native two-player session.
+- Career synchronization, roaming remote actors and result/reward integration
+  remain separate from the relay's existing HTTP records and chat/lobby state.
 
 ## Reviewed source identities
 

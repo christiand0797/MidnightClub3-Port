@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <random>
 
 #include "app/app.h"
@@ -49,12 +50,17 @@ constexpr uint32_t kLinkUp = 0x01 | 0x02 | 0x08;          // active, 100 Mbps, f
 constexpr uint32_t kXnAddrEthernet = 0x02 | 0x04;         // ethernet, static address
 constexpr DWORD kUdpConnReset = 0x9800000C;  // SIO_UDP_CONNRESET: off, or a send to a closed port fails the next recv
 constexpr int kLoopbackInstances = 8;
-// Browser multiplayer proxy: forward LAN broadcast packets to the local proxy so they
-// reach the WebSocket relay and can be played over the internet.
-constexpr uint16_t kProxyPort = 30741;       // UDP port the proxy listens on
-constexpr uint32_t kProxyAddr = 0x7F000001;  // 127.0.0.1
-constexpr uint32_t kProxyMagic = 0x4D433350;  // "MC3P"
-uint16_t g_game_udp_port = 0;                 // learned from bind(), forwarded to proxy
+// Relay tunnel (tools/multiplayer/proxy/proxy.py): every broadcast also goes to the local proxy, which
+// carries it over the WebSocket relay to the other players in the same relay room. Each remote player gets a
+// virtual address 127.0.1.<peer>; the game talks to it like any LAN host and those datagrams go back through
+// the proxy to that one player. Header, both directions ("MC3R", little-endian fields):
+//   magic[4] | src port u16 | dst port u16 | peer u32 (0 = every player in the room)
+// The proxy for instance N listens on kProxyPort + N, and only datagrams from it on 127.0.0.1 are unwrapped.
+constexpr uint16_t kProxyPort = 30741;
+constexpr uint8_t kRelayMagic[4] = {'M', 'C', '3', 'R'};
+constexpr int kRelayHeader = 12;
+constexpr uint32_t kRelayNet = 0x7F000100u;  // 127.0.1.0, host order
+constexpr uint32_t kMaxRelayPeer = 254;
 
 struct Socket {
     SOCKET s = INVALID_SOCKET;
@@ -92,6 +98,25 @@ std::mutex g_nat_lock;
 std::unordered_map<uint64_t, uint16_t> g_nat;  // (peer address, our port) -> the port its packets come from
 std::vector<uint32_t> g_public;                // public addresses packets came from, the latest last
 constexpr size_t kMaxPublic = 8;
+
+std::mutex g_relay_lock;
+uint32_t g_relay_last = 0;                             // the relay peer the latest tunnelled datagram came from
+std::unordered_map<uint32_t, uint32_t> g_relay_by_ina;  // a remote's own XNADDR address -> its relay peer
+bool g_relay_only = false;                             // MC3_RELAY_ONLY=1: no direct loopback fan-out (tests)
+
+uint32_t ProxyAddr() { return htonl(INADDR_LOOPBACK); }
+uint16_t ProxyPort() { return uint16_t(kProxyPort + g_instance); }
+uint32_t RelayAddr(uint32_t peer) { return htonl(kRelayNet | peer); }
+// the relay peer of a virtual address, or 0
+uint32_t RelayPeer(uint32_t a) {
+    uint32_t h = ntohl(a);
+    uint32_t peer = h & 0xFF;
+    return (h & 0xFFFFFF00u) == kRelayNet && peer >= 1 && peer <= kMaxRelayPeer ? peer : 0;
+}
+void Put16(uint8_t* p, uint16_t v) { p[0] = uint8_t(v); p[1] = uint8_t(v >> 8); }
+void Put32(uint8_t* p, uint32_t v) { for (int i = 0; i < 4; i++) p[i] = uint8_t(v >> (8 * i)); }
+uint16_t Get16(const uint8_t* p) { return uint16_t(p[0] | p[1] << 8); }
+uint32_t Get32(const uint8_t* p) { return uint32_t(p[0]) | uint32_t(p[1]) << 8 | uint32_t(p[2]) << 16 | uint32_t(p[3]) << 24; }
 
 std::string Ip(uint32_t a) {
     char s[32];
@@ -159,6 +184,9 @@ void Init() {
         WSAStartup(MAKEWORD(2, 2), &wsa);
         g_instance = app::Instance();
         g_local = g_instance ? htonl(0x7F000000u | uint32_t(g_instance)) : PrimaryAddress();
+        const char* only = std::getenv("MC3_RELAY_ONLY");
+        g_relay_only = only && *only == '1';
+        if (g_relay_only) LOGI("xnet: relay only, proxy port %u", ProxyPort());
         LOGI("xnet: %s address %s", g_instance ? "loopback instance" : "LAN", Ip(g_local).c_str());
         std::thread(Pump).detach();
     });
@@ -215,11 +243,27 @@ int Recv(uint32_t sock, SOCKET s, const std::vector<Span>& spans, uint32_t from,
         if (err != WSAEWOULDBLOCK) LOG_FIRST(20, "xnet: recv %X failed (%d)", sock, err);
         return -1;
     }
+    const uint8_t* data = buf.data();
+    if (src.sin_addr.s_addr == ProxyAddr() && ntohs(src.sin_port) == ProxyPort()) {
+        // only the local proxy's tunnelled datagrams; anything else from its port is dropped
+        uint32_t peer = n >= kRelayHeader && std::memcmp(data, kRelayMagic, 4) == 0 ? Get32(data + 8) : 0;
+        if (!peer || peer > kMaxRelayPeer) {
+            err = WSAEWOULDBLOCK;
+            return -1;
+        }
+        src.sin_addr.s_addr = RelayAddr(peer);
+        src.sin_port = htons(Get16(data + 4));
+        data += kRelayHeader;
+        n -= kRelayHeader;
+        std::lock_guard<std::mutex> lock(g_relay_lock);
+        if (g_relay_last != peer) LOGI("xnet: relay peer %s", Addr(src).c_str());
+        g_relay_last = peer;
+    }
     int done = 0;
     for (const Span& sp : spans) {
         int c = std::min<int>(n - done, int(sp.len));
         if (c <= 0) break;
-        std::memcpy(HostPtr(sp.ptr), buf.data() + done, size_t(c));
+        std::memcpy(HostPtr(sp.ptr), data + done, size_t(c));
         done += c;
     }
     if (done < n) LOG_FIRST(10, "xnet: %d byte datagram cut to %d", n, done);
@@ -238,10 +282,32 @@ int Recv(uint32_t sock, SOCKET s, const std::vector<Span>& spans, uint32_t from,
     return done;
 }
 
+// one datagram to the relay proxy for `peer` (0 = all); false when it cannot be sent
+bool SendRelay(SOCKET s, const uint8_t* data, int len, uint16_t dst_port, uint32_t peer) {
+    sockaddr_in me{};
+    int ml = sizeof(me);
+    if (len < 0 || len > 65507 - kRelayHeader || ::getsockname(s, reinterpret_cast<sockaddr*>(&me), &ml) != 0) return false;
+    thread_local std::vector<uint8_t> buf(65536);
+    std::memcpy(buf.data(), kRelayMagic, 4);
+    Put16(buf.data() + 4, ntohs(me.sin_port));
+    Put16(buf.data() + 6, dst_port);
+    Put32(buf.data() + 8, peer);
+    std::memcpy(buf.data() + kRelayHeader, data, size_t(len));
+    sockaddr_in proxy{};
+    proxy.sin_family = AF_INET;
+    proxy.sin_port = htons(ProxyPort());
+    proxy.sin_addr.s_addr = ProxyAddr();
+    return ::sendto(s, reinterpret_cast<const char*>(buf.data()), len + kRelayHeader, 0,
+                    reinterpret_cast<const sockaddr*>(&proxy), sizeof(proxy)) == len + kRelayHeader;
+}
+
 int SendOnce(SOCKET s, const uint8_t* data, int len, const sockaddr_in* to) {
     if (!to) return ::send(s, reinterpret_cast<const char*>(data), len, 0);
     sockaddr_in d = *to;
+    if (uint32_t peer = RelayPeer(d.sin_addr.s_addr))
+        return SendRelay(s, data, len, ntohs(d.sin_port), peer) ? len : -1;
     if (d.sin_addr.s_addr == INADDR_BROADCAST) {
+        SendRelay(s, data, len, ntohs(d.sin_port), 0);  // nothing listens unless the relay proxy runs
         std::vector<sockaddr_in> also;
         if (uint32_t join = JoinAddress()) {
             also.push_back(d);
@@ -257,21 +323,7 @@ int SendOnce(SOCKET s, const uint8_t* data, int len, const sockaddr_in* to) {
         }
         for (const sockaddr_in& a : also)
             ::sendto(s, reinterpret_cast<const char*>(data), len, 0, reinterpret_cast<const sockaddr*>(&a), sizeof(a));
-        // Forward the broadcast to the local browser-multiplayer proxy so it reaches
-        // the WebSocket relay for internet play. Prefix with magic + our UDP port so
-        // the proxy can route replies back to the game's socket.
-        if (g_game_udp_port) {
-            uint8_t buf[65536 + 6];
-            std::memcpy(buf, &kProxyMagic, 4);
-            std::memcpy(buf + 4, &g_game_udp_port, 2);
-            std::memcpy(buf + 6, data, static_cast<size_t>(len));
-            sockaddr_in proxy{};
-            proxy.sin_family = AF_INET;
-            proxy.sin_port = htons(kProxyPort);
-            proxy.sin_addr.s_addr = kProxyAddr;
-            ::sendto(s, reinterpret_cast<const char*>(buf), len + 6, 0,
-                     reinterpret_cast<const sockaddr*>(&proxy), sizeof(proxy));
-        }
+        if (g_relay_only) return len;
     } else {
         std::lock_guard<std::mutex> lock(g_nat_lock);
         auto it = g_nat.find(NatKey(d.sin_addr.s_addr, d.sin_port));
@@ -427,7 +479,24 @@ HLE_STDCALL(XNetGetTitleXnAddr, 1) {
 HLE_STDCALL(XNetXnAddrToInAddr, 3) {
     uint32_t ina = R32(a[0]);
     if (!ina) return WSAEINVAL;
-    if (ina != g_local && Private(ina) && !g_instance) {
+    uint32_t relay = 0;
+    bool sibling = (ina & 0xFF) == 127 && !g_relay_only;  // another local instance: always direct
+    if (ina != g_local && !RelayPeer(ina) && !sibling) {
+        // A player reached through the relay announces its own LAN address. The game asks for it right after
+        // that player's datagram arrived, so bind it to the peer that just spoke (first time only).
+        std::lock_guard<std::mutex> lock(g_relay_lock);
+        auto it = g_relay_by_ina.find(ina);
+        if (it == g_relay_by_ina.end() && g_relay_last) {
+            bool taken = false;
+            for (auto& [address, peer] : g_relay_by_ina) taken |= peer == g_relay_last;
+            if (!taken) it = g_relay_by_ina.emplace(ina, g_relay_last).first;
+        }
+        if (it != g_relay_by_ina.end()) relay = RelayAddr(it->second);
+    }
+    if (relay && (g_relay_only || !JoinAddress())) {  // an F10 join address means a direct game
+        LOG_FIRST(16, "xnet: %s is relay peer %s", Ip(ina).c_str(), Ip(relay).c_str());
+        ina = relay;
+    } else if (ina != g_local && Private(ina) && !g_instance) {
         uint32_t join = JoinAddress(), remote = g_remote;
         if (join && !Private(join)) ina = join;
         else if (remote) ina = remote;
@@ -581,7 +650,6 @@ HLE_STDCALL(bind, 3) {
     std::lock_guard<std::mutex> lock(g_lock);
     if (auto it = g_sockets.find(a[0]); it != g_sockets.end()) {
         it->second.port = me.sin_port;
-        g_game_udp_port = me.sin_port;  // learn our UDP port for proxy forwarding
     }
     return 0;
 }

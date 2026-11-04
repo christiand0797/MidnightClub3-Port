@@ -41,7 +41,7 @@
     padding-top: 40vh;
   }
 
-  /* ---------- HUD overlay ---------- */
+  /* ---------- MC3-Style Menu Overlay ---------- */
   .overlay {
     position: fixed;
     inset: 0;
@@ -86,8 +86,8 @@
     font-size: 0.85rem;
   }
 
-  /* ---------- Auth screens ---------- */
-  #authScreen {
+  /* ---------- Auth / Menu Screens ---------- */
+  .screen {
     position: fixed;
     inset: 0;
     background: radial-gradient(circle at center, #101426 0%, #05050a 100%);
@@ -97,48 +97,77 @@
     z-index: 100;
     pointer-events: auto;
   }
-  #authScreen.hidden { display: none !important; }
-  .auth-card {
+  .screen.hidden { display: none !important; }
+  .card {
     background: linear-gradient(145deg, #1a233a 0%, #0f172b 100%);
     border: 1px solid #00d4ff;
     border-radius: 16px;
     padding: 36px 32px;
-    max-width: 420px;
+    max-width: 460px;
     width: 90vw;
     box-shadow: 0 20px 60px rgba(0,0,0,0.6);
   }
-  .auth-card h1 {
+  .card h1 {
     color: #00d4ff;
     margin-bottom: 6px;
     font-size: 1.75rem;
     letter-spacing: 3px;
     text-transform: uppercase;
   }
-  .auth-card .subtitle {
+  .card .subtitle {
     color: #8897b0;
     font-size: 0.85rem;
     margin-bottom: 24px;
   }
-  .auth-input {
+  .input-group {
+    width: 100%;
+    margin-bottom: 14px;
+    position: relative;
+  }
+  .input-group label {
+    display: block;
+    color: #8897b0;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+  .input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .input-group input {
     width: 100%;
     background: #080b14;
     border: 1px solid #2a3f5f;
     color: #e0e0e0;
-    padding: 12px 16px;
+    padding: 12px 40px 12px 16px;
     border-radius: 8px;
     font-size: 1rem;
-    margin-bottom: 14px;
     outline: none;
     transition: border 0.2s;
   }
-  .auth-input:focus { border-color: #00d4ff; }
-  .auth-actions {
+  .input-group input:focus { border-color: #00d4ff; }
+  .toggle-password {
+    position: absolute;
+    right: 12px;
+    background: transparent;
+    border: none;
+    color: #8897b0;
+    cursor: pointer;
+    padding: 4px;
+    font-size: 0.9rem;
+  }
+  .toggle-password:hover { color: #00d4ff; }
+
+  .actions {
     display: flex;
     flex-direction: column;
     gap: 10px;
     margin-bottom: 20px;
   }
-  .auth-btn {
+  .btn {
     width: 100%;
     padding: 13px;
     border-radius: 8px;
@@ -148,31 +177,26 @@
     cursor: pointer;
     transition: all 0.2s;
   }
-  .auth-btn.primary { background: #00d4ff; color: #000; }
-  .auth-btn.primary:hover { background: #33e0ff; transform: translateY(-1px); }
-  .auth-btn.secondary { background: #1f2d44; color: #c9d1e2; border: 1px solid #2a3f5f; }
-  .auth-btn.secondary:hover { background: #2a3f5f; }
-  .auth-toggle {
+  .btn.primary { background: #00d4ff; color: #000; }
+  .btn.primary:hover { background: #33e0ff; transform: translateY(-1px); }
+  .btn.primary:disabled { background: #444; color: #888; cursor: not-allowed; transform: none; }
+  .btn.secondary { background: #1f2d44; color: #c9d1e2; border: 1px solid #2a3f5f; }
+  .btn.secondary:hover { background: #2a3f5f; }
+
+  .toggle-text {
     margin-top: 12px;
     font-size: 0.85rem;
     color: #8897b0;
     text-align: center;
   }
-  .auth-toggle a { color: #00d4ff; cursor: pointer; text-decoration: none; }
-
-  /* ---------- Main Menu / Lobby ---------- */
-  #mainMenu {
-    position: fixed;
-    inset: 0;
-    background: radial-gradient(circle at center, #101426 0%, #05050a 100%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-    pointer-events: auto;
+  .toggle-text a {
+    color: #00d4ff;
+    cursor: pointer;
+    text-decoration: none;
+    font-weight: 700;
   }
-  #mainMenu.hidden { display: none !important; }
+
+  /* ---------- Main Menu ---------- */
   .menu-card {
     background: linear-gradient(145deg, #1a233a 0%, #0f172b 100%);
     border: 1px solid #00d4ff;
@@ -246,16 +270,6 @@
   }
 
   /* ---------- Cloud Saves ---------- */
-  #savesScreen {
-    position: fixed;
-    inset: 0;
-    background: radial-gradient(circle at center, #101426 0%, #05050a 100%);
-    display: flex;
-    flex-direction: column;
-    z-index: 100;
-    pointer-events: auto;
-  }
-  #savesScreen.hidden { display: none !important; }
   .saves-header {
     background: #16213e;
     border-bottom: 1px solid #2a3f5f;
@@ -307,25 +321,6 @@
   .save-btn.delete:hover { background: #ff6666; }
 
   /* ---------- Career ---------- */
-  #careerScreen {
-    position: fixed;
-    inset: 0;
-    background: radial-gradient(circle at center, #101426 0%, #05050a 100%);
-    display: flex;
-    flex-direction: column;
-    z-index: 100;
-    pointer-events: auto;
-  }
-  #careerScreen.hidden { display: none !important; }
-  .career-header {
-    background: #16213e;
-    border-bottom: 1px solid #2a3f5f;
-    padding: 16px 24px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .career-header h2 { color: #00d4ff; font-size: 1.25rem; }
   .career-stats {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -442,7 +437,43 @@
   }
   #notif.show { opacity: 1; }
 
-  .hidden { display: none !important; }
+  /* ---------- Settings ---------- */
+  #settings {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(5,5,10,0.9);
+    z-index: 1000;
+    pointer-events: auto;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  #settings.hidden { display: none !important; }
+  .settings-card {
+    background: #16213e;
+    border: 1px solid #00d4ff;
+    border-radius: 14px;
+    padding: 32px;
+    width: 420px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.7);
+  }
+  .settings-card h2 { color: #00d4ff; margin-bottom: 20px; font-size: 1.3rem; }
+  .settings-row {
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .settings-row label { color: #c9d1e2; font-size: 0.85rem; font-weight: 600; }
+  .settings-row input[type=range] {
+    width: 100%; accent-color: #00d4ff;
+  }
+  .settings-row .val { color: #00d4ff; font-family: 'Consolas', monospace; font-size: 0.8rem; }
+  .settings-btns { display: flex; gap: 10px; margin-top: 24px; }
+  .settings-btns button { flex: 1; padding: 11px; border-radius: 8px; border: none; font-weight: 700; cursor: pointer; }
+  .settings-btns .close { background: #00d4ff; color: #000; }
+  .settings-btns .close:hover { background: #33e0ff; }
+
   .btn {
     background: #00d4ff;
     border: none;
@@ -454,6 +485,7 @@
   }
   .btn:hover { background: #33e0ff; }
 </style>
+<link rel="stylesheet" href="theme.css">
 </head>
 <body>
 
@@ -475,11 +507,6 @@
       <span class="indicator" id="indAuth"></span>
       <span class="hud-label">Account</span>
       <span id="userText" class="hud-value">not logged in</span>
-    </div>
-    <div class="hud-pill stream">
-      <span class="indicator" id="indGame"></span>
-      <span class="hud-label">Game</span>
-      <span id="gameText" class="hud-value">not streaming</span>
     </div>
     <div class="hud-pill stream">
       <span class="indicator streaming" id="indStream"></span>
@@ -505,22 +532,33 @@
 </div>
 
 <!-- Auth -->
-<div id="authScreen">
-  <div class="auth-card">
-    <h1 id="authTitle">Welcome to MC3</h1>
+<div id="authScreen" class="screen">
+  <div class="card">
+    <h1 id="authTitle">MC3 Multiplayer</h1>
     <div class="subtitle" id="authSubtitle">Log in to save your career progress, cars, and games</div>
-    <input type="text" id="authUsername" placeholder="Username">
-    <input type="password" id="authPassword" placeholder="Password">
-    <div class="auth-actions">
-      <button class="auth-btn primary" id="authBtn">Log In</button>
-      <button class="auth-btn secondary" id="authToggleBtn">Create Account</button>
+    <div class="input-group">
+      <label>Username</label>
+      <div class="input-wrapper">
+        <input type="text" id="authUsername" placeholder="Username">
+      </div>
     </div>
-    <div class="auth-toggle" id="authToggleText">Don't have an account? <a id="authSwitchLink">Sign up</a></div>
+    <div class="input-group">
+      <label>Password</label>
+      <div class="input-wrapper">
+        <input type="password" id="authPassword" placeholder="Password">
+        <button type="button" class="toggle-password" id="toggleAuthPassword" onclick="togglePassword('authPassword')">👁️</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="authBtn">Log In</button>
+      <button class="btn secondary" id="authToggleBtn">Create Account</button>
+    </div>
+    <div class="toggle-text" id="authToggleText">Don't have an account? <a id="authSwitchLink" href="#">Sign up</a></div>
   </div>
 </div>
 
 <!-- Main Menu -->
-<div id="mainMenu">
+<div id="mainMenu" class="screen">
   <div class="menu-card">
     <h1 id="menuTitle">MC3 Multiplayer</h1>
     <div class="subtitle" id="menuSubtitle">Play online with players worldwide</div>
@@ -538,7 +576,7 @@
 </div>
 
 <!-- Cloud Saves -->
-<div id="savesScreen">
+<div id="savesScreen" class="screen">
   <div class="saves-header">
     <h2>Cloud Saves</h2>
     <button class="btn" id="btnNewSave" style="background:#1f2d44; color:#c9d1e2;">New Save</button>
@@ -551,7 +589,7 @@
 </div>
 
 <!-- Career -->
-<div id="careerScreen">
+<div id="careerScreen" class="screen">
   <div class="career-header">
     <h2>Career Progress</h2>
   </div>
@@ -564,20 +602,18 @@
 </div>
 
 <!-- Notification -->
-<div id="notif"></div>
+<div id="notif" role="status" aria-live="polite"></div>
 
+<script src="capabilities.js"></script>
+<script src="account-ui.js"></script>
 <script>
 /* ---------------- Config ---------------- */
-const RELAY_URL = (() => {
-  const p = new URLSearchParams(window.location.search);
-  return p.get('relay') || 'ws://localhost:8080';
-})();
-const STREAM_URL = (() => {
-  const p = new URLSearchParams(window.location.search);
-  const host = window.location.hostname;
-  return p.get('stream') || `ws://${host}:8766`;
-})();
-const API_URL = RELAY_URL.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
+// Credentials use this page's API origin. Relay query parameters cannot redirect account passwords.
+const ACCOUNT_ENDPOINTS = MC3Account.resolveEndpoints(window.location.href);
+const RELAY_URL = ACCOUNT_ENDPOINTS.relay;
+const STREAM_URL = ACCOUNT_ENDPOINTS.stream;
+const API_URL = ACCOUNT_ENDPOINTS.api;
+let accountUI = null;
 
 /* ---------------- State ---------------- */
 let relayWs = null;
@@ -596,12 +632,13 @@ const activeKeys = new Set();
 let lastGamepadPoll = 0;
 const GAMEPAD_POLL_MS = 16;
 
-let lastInputTime = 0;
-const INPUT_COOLDOWN_MS = 30;
 
 let lastFrameTs = 0;
 let frameCount = 0;
 let fpsLastSecond = Date.now();
+
+// Pending cloud-save load awaiting stream_proxy acknowledgment.
+let pendingLoadSave = null; // { resolve, reject, slot, save_name }
 
 /* ---------------- Elements ---------------- */
 const gameScreen = document.getElementById('gameScreen');
@@ -620,8 +657,7 @@ const mainMenu = document.getElementById('mainMenu');
 const savesScreen = document.getElementById('savesScreen');
 const careerScreen = document.getElementById('careerScreen');
 
-const playerName = document.getElementById('playerName');
-const btnCreate = document.getElementById('btnCreate');
+const btnCreate = document.getElementById('btnCreateGame');
 const btnRefresh = document.getElementById('btnRefresh');
 const btnViewSaves = document.getElementById('btnViewSaves');
 const btnViewCareer = document.getElementById('btnViewCareer');
@@ -637,14 +673,25 @@ const careerContent = document.getElementById('careerContent');
 
 const notif = document.getElementById('notif');
 
-/* ---------------- Auth helpers ---------------- */
+/* ---------------- Helpers ---------------- */
+function setRelay(ok, text) {
+  relayConnected = ok;
+  indRelay.className = `indicator ${ok ? 'online' : 'offline'}`;
+  relayText.textContent = text;
+}
+
+function setGame(ok, text) {
+  if (indGame) indGame.className = `indicator ${ok ? 'online' : 'offline'}`;
+  if (gameText) gameText.textContent = text;
+}
+
 function setAuth(authed, username) {
   indAuth.className = `indicator ${authed ? 'online' : 'offline'}`;
   userText.textContent = authed ? username : 'not logged in';
 }
 
 function showScreen(screenId) {
-  document.querySelectorAll('[id$="Screen"], #mainMenu').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.screen').forEach(el => el.classList.add('hidden'));
   document.getElementById(screenId).classList.remove('hidden');
 }
 
@@ -656,19 +703,17 @@ function showNotif(text, type = 'info') {
   setTimeout(() => notif.classList.remove('show'), 3000);
 }
 
-/* ---------------- API helpers ---------------- */
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+/* ---------------- Account API ---------------- */
 async function apiRequest(endpoint, method = 'GET', body = null) {
-  const opts = { method, headers: { 'Authorization': `Bearer ${myToken}` } };
-  if (body) opts.headers['Content-Type'] = 'application/json';
-  if (body && typeof body === 'object') opts.body = JSON.stringify(body);
-  const resp = await fetch(`${API_URL}/api/${endpoint}`, opts);
-  if (resp.status === 401) {
-    myToken = null;
-    localStorage.removeItem('mc3_token');
-    showScreen('authScreen');
-    return null;
-  }
-  return resp.json();
+  if (!accountUI) return null;
+  try { return await accountUI.request(endpoint, method, body); }
+  catch (error) { showNotif(error.message, 'error'); return null; }
 }
 
 /* ---------------- Relay connection ---------------- */
@@ -677,20 +722,21 @@ function connectRelay() {
   relayWs.binaryType = 'arraybuffer';
 
   relayWs.onopen = () => {
-    relayConnected = true;
-    indRelay.className = 'indicator online';
-    relayText.textContent = 'connected';
+    setRelay(true, 'connected');
     addChat('Connected to relay server', 'system');
+    btnCreate.disabled = false;
+    btnRefresh.disabled = false;
     if (myToken) {
       relayWs.send(JSON.stringify({ type: 'auth', token: myToken }));
     }
   };
 
   relayWs.onclose = () => {
+    setRelay(false, 'disconnected');
     relayConnected = false;
-    indRelay.className = 'indicator offline';
-    relayText.textContent = 'disconnected';
-    setTimeout(connectRelay, 3000);
+    btnCreate.disabled = true;
+    btnRefresh.disabled = true;
+    setTimeout(() => { if (myToken) connectRelay(); }, 3000);
   };
 
   relayWs.onmessage = (event) => {
@@ -701,8 +747,7 @@ function connectRelay() {
   };
 
   relayWs.onerror = () => {
-    indRelay.className = 'indicator offline';
-    relayText.textContent = 'error';
+    setRelay(false, 'error');
   };
 }
 
@@ -711,6 +756,7 @@ function handleRelayMsg(msg) {
     case 'auth_ok':
       myId = msg.user.id;
       myUsername = msg.user.username;
+      if (!accountUI || !accountUI.client.session || msg.user.id !== accountUI.client.session.user.id) break;
       setAuth(true, myUsername);
       showScreen('mainMenu');
       loadCareer();
@@ -722,7 +768,7 @@ function handleRelayMsg(msg) {
       myColor = msg.color;
       currentGameId = msg.gameId;
       addChat(`Joined game #${currentGameId} (${myRole})`, 'system');
-      showScreen('mainMenu'); // will be replaced by stream view when stream connects
+      showScreen('mainMenu');
       connectStream();
       break;
     case 'created':
@@ -756,23 +802,23 @@ function handleRelayMsg(msg) {
 }
 
 function renderGames(games) {
-  gameListEl.innerHTML = '';
-  if (games.length === 0) {
-    gameListEl.innerHTML = '<div style="color:#6a7a98; font-size:0.8rem; padding:10px;">No games available</div>';
-    return;
+  gameListEl.replaceChildren();
+  const list = Array.isArray(games) ? games : [];
+  if (!list.length) {
+    const empty = document.createElement('p'); empty.className = 'account-muted'; empty.textContent = 'No waiting games available.';
+    gameListEl.appendChild(empty); return;
   }
-  for (const g of games) {
-    const item = document.createElement('div');
-    item.className = `game-item ${g.player_count >= g.max_players ? 'full' : ''}`;
-    item.innerHTML = `
-      <div class="gi-top">
-        <div class="game-id">#${g.id}</div>
-        <div class="game-info">${g.player_count}/${g.max_players} players${g.status === 'playing' ? ' • LIVE' : ''}</div>
-      </div>
-    `;
-    if (g.player_count < g.max_players && g.status !== 'playing') {
-      item.onclick = () => joinGame(g.id);
-    }
+  for (const game of list) {
+    const count = Number.isSafeInteger(game.player_count) ? game.player_count : 0;
+    const maximum = Number.isSafeInteger(game.max_players) ? game.max_players : 0;
+    const available = maximum > count && game.status !== 'playing';
+    const item = document.createElement('button'); item.type = 'button'; item.className = 'game-item'; item.disabled = !available;
+    const top = document.createElement('div'); top.className = 'gi-top';
+    const id = document.createElement('div'); id.className = 'game-id'; id.textContent = '#' + String(game.id ?? '').slice(0, 128);
+    const info = document.createElement('div'); info.className = 'game-info';
+    info.textContent = count + '/' + maximum + ' players' + (game.status === 'playing' ? ' · LIVE' : '');
+    top.append(id, info); item.appendChild(top);
+    if (available && (typeof game.id === 'string' || Number.isSafeInteger(game.id))) item.onclick = () => joinGame(game.id);
     gameListEl.appendChild(item);
   }
 }
@@ -780,32 +826,19 @@ function renderGames(games) {
 function createGame() {
   const name = prompt('Game name:', 'My Game') || 'My Game';
   if (relayWs && relayWs.readyState === WebSocket.OPEN && myToken) {
-    relayWs.send(JSON.stringify({
-      type: 'create_game',
-      name,
-      token: myToken
-    }));
+    relayWs.send(JSON.stringify({ type: 'create_game', name, token: myToken }));
   }
 }
 
 function joinGame(gameId) {
   if (relayWs && relayWs.readyState === WebSocket.OPEN && myToken) {
-    relayWs.send(JSON.stringify({
-      type: 'join_game',
-      gameId,
-      token: myToken
-    }));
+    relayWs.send(JSON.stringify({ type: 'join_game', gameId, token: myToken }));
   }
 }
 
 function requestList() {
-  if (relayWs && relayWs.readyState === WebSocket.OPEN) {
-    relayWs.send(JSON.stringify({ type: 'list' }));
-  } else {
-    fetch(`${API_URL}/api/games?status=waiting`, {
-      headers: { 'Authorization': `Bearer ${myToken}` }
-    }).then(r => r.json()).then(d => renderGames(d.games || []));
-  }
+  if (relayWs && relayWs.readyState === WebSocket.OPEN) relayWs.send(JSON.stringify({ type: 'list' }));
+  else apiRequest('games?status=waiting').then(data => { if (data) renderGames(data.games || []); });
 }
 
 /* ---------------- Stream ---------------- */
@@ -818,11 +851,7 @@ function connectStream() {
     indStream.className = 'indicator streaming';
     gameConnecting.style.display = 'none';
     addChat('Game stream connected', 'system');
-    streamWs.send(JSON.stringify({
-      type: 'join',
-      name: myUsername || 'Player',
-      token: myToken
-    }));
+    streamWs.send(JSON.stringify({ type: 'join', name: myUsername || 'Player', token: myToken }));
   };
 
   streamWs.onclose = () => {
@@ -830,18 +859,29 @@ function connectStream() {
     indStream.className = 'indicator offline';
     gameConnecting.style.display = 'block';
     setGame(false, 'not streaming');
-    setTimeout(connectStream, 2000);
+    setTimeout(() => { if (myToken && currentGameId) connectStream(); }, 2000);
   };
 
   streamWs.onmessage = (event) => {
     if (typeof event.data === 'string') {
       const msg = JSON.parse(event.data);
-      if (msg.type === 'hello') return;
+      if (msg.type === 'hello') {
+        if (msg.codec === 'h264') initVideoDecode();
+        return;
+      }
       if (msg.type === 'frame') {
-        renderFrame(msg);
+        // PNG base64 frame — only render when not already decoding H.264.
+        if (!useWebCodecs && !videoEl) renderFrame(msg);
+        return;
+      }
+      if (msg.type === 'load_save_ack') {
+        handleLoadSaveAck(msg);
         return;
       }
       console.log('[stream]', msg);
+    } else if (event.data instanceof ArrayBuffer || event.data instanceof Uint8Array) {
+      // Binary H.264 Annex-B frame from the stream proxy (hardware-accelerated path).
+      decodeH264Frame(new Uint8Array(event.data));
     }
   };
 
@@ -851,6 +891,7 @@ function connectStream() {
 }
 
 function renderFrame(msg) {
+  if (useWebCodecs || videoEl) return; // H.264 path renders its own frames
   const now = Date.now();
   frameCount++;
   if (now - fpsLastSecond >= 1000) {
@@ -858,97 +899,244 @@ function renderFrame(msg) {
     frameCount = 0;
     fpsLastSecond = now;
   }
-  gameScreen.src = `data:image/jpeg;base64,${msg.data}`;
+  gameScreen.src = `data:image/png;base64,${msg.data}`;
   gameConnecting.style.display = 'none';
   setGame(true, 'streaming');
 }
 
+/* ---------------- Cloud save load into game ---------------- */
+function handleLoadSaveAck(msg) {
+  if (!pendingLoadSave) return;
+  if (msg.slot !== undefined && msg.slot !== pendingLoadSave.slot) return;
+  pendingLoadSave.resolve({ ok: msg.ok === true, save_name: msg.save_name, error: msg.error });
+  pendingLoadSave = null;
+}
+
+/**
+ * Ask the stream proxy to forward a cloud save to the native game and wait for
+ * its acknowledgment. Returns { ok, save_name }. Native_ack (the game actually
+ * imported the save) is only true if mc3.exe processed it and called
+ * POST /api/saves/:slot/ack.
+ */
+async function sendLoadSave(slot, save_data, save_name) {
+  if (!streamWs || streamWs.readyState !== WebSocket.OPEN) {
+    showNotif('Game stream not connected — cannot load save into game', 'error');
+    return { ok: false };
+  }
+  showNotif(`Sending save to game: ${save_name}…`);
+  const ack = await new Promise((resolve, reject) => {
+    pendingLoadSave = { resolve, reject, slot, save_name };
+    streamWs.send(JSON.stringify({ type: 'load_save', slot, save_name, save_data }));
+    setTimeout(() => { if (pendingLoadSave) { pendingLoadSave = null; reject(new Error('timeout')); } }, 8000);
+  });
+  pendingLoadSave = null;
+  if (ack && ack.ok) showNotif(`Game acknowledged save: ${save_name}`);
+  else showNotif(ack && ack.error ? ack.error : `Game did not acknowledge save: ${save_name}`, 'error');
+  return ack || { ok: false };
+}
+
+/* ---------------- H.264 video decode (WebCodecs, <video> fallback) ---------------- */
+let videoDecoder = null;
+let videoEl = null;
+let useWebCodecs = false;
+
+async function initVideoDecode() {
+  if (useWebCodecs || videoEl) return; // already decoding
+  if (typeof VideoDecoder !== 'undefined' && typeof EncodedVideoChunk !== 'undefined') {
+    try {
+      const config = { codec: 'avc1.640028' }; // H.264 baseline/profile consistent with ffmpeg output
+      const supported = await VideoDecoder.isConfigSupported?.(config);
+      if (supported && supported.supported) {
+        videoDecoder = new VideoDecoder({
+          output: frame => {
+            if (!videoEl) {
+              videoEl = document.createElement('canvas');
+              videoEl.style.position = 'absolute';
+              videoEl.style.top = '0'; videoEl.style.left = '0';
+              videoEl.style.width = '100%'; videoEl.style.height = '100%';
+              videoEl.style.objectFit = 'contain';
+              gameContainer.appendChild(videoEl);
+            }
+            const ctx = videoEl.getContext('2d', { alpha: false });
+            videoEl.width = frame.codedWidth;
+            videoEl.height = frame.codedHeight;
+            ctx.drawImage(frame, 0, 0);
+            gameConnecting.style.display = 'none';
+            setGame(true, 'streaming');
+            frame.close();
+          },
+          error: e => {
+            console.error('[video] WebCodecs decode error', e);
+            useWebCodecs = false;
+            videoDecoder = null;
+            initVideoFallback();
+          }
+        });
+        videoDecoder.configure(config);
+        useWebCodecs = true;
+        return;
+      }
+    } catch (e) { console.error('[video] WebCodecs unavailable', e); }
+  }
+  initVideoFallback();
+}
+
+function initVideoFallback() {
+  if (videoEl) return;
+  videoEl = document.createElement('video');
+  videoEl.style.position = 'absolute';
+  videoEl.style.top = '0'; videoEl.style.left = '0';
+  videoEl.style.width = '100%'; videoEl.style.height = '100%';
+  videoEl.style.objectFit = 'contain';
+  videoEl.muted = true;
+  videoEl.playsInline = true;
+  gameContainer.appendChild(videoEl);
+}
+
+// true when an Annex-B access unit holds an IDR slice or SPS (a frame the decoder can start from)
+function isKeyFrame(bytes) {
+  for (let i = 0; i + 3 < bytes.length; i++) {
+    if (bytes[i] === 0 && bytes[i + 1] === 0 && (bytes[i + 2] === 1 || (bytes[i + 2] === 0 && bytes[i + 3] === 1))) {
+      const at = bytes[i + 2] === 1 ? i + 3 : i + 4;
+      const nal = bytes[at] & 0x1F;
+      if (nal === 5 || nal === 7) return true;
+    }
+  }
+  return false;
+}
+let videoKeySeen = false;
+
+function decodeH264Frame(bytes) {
+  if (useWebCodecs && videoDecoder) {
+    try {
+      const key = isKeyFrame(bytes);
+      if (!videoKeySeen && !key) return;  // a decoder must start on a key frame
+      videoKeySeen = true;
+      videoDecoder.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp: performance.now() * 1000, data: bytes }));
+    } catch (e) {
+      console.error('[video] WebCodecs decode failed', e);
+      useWebCodecs = false;
+      videoDecoder = null;
+      initVideoFallback();
+    }
+    return;
+  }
+  if (videoEl && typeof MediaSource !== 'undefined') {
+    // MediaSource fallback: append H.264 segments to the video element.
+    if (!videoEl.msSourceBuffer && !videoEl.sourceBuffer) {
+      try {
+        const ms = new MediaSource();
+        videoEl.src = URL.createObjectURL(ms);
+        ms.addEventListener('sourceopen', () => {
+          const sb = ms.addSourceBuffer('video/avc; codecs="avc1.640028"');
+          sb.appendBuffer(bytes);
+        });
+        videoEl.msSourceBuffer = ms;
+      } catch (e) { console.error('[video] MediaSource setup failed', e); }
+    } else {
+      try { videoEl.msSourceBuffer.sourceBuffer.appendBuffer(bytes); } catch (_) {}
+    }
+    return;
+  }
+  // No decode path available; surface stays on the last PNG frame or placeholder.
+}
+
 function setGame(ok, text) {
-  indGame.className = `indicator ${ok ? 'online' : 'offline'}`;
-  gameText.textContent = text;
+  if (indGame) indGame.className = `indicator ${ok ? 'online' : 'offline'}`;
+  if (gameText) gameText.textContent = text;
 }
 
 /* ---------------- Input ---------------- */
-function sendInput(keyCode, pressed) {
-  const now = Date.now();
-  if (now - lastInputTime < INPUT_COOLDOWN_MS) return;
-  lastInputTime = now;
-  const buf = new Uint8Array([0x01, keyCode & 0xFF, pressed ? 1 : 0, 0x00]);
-  if (streamWs && streamWs.readyState === WebSocket.OPEN) {
-    streamWs.send(buf);
-  }
-}
+// The browser player's controller, sent as one complete report per frame to the stream proxy, which hands it to
+// the game's controller port (runtime/core/remote_pad.h). Report, little-endian, 24 bytes:
+//   "MC3I" | port u8 (the proxy assigns it) | flags u8 (1 = connected) | buttons u16 | analog[8] | lx ly rx ry i16
+// The game unplugs the pad if reports stop for half a second, so nothing stays held when the tab goes away.
+const PAD_BUTTONS = { up: 1, down: 2, left: 4, right: 8, start: 16, back: 32, lstick: 64, rstick: 128 };
+let lastReport = '';
+let lastReportTime = 0;
+const REPORT_KEEPALIVE_MS = 100;
 
 function onKeyDown(e) {
-  if (!mainMenu.classList.contains('hidden') && !authScreen.classList.contains('hidden')) return;
-  if (e.repeat) return;
+  if ((accountUI && accountUI.menuActive()) || (e.target.closest && e.target.closest('input,textarea,select,button,[contenteditable=true]'))) return;
+  if (e.code === 'Escape') { showScreen('mainMenu'); return; }
+  if (e.code === 'F1') { toggleSettings(); return; }
   activeKeys.add(e.code);
-  switch (e.code) {
-    case 'KeyW': sendInput(0x57, 1); break;
-    case 'KeyA': sendInput(0x41, 1); break;
-    case 'KeyS': sendInput(0x53, 1); break;
-    case 'KeyD': sendInput(0x44, 1); break;
-    case 'Space': sendInput(0x20, 1); break;
-    case 'Enter': sendInput(0x0D, 1); break;
-    case 'Escape': showScreen('mainMenu'); break;
-    case 'F1': toggleSettings(); break;
-  }
 }
 
 function onKeyUp(e) {
   activeKeys.delete(e.code);
-  switch (e.code) {
-    case 'KeyW': sendInput(0x57, 0); break;
-    case 'KeyA': sendInput(0x41, 0); break;
-    case 'KeyS': sendInput(0x53, 0); break;
-    case 'KeyD': sendInput(0x44, 0); break;
-    case 'Space': sendInput(0x20, 0); break;
-    case 'Enter': sendInput(0x0D, 0); break;
-  }
 }
 
-/* Gamepad */
+function axis16(v) { return Math.max(-32768, Math.min(32767, Math.round(v * 32767))); }
+
+// the console report from the first connected gamepad (standard mapping) plus the keyboard
+function buildPadState() {
+  const s = { buttons: 0, analog: [0, 0, 0, 0, 0, 0, 0, 0], lx: 0, ly: 0, rx: 0, ry: 0 };
+  const deadzone = accountUI ? accountUI.client.preferences.deadzone : 0.15;
+  const dz = v => (Math.abs(v) < deadzone ? 0 : v);
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  const gp = Array.from(pads).find(p => p && p.connected);
+  if (gp) {
+    const b = i => (gp.buttons[i] ? gp.buttons[i].value || (gp.buttons[i].pressed ? 1 : 0) : 0);
+    // A B X Y black(RB) white(LB) LT RT
+    [0, 1, 2, 3, 5, 4, 6, 7].forEach((i, k) => { s.analog[k] = Math.round(b(i) * 255); });
+    if (b(12)) s.buttons |= PAD_BUTTONS.up;
+    if (b(13)) s.buttons |= PAD_BUTTONS.down;
+    if (b(14)) s.buttons |= PAD_BUTTONS.left;
+    if (b(15)) s.buttons |= PAD_BUTTONS.right;
+    if (b(9)) s.buttons |= PAD_BUTTONS.start;
+    if (b(8)) s.buttons |= PAD_BUTTONS.back;
+    if (b(10)) s.buttons |= PAD_BUTTONS.lstick;
+    if (b(11)) s.buttons |= PAD_BUTTONS.rstick;
+    s.lx = axis16(dz(gp.axes[0] || 0));
+    s.ly = axis16(-dz(gp.axes[1] || 0));  // browsers report y down, the console y up
+    s.rx = axis16(dz(gp.axes[2] || 0));
+    s.ry = axis16(-dz(gp.axes[3] || 0));
+  }
+  // Keyboard, as the game's own keyboard fallback: W/S gas/brake, A/D steer, Space A, Enter Start, arrows D-pad.
+  const k = c => activeKeys.has(c);
+  if (k('KeyW')) s.analog[7] = 255;
+  if (k('KeyS')) s.analog[6] = 255;
+  if (k('KeyA') !== k('KeyD')) s.lx = k('KeyA') ? -32768 : 32767;
+  if (k('Space')) s.analog[0] = 255;
+  if (k('Backspace')) s.analog[1] = 255;
+  if (k('KeyQ')) s.analog[4] = 255;
+  if (k('KeyE')) s.analog[5] = 255;
+  if (k('Enter')) s.buttons |= PAD_BUTTONS.start;
+  if (k('ArrowUp')) s.buttons |= PAD_BUTTONS.up;
+  if (k('ArrowDown')) s.buttons |= PAD_BUTTONS.down;
+  if (k('ArrowLeft')) s.buttons |= PAD_BUTTONS.left;
+  if (k('ArrowRight')) s.buttons |= PAD_BUTTONS.right;
+  return s;
+}
+
+function encodePadReport(s, connected = true) {
+  const buf = new ArrayBuffer(24);
+  const v = new DataView(buf);
+  [0x4D, 0x43, 0x33, 0x49].forEach((c, i) => v.setUint8(i, c));  // "MC3I"
+  v.setUint8(4, 0);  // the proxy fills in this browser's port
+  v.setUint8(5, connected ? 1 : 0);
+  v.setUint16(6, s.buttons, true);
+  s.analog.forEach((a, i) => v.setUint8(8 + i, a));
+  v.setInt16(16, s.lx, true);
+  v.setInt16(18, s.ly, true);
+  v.setInt16(20, s.rx, true);
+  v.setInt16(22, s.ry, true);
+  return new Uint8Array(buf);
+}
+
 function pollGamepads() {
+  if (accountUI && accountUI.pollMenus()) return;
   if (!streamConnected || !streamWs || streamWs.readyState !== WebSocket.OPEN) return;
   const now = Date.now();
   if (now - lastGamepadPoll < GAMEPAD_POLL_MS) return;
   lastGamepadPoll = now;
-  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-  for (let i = 0; i < pads.length; i++) {
-    const gp = pads[i];
-    if (!gp) continue;
-    for (let j = 0; j < gp.buttons.length; j++) {
-      const b = gp.buttons[j];
-      const pressed = b.pressed;
-      const key = `gp${i}b${j}`;
-      if (pressed && !activeKeys.has(key)) {
-        activeKeys.add(key);
-        sendGamepadButton(j, 1);
-      } else if (!pressed && activeKeys.has(key)) {
-        activeKeys.delete(key);
-        sendGamepadButton(j, 0);
-      }
-    }
-    const lx = gp.axes[0] || 0;
-    const ly = gp.axes[1] || 0;
-    const deadzone = 0.15;
-    if (lx < -deadzone) sendGamepadAxis(0, 1);
-    else if (lx > deadzone) sendGamepadAxis(1, 1);
-    else { sendGamepadAxis(0, 0); sendGamepadAxis(1, 0); }
-    if (ly < -deadzone) sendGamepadAxis(2, 1);
-    else if (ly > deadzone) sendGamepadAxis(3, 1);
-    else { sendGamepadAxis(2, 0); sendGamepadAxis(3, 0); }
-  }
-}
-
-function sendGamepadButton(idx, pressed) {
-  const buf = new Uint8Array([0x02, idx & 0xFF, pressed ? 1 : 0, 0x00]);
-  if (streamWs && streamWs.readyState === WebSocket.OPEN) streamWs.send(buf);
-}
-
-function sendGamepadAxis(axis, pressed) {
-  const buf = new Uint8Array([0x03, axis & 0xFF, pressed ? 1 : 0, 0x00]);
-  if (streamWs && streamWs.readyState === WebSocket.OPEN) streamWs.send(buf);
+  const report = encodePadReport(buildPadState());
+  const key = report.join(',');
+  if (key === lastReport && now - lastReportTime < REPORT_KEEPALIVE_MS) return;
+  lastReport = key;
+  lastReportTime = now;
+  streamWs.send(report);
 }
 
 function gamepadLoop() {
@@ -973,273 +1161,46 @@ function sendChat() {
   chatInput.value = '';
 }
 
-/* ---------------- Cloud Saves ---------------- */
-async function loadSaves() {
-  const data = await apiRequest('saves');
-  if (!data) return;
-  saveList.innerHTML = '';
-  if (!data.saves || data.saves.length === 0) {
-    saveList.innerHTML = '<div style="color:#6a7a98; font-size:0.8rem; padding:20px; text-align:center;">No cloud saves yet</div>';
-    return;
-  }
-  for (const s of data.saves) {
-    const item = document.createElement('div');
-    item.className = 'save-item';
-    const updated = new Date(s.updated_at * 1000).toLocaleString();
-    item.innerHTML = `
-      <div class="save-info">
-        <div class="save-name">${escapeHtml(s.save_name || 'Untitled')}</div>
-        <div class="save-meta">Slot ${s.slot} • Money: $${s.money || 0} • Rating: ${s.rating || 0} • Updated: ${updated}</div>
-      </div>
-      <div class="save-actions">
-        <button class="save-btn load" onclick="loadSave(${s.slot})">Load</button>
-        <button class="save-btn delete" onclick="deleteSave(${s.slot})">Delete</button>
-      </div>
-    `;
-    saveList.appendChild(item);
-  }
-}
-
-window.loadSave = async function(slot) {
-  const data = await apiRequest(`saves/${slot}`);
-  if (!data) return;
-  showNotif(`Loaded save: ${data.save.save_name || 'Untitled'}`);
-  // Apply save to game via stream proxy
+/* ---------------- Account cloud and preferences ---------------- */
+// Downloading original bytes never pretends to load game memory.
+async function loadSaves() { return accountUI ? accountUI.loadCloud() : null; }
+async function loadCareer() { if (accountUI) accountUI.renderCareer(); }
+function toggleSettings() { if (accountUI) accountUI.toggleSettings(); }
+function releaseBrowserInput() {
+  activeKeys.clear();
   if (streamWs && streamWs.readyState === WebSocket.OPEN) {
-    streamWs.send(JSON.stringify({
-      type: 'load_save',
-      slot,
-      save_data: data.save.save_data
-    }));
-  }
-};
-
-window.deleteSave = async function(slot) {
-  if (!confirm('Delete this cloud save?')) return;
-  const resp = await fetch(`${API_URL}/api/saves/${slot}`, {
-    method: 'DELETE',
-    headers: { 'Authorization': `Bearer ${myToken}` }
-  });
-  if (resp.ok) {
-    showNotif('Save deleted');
-    loadSaves();
-  }
-};
-
-async function createNewSave() {
-  const name = prompt('Save name:', 'My Save') || 'My Save';
-  const slot = prompt('Save slot (0-9):', '0') || '0';
-  const saveData = {
-    timestamp: Date.now(),
-    position: { x: 0, y: 0, z: 0 },
-    money: 10000,
-    rating: 0,
-    cars_owned: [],
-    notes: 'Created from browser'
-  };
-  const data = await apiRequest('saves', 'POST', {
-    slot: parseInt(slot),
-    save_name: name,
-    save_data: saveData,
-    playtime: 0,
-    money: 10000,
-    rating: 0
-  });
-  if (data) {
-    showNotif(`Save created: ${name}`);
-    loadSaves();
+    streamWs.send(encodePadReport(buildPadState(), false));  // unplug at once rather than after the timeout
+    lastReport = '';
   }
 }
-
-/* ---------------- Career ---------------- */
-async function loadCareer() {
-  const data = await apiRequest('career');
-  if (!data) return;
-  const c = data.career;
-  careerStats.innerHTML = `
-    <div class="career-stat"><div class="stat-value">${c.total_races || 0}</div><div class="stat-label">Races</div></div>
-    <div class="career-stat"><div class="stat-value">${c.races_won || 0}</div><div class="stat-label">Wins</div></div>
-    <div class="career-stat"><div class="stat-value">$${c.total_money_earned || 0}</div><div class="stat-label">Earned</div></div>
-    <div class="career-stat"><div class="stat-value">$${c.current_money || 0}</div><div class="stat-label">Current</div></div>
-  `;
-  careerContent.innerHTML = `
-    <div style="margin-bottom:20px;">
-      <div style="color:#8897b0; font-size:0.8rem; margin-bottom:8px;">Cars Owned</div>
-      <div class="stat-value">${c.cars_owned || 0}</div>
-    </div>
-    <div style="margin-bottom:20px;">
-      <div style="color:#8897b0; font-size:0.8rem; margin-bottom:8px;">Cities Unlocked</div>
-      <div style="color:#e0e0e0;">${(c.cities_unlocked || []).join(', ') || 'None'}</div>
-    </div>
-    <div style="margin-bottom:20px;">
-      <div style="color:#8897b0; font-size:0.8rem; margin-bottom:8px;">Difficulty</div>
-      <div style="color:#e0e0e0;">${c.difficulty || 'medium'}</div>
-    </div>
-    <div>
-      <div style="color:#8897b0; font-size:0.8rem; margin-bottom:8px;">Last Played</div>
-      <div style="color:#e0e0e0;">${new Date((c.last_played || 0) * 1000).toLocaleString()}</div>
-    </div>
-  `;
-}
-
-/* ---------------- Settings (F1) ------------ */
-const settingsEl = document.getElementById('settings');
-if (!settingsEl) {
-  const se = document.createElement('div');
-  se.id = 'settings';
-  se.className = 'hidden';
-  se.innerHTML = `
-    <div class="settings-card">
-      <h2>Stream Settings</h2>
-      <div class="settings-row">
-        <label>Quality <span id="qVal" class="val">75%</span></label>
-        <input type="range" id="qRange" min="10" max="100" value="75">
-      </div>
-      <div class="settings-row">
-        <label>Resolution <span id="sVal" class="val">100%</span></label>
-        <input type="range" id="sRange" min="25" max="100" value="100">
-      </div>
-      <div class="settings-row">
-        <label>Target FPS <span id="fVal" class="val">60</span></label>
-        <input type="range" id="fRange" min="15" max="120" value="60">
-      </div>
-      <div class="settings-btns">
-        <button class="btn close" id="btnSettingsClose">Close</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(se);
-}
-const qRange = document.getElementById('qRange');
-const qVal = document.getElementById('qVal');
-const sRange = document.getElementById('sRange');
-const sVal = document.getElementById('sVal');
-const fRange = document.getElementById('fRange');
-const fVal = document.getElementById('fVal');
-const btnSettingsClose = document.getElementById('btnSettingsClose');
-
-function toggleSettings() {
-  const hidden = settingsEl.classList.contains('hidden');
-  if (hidden) settingsEl.classList.remove('hidden');
-  else settingsEl.classList.add('hidden');
-}
-
-qRange.oninput = (e) => {
-  qVal.textContent = `${e.target.value}%`;
-  if (streamWs && streamWs.readyState === WebSocket.OPEN) {
-    streamWs.send(JSON.stringify({ type: 'settings', quality: parseInt(e.target.value) }));
-  }
-};
-sRange.oninput = (e) => {
-  sVal.textContent = `${e.target.value}%`;
-  if (streamWs && streamWs.readyState === WebSocket.OPEN) {
-    streamWs.send(JSON.stringify({ type: 'settings', scale: parseInt(e.target.value) / 100 }));
-  }
-};
-fRange.oninput = (e) => {
-  fVal.textContent = e.target.value;
-  if (streamWs && streamWs.readyState === WebSocket.OPEN) {
-    streamWs.send(JSON.stringify({ type: 'settings', fps: parseInt(e.target.value) }));
-  }
-};
-btnSettingsClose.onclick = () => settingsEl.classList.add('hidden');
-
-/* ---------------- Auth ---------------- */
-function checkStoredToken() {
-  myToken = localStorage.getItem('mc3_token');
-  if (myToken) {
-    connectRelay();
-  } else {
-    showScreen('authScreen');
-  }
-}
-
-function handleLoginSignup(isSignup) {
-  const username = document.getElementById('authUsername').value.trim();
-  const password = document.getElementById('authPassword').value.trim();
-  if (!username || !password) {
-    showNotif('Username and password required', 'error');
-    return;
-  }
-  const endpoint = isSignup ? 'register' : 'login';
-  fetch(`${API_URL}/api/${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
-  })
-  .then(r => r.json())
-  .then(data => {
-    if (data.token) {
-      myToken = data.token;
-      localStorage.setItem('mc3_token', myToken);
-      myId = data.user.id;
-      myUsername = data.user.username;
-      setAuth(true, myUsername);
-      connectRelay();
-    } else {
-      showNotif(data.error || 'Failed', 'error');
-    }
-  })
-  .catch(() => showNotif('Network error', 'error'));
-}
-
-document.getElementById('authBtn').onclick = (e) => {
-  e.preventDefault();
-  handleLoginSignup(document.getElementById('authToggleBtn').textContent.includes('Sign up'));
-};
-
-document.getElementById('authToggleBtn').onclick = (e) => {
-  e.preventDefault();
-  const isSignup = document.getElementById('authToggleBtn').textContent.includes('Sign up');
-  const title = document.getElementById('authTitle');
-  const subtitle = document.getElementById('authSubtitle');
-  const btn = document.getElementById('authBtn');
-  const toggleBtn = document.getElementById('authToggleBtn');
-  const toggleText = document.getElementById('authToggleText');
-  const switchLink = document.getElementById('authSwitchLink');
-
-  if (isSignup) {
-    title.textContent = 'Log In';
-    subtitle.textContent = 'Welcome back to MC3';
-    btn.textContent = 'Log In';
-    toggleBtn.textContent = 'Create Account';
-    toggleText.textContent = "Don't have an account?";
-    switchLink.textContent = 'Sign up';
-  } else {
-    title.textContent = 'Create Account';
-    subtitle.textContent = 'Join the MC3 multiplayer community';
-    btn.textContent = 'Sign Up';
-    toggleBtn.textContent = 'Log In';
-    toggleText.textContent = "Already have an account?";
-    switchLink.textContent = 'Log in';
-  }
-};
-
-btnLogout.onclick = () => {
-  myToken = null;
-  localStorage.removeItem('mc3_token');
-  relayWs && relayWs.close();
-  streamWs && streamWs.close();
-  showScreen('authScreen');
-  showNotif('Logged out');
-};
 
 /* ---------------- Init ---------------- */
 window.addEventListener('keydown', onKeyDown);
 window.addEventListener('keyup', onKeyUp);
-
-document.getElementById('btnCreateGame').onclick = createGame;
-document.getElementById('btnRefresh').onclick = requestList;
-document.getElementById('btnViewSaves').onclick = () => { showScreen('savesScreen'); loadSaves(); };
-document.getElementById('btnViewCareer').onclick = () => { showScreen('careerScreen'); loadCareer(); };
-document.getElementById('btnNewSave').onclick = createNewSave;
-document.getElementById('btnLogout').onclick = btnLogout;
-
-chatInput.onkeypress = (e) => { if (e.key === 'Enter') sendChat(); };
-
-// Check for stored token and start
-checkStoredToken();
+window.addEventListener('blur', releaseBrowserInput);
+btnCreate.onclick = createGame;
+btnRefresh.onclick = requestList;
+chatInput.onkeypress = event => { if (event.key === 'Enter') sendChat(); };
+accountUI = MC3Account.mount({
+  window, apiBase: API_URL, notify: showNotif, showScreen, releaseInput: releaseBrowserInput,
+  canResume: () => !!currentGameId && streamConnected,
+  onLoadSave: (slot, save_data, save_name) => sendLoadSave(slot, save_data, save_name),
+  onSession(session) {
+    authChecked = true;
+    if (session) {
+      myToken = session.token; myUsername = session.user.username; myId = session.user.id;
+      setAuth(true, myUsername);
+      if (relayWs && relayWs.readyState === WebSocket.OPEN) relayWs.send(JSON.stringify({ type: 'auth', token: myToken }));
+      else if (!relayWs || relayWs.readyState === WebSocket.CLOSED) connectRelay();
+    } else {
+      myToken = myUsername = myId = currentGameId = null; setAuth(false, '');
+      if (relayWs) relayWs.close();
+      if (streamWs) streamWs.close();
+      releaseBrowserInput();
+    }
+  }
+});
+accountUI.start();
 requestAnimationFrame(gamepadLoop);
-
 </script>
 </html>

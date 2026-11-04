@@ -2,6 +2,7 @@
 #include "core/input.h"
 #include "core/input_mapping.h"
 #include "core/keyboard_latch.h"
+#include "core/remote_pad.h"
 
 #include <algorithm>
 #include <chrono>
@@ -275,6 +276,7 @@ void KeyboardMenuChanged(bool menu_open) {
 }
 
 void Init() {
+    StartRemotePads();  // once; also when the game code window started SDL first
     if (g_sdl) return;  // started already for the game code window
     {
         std::lock_guard lock(g_lock);
@@ -348,6 +350,7 @@ Pad Poll(int port, bool consume_keyboard_edges) {
             }
             if (!g_live_path.empty()) p = MergeKeyboard(p, LivePad());
         }
+        p = MergeRemote(p, RemotePad(port));  // a browser player's controller (stream_proxy.py), any port
     }
     bool toggle_menu = false;
     {

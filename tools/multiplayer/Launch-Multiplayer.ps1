@@ -29,13 +29,22 @@ Write-Host "Starting Stream Proxy (UDP $streamPort, WebSocket $($streamPort + 1)
 $proxyProc = Start-Process py -ArgumentList "-3.12", "tools/multiplayer/stream/stream_proxy.py", "--relay", "ws://localhost:8080", "--port", $streamPort, "--fps", "60", "--quality", "75", "--scale", "1.0" -WorkingDirectory $scriptDir -WindowStyle Hidden -RedirectStandardOutput "$streamDir/proxy.log" -RedirectStandardError "$streamDir/proxy.err"
 Start-Sleep -Seconds 2
 
+# Start UDP proxy (native game <-> relay). Port 30741 matches xnet.cpp kProxyPort,
+# so native sendto(127.0.0.1:30741) reaches it. The proxy learns the game's bound
+# port from each outgoing datagram's MC3P header and relays game<->relay traffic.
+$proxyUdpPort = 30741
+Write-Host "Starting UDP Proxy (UDP $proxyUdpPort -> relay ws://localhost:8080)..." -ForegroundColor Yellow
+Start-Process py -ArgumentList "-3.12", "tools/multiplayer/proxy/proxy.py", "--relay", "ws://localhost:8080", "--proxy-udp", $proxyUdpPort, "--game-udp", "3074" -WorkingDirectory $scriptDir -WindowStyle Hidden -RedirectStandardOutput "$scriptDir/proxy.log" -RedirectStandardError "$scriptDir/proxy.err"
+Start-Sleep -Seconds 2
+
 # Open browser client
 Write-Host "Opening browser client..." -ForegroundColor Cyan
 Start-Process "$browserHtml?relay=ws://localhost:8080&stream=ws://localhost:$($streamPort + 1)"
 
 Write-Host "`n=== Multiplayer stack running ===" -ForegroundColor Green
 Write-Host "Relay:    ws://localhost:8080"
-Write-Host "Proxy:    UDP $streamPort / WS $($streamPort + 1)"
+Write-Host "Proxy:    UDP $streamPort / WS $($streamPort + 1)  (stream)"
+Write-Host "UDP proxy: UDP $proxyUdpPort -> relay  (native game tunnel)"
 Write-Host "Browser:  $browserHtml"
 Write-Host ""
 Write-Host "To stop: Close the game, then press Ctrl+C in this window (or kill node/python processes)."
