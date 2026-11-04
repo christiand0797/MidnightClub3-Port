@@ -1,4 +1,4 @@
-// A test launch option, MC3_UNLOCK_ALL=1: every city answers "unlocked", Detroit included, so renderer and texture
+// A test launch option, MC3_UNLOCK_ALL=1: every unlock query (cities, modes, cars) answers "unlocked", Detroit included, so renderer and texture
 // checks can reach all four cities on a test profile. Nothing is written to a save by this; the profile's own progress
 // stays as it was and the cities lock again on a launch without the option.
 //
@@ -29,5 +29,7 @@ X86_EXTERN_FUNC(__imp__sub_00292CD0);
 X86_FUNC(sub_00292CD0) {
     const uint32_t type = kernel::R32(ctx.esp + 4);
     __imp__sub_00292CD0(ctx, base);
-    if (type == kUnlockCity && Enabled()) ctx.eax = 1;
+    // every type, not only cities: Arcade lists a city only once its modes (other unlock types) count as open
+    (void)type;
+    if (Enabled()) ctx.eax = 1;
 }
