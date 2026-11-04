@@ -54,6 +54,7 @@ DRAW = re.compile(r"^\d{4,}\s+draw\s")
 EVENT = re.compile(r"^\d{4,}\s")
 KEYS = re.compile(r"^\s+vehicle-keys vs ([0-9A-Fa-f]{16}) ps ([0-9A-Fa-f]{16}) bridge ([0-9]+)\s*$")
 STAGE = re.compile(r"\|\s+t([0-3])\s+[^|]*?\bhash ([0-9A-Fa-f]{16})\s+tci ([0-9]+)(?=\s|$)")
+ALPHA_TEST = re.compile(r"\batest ([01])\s+\S+\s+\S+(?=\s|$)")
 UNUSED_GAME_ALPHA = hashlib.sha256(b"").hexdigest()
 
 
@@ -124,6 +125,7 @@ class Assignment:
     pixel: str
     stage: int
     uv_set: int = 0
+    cutout: bool = False
 
 
 def capture_candidates(encoded: bytes, selected: set[str]) -> Counter:
@@ -147,7 +149,8 @@ def capture_candidates(encoded: bytes, selected: set[str]) -> Counter:
         consumed = True
         vertex, pixel, mask_text = keys.groups()
         mask = int(mask_text)
-        if mask == 0 or mask & ~3 or int(vertex, 16) in (0, (1 << 64) - 1) or int(pixel, 16) in (0, (1 << 64) - 1):
+        alpha_test = ALPHA_TEST.search(current)
+        if not alpha_test or mask == 0 or mask & ~3 or int(vertex, 16) in (0, (1 << 64) - 1) or int(pixel, 16) in (0, (1 << 64) - 1):
             continue
         # Look at each exact stage segment: a target marker on another stage must
         # not reject a genuine vinyl stage beside reflection maps.
@@ -163,7 +166,9 @@ def capture_candidates(encoded: bytes, selected: set[str]) -> Counter:
                 continue
             if re.search(r"\b(target|unbound|shadow|rect)\b", segment) or texture == "0" * 16:
                 continue
-            found[Assignment(texture, vertex.upper(), pixel.upper(), stage)] += 1
+            # PixelKey::alphatest follows the actual enable bit, even for an
+            # ALWAYS test. Keep that full identity instead of normalizing it.
+            found[Assignment(texture, vertex.upper(), pixel.upper(), stage, 0, alpha_test.group(1) == "1")] += 1
     return found
 
 
@@ -280,7 +285,7 @@ def build(*, captures: list[Path], textures: list[str], maps_root: Path, maps_ma
         lines.extend(["[[materials]]", f"# {candidates[assignment]} exact captured draw(s)",
                       f'texture = "{assignment.texture}"', f'vertex_shader = "{assignment.vertex}"',
                       f'pixel_shader = "{assignment.pixel}"', f"stage = {assignment.stage}", "uv_set = 0",
-                      'surface = "vehicle"', "cutout = false", f'normal_convention = "{normal_convention}"',
+                      'surface = "vehicle"', f"cutout = {str(assignment.cutout).lower()}", f'normal_convention = "{normal_convention}"',
                       f'baseline_alpha_sha256 = "{UNUSED_GAME_ALPHA}"', f'review_sha256 = "{review_sha256.lower()}"',
                       'albedo = "game"'])
         for role, (name, sha) in names[assignment.texture].items():

@@ -1031,6 +1031,7 @@ private:
     };
     std::unordered_map<uint64_t, PbrMeshEntry> pbr_mesh_cache_;
     std::unordered_map<uint64_t, vehicle_pbr::Profile> vehicle_profiles_;
+    std::unordered_map<uint64_t, std::pair<std::string,std::string>> vehicle_sources_;
     static constexpr size_t kPbrMeshCacheEntries = 1024;  // reasons already logged per material row, so the log says each once
     pbr::controls::Capabilities pbr_capabilities_;
     std::unordered_map<uint64_t, Tex> pack_textures_;  // texture pack images by key, kept for the run
@@ -5240,11 +5241,19 @@ void D3D12Backend::PrepareVehiclePbr(const State& s,const Assembled& a,DrawShade
             observation.reason=params.height_mode==pc::HeightMode::Parallax?pc::Reason::ParallaxUnavailable:pc::Reason::DisplacementUnavailable;
             continue;
         }
-        auto vertex=vehicle_pbr::VertexHlsl(car_paint::VertexHlsl(VertexProgramHlsl(s.vs->program,a.regs,a.decode,sh.velocity)),bridge,stage,0);
-        PixelKey variant=pk;variant.car_paint=1;
-        auto pixel=vehicle_pbr::PixelHlsl(car_paint::PixelHlsl(PixelHlsl(variant),CarPaintTargetMask(variant)),stage,
-            m.normal.storage==pbr::Storage::Bc5,m.normal_convention==pbr::NormalConvention::DirectX);
-        if(!vertex||!pixel)continue;
+        const uint64_t source_words[]={sh.material_vkey,sh.material_pkey,stage,uint64_t(m.normal.storage),
+            uint64_t(m.normal_convention),sh.velocity?1ull:0ull};
+        const auto source_key=Hash(source_words,sizeof(source_words));
+        if(vehicle_sources_.size()>512)vehicle_sources_.clear();
+        auto [source,new_source]=vehicle_sources_.try_emplace(source_key);
+        if(new_source) {
+            auto vertex=vehicle_pbr::VertexHlsl(car_paint::VertexHlsl(VertexProgramHlsl(s.vs->program,a.regs,a.decode,sh.velocity)),bridge,stage,0);
+            PixelKey variant=pk;variant.car_paint=1;
+            auto pixel=vehicle_pbr::PixelHlsl(car_paint::PixelHlsl(PixelHlsl(variant),CarPaintTargetMask(variant)),stage,
+                m.normal.storage==pbr::Storage::Bc5,m.normal_convention==pbr::NormalConvention::DirectX);
+            if(vertex&&pixel)source->second={std::move(*vertex),std::move(*pixel)};
+        }
+        if(source->second.first.empty()||source->second.second.empty())continue;
         Frame& frame=CurrentFrame();
         if(frame.pbr_owner&&frame.pbr_owner!=pbr_library_.library)return;
         pbr::device::Context context;
@@ -5266,7 +5275,7 @@ void D3D12Backend::PrepareVehiclePbr(const State& s,const Assembled& a,DrawShade
         textures.pbr_nrm=prepared.normal.resource;textures.pbr_orm=prepared.orm.resource;
         textures.vehicle_normal_format=prepared.normal.format;textures.vehicle_normal_levels=prepared.normal.levels;
         textures.vehicle_orm_format=prepared.orm.format;textures.vehicle_orm_levels=prepared.orm.levels;
-        sh.vehicle_vertex=std::move(*vertex);sh.vehicle_pixel=std::move(*pixel);
+        sh.vehicle_vertex=source->second.first;sh.vehicle_pixel=source->second.second;
         sh.vehicle_parameters=params;sh.vehicle_row=selected;sh.car_paint=true;pk.car_paint=1;
         observation.reason=pc::Reason::VehicleMappedLighting;
         return;
@@ -5682,6 +5691,7 @@ void D3D12Backend::UpdatePbrSettings() {
         pbr_observed_.clear();
         pbr_trace_.clear();
         pbr_mesh_cache_.clear();
+        vehicle_sources_.clear();
         pbr_capabilities_ = {};
         if (next.library) for (const auto& m : next.library->materials) {
             pc::CatalogMaterial row;

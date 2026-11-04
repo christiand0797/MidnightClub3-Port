@@ -17,9 +17,9 @@ TEX, VS, PS = "0123456789ABCDEF", "1111111111111111", "2222222222222222"
 SHA = "a" * 64
 
 
-def draw(n=0, stage=1, tci=0, flags="", bridge=2, texture=TEX, vs=VS, ps=PS):
+def draw(n=0, stage=1, tci=0, flags="", bridge=2, texture=TEX, vs=VS, ps=PS, atest=0):
     reflection_stage = 2 if stage == 0 else 0
-    return (f"{n:04d} draw rt 01 ds 02 prim 6 count 30 vs B01057 ps 00 blend 0 0 0 zen 1 zwrite 1"
+    return (f"{n:04d} draw rt 01 ds 02 prim 6 count 30 vs B01057 ps 00 blend 0 0 0 zen 1 zwrite 1 atest {atest} 207 0"
             f" | t{reflection_stage} 81000000 fmt F 4x4 target addr 11 filt 221 cop 4 hash 9999999999999999 tci 0"
             f" | t{stage} 82000000 fmt F 4x4 {flags} addr 11 filt 221 cop 4 hash {texture} tci {tci}\n"
             f"     keys vs 3333333333333333 ps 4444444444444444\n"
@@ -75,7 +75,7 @@ class VehicleProposal(unittest.TestCase):
     def test_unknown_bridge_target_wrong_uv_and_wildcards_rejected(self):
         for text in (draw(bridge=0), draw(bridge=4), draw(stage=1, bridge=1), draw(tci=1),
                      draw(flags="target"), draw(flags="unbound"), draw(flags="rect"), draw(vs="F" * 16),
-                     draw(ps="0" * 16), draw().replace("vehicle-keys", "keys")):
+                     draw(ps="0" * 16), draw().replace("vehicle-keys", "keys"), draw().replace("atest 0 207 0", "")):
             with self.subTest(text=text):
                 self.assertFalse(V.capture_candidates(text.encode(), {TEX}))
 
@@ -164,6 +164,14 @@ class VehicleProposal(unittest.TestCase):
         with self.assertRaisesRegex(V.ProposalError, "every selected texture"):
             V.build(**args)
         self.assertFalse(args["output"].exists())
+
+    def test_alpha_test_enable_remains_part_of_the_exact_material_identity(self):
+        found = V.capture_candidates((draw() + draw(1, atest=1)).encode(), {TEX})
+        self.assertEqual(found, {V.Assignment(TEX, VS, PS, 1): 1, V.Assignment(TEX, VS, PS, 1, 0, True): 1})
+        (self.cap / "frame.txt").write_text(draw(atest=1), encoding="utf-8")
+        V.build(**self.args())
+        row = tomllib.loads((self.root / "proposal" / "materials-v1.toml").read_text())["materials"][0]
+        self.assertIs(row["cutout"], True)
 
     def test_budget_is_checked_before_output_and_duplicate_stages_are_ambiguous(self):
         original = V.MAX_DECODED_BYTES
