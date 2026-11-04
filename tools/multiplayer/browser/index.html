@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MC3 Browser Multiplayer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #0a0a0f;
+    color: #e0e0e0;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .app {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    grid-template-rows: 60px 1fr 40px;
+    height: 100vh;
+  }
+  header {
+    grid-column: 1 / -1;
+    background: #1a1a2e;
+    border-bottom: 2px solid #16213e;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 15px;
+  }
+  .logo {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #00d4ff;
+    letter-spacing: 2px;
+  }
+  .status {
+    margin-left: auto;
+    font-size: 0.85rem;
+    color: #888;
+  }
+  .status.connected { color: #00ff88; }
+  .status.disconnected { color: #ff4444; }
+  .sidebar {
+    grid-column: 1;
+    grid-row: 2 / 3;
+    background: #16213e;
+    border-right: 1px solid #0f3460;
+    padding: 20px;
+    overflow-y: auto;
+  }
+  .main {
+    grid-column: 2;
+    grid-row: 2 / 3;
+    background: #0f3460;
+    padding: 20px;
+    overflow-y: auto;
+    position: relative;
+  }
+  footer {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    background: #1a1a2e;
+    border-top: 1px solid #16213e;
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 0.85rem;
+    color: #888;
+  }
+  h2 { color: #00d4ff; margin-bottom: 15px; font-size: 1.1rem; }
+  .section { margin-bottom: 25px; }
+  .section-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #888;
+    margin-bottom: 10px;
+  }
+  button {
+    background: #00d4ff;
+    border: none;
+    color: #000;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.2s;
+  }
+  button:hover { background: #33e0ff; }
+  button:disabled { background: #444; color: #888; cursor: not-allowed; }
+  button.secondary { background: #2a3f5f; color: #e0e0e0; }
+  button.secondary:hover { background: #3a4f6f; }
+  button.danger { background: #ff4444; color: #fff; }
+  button.danger:hover { background: #ff6666; }
+  input, select {
+    background: #1a1a2e;
+    border: 1px solid #2a3f5f;
+    color: #e0e0e0;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    width: 100%;
+    margin-bottom: 10px;
+  }
+  input:focus, select:focus { outline: none; border-color: #00d4ff; }
+  .game-card {
+    background: #1a1a2e;
+    border: 1px solid #2a3f5f;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .game-card:hover { border-color: #00d4ff; background: #16213e; }
+  .game-card.full { opacity: 0.6; }
+  .game-card.started { border-left: 4px solid #ffaa44; }
+  .game-card .game-id { font-weight: bold; color: #00d4ff; font-size: 0.9rem; }
+  .game-card .game-info { font-size: 0.8rem; color: #888; margin-top: 4px; }
+  .game-card .players { display: flex; gap: 6px; margin-top: 8px; }
+  .player-badge {
+    width: 18px; height: 18px; border-radius: 50%;
+    display: inline-block; font-size: 0.7rem; color: #fff;
+    font-weight: bold; display: flex; align-items: center; justify-content: center;
+  }
+  .chat {
+    background: #0a0a0f;
+    border: 1px solid #16213e;
+    border-radius: 6px;
+    height: 200px;
+    display: flex;
+    flex-direction: column;
+  }
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    font-size: 0.85rem;
+    font-family: 'Consolas', monospace;
+  }
+  .chat-msg { margin-bottom: 8px; padding: 6px; border-radius: 4px; }
+  .chat-msg.system { color: #888; font-style: italic; }
+  .chat-msg.me { background: #00d4ff; color: #000; margin-left: auto; max-width: 70%; }
+  .chat-msg.other { background: #16213e; color: #e0e0e0; }
+  .chat-input {
+    border-top: 1px solid #16213e;
+    padding: 8px 12px;
+    display: flex;
+    gap: 8px;
+  }
+  .chat-input input { flex: 1; margin-bottom: 0; }
+  .controls {
+    background: #1a1a2e;
+    border: 1px solid #2a3f5f;
+    border-radius: 6px;
+    padding: 15px;
+    margin-top: 15px;
+  }
+  .controls h3 { color: #00d4ff; margin-bottom: 12px; font-size: 0.9rem; }
+  .keys { display: grid; grid-template-columns: 60px 60px 60px; gap: 8px; margin-bottom: 10px; }
+  .key {
+    background: #16213e;
+    border: 1px solid #2a3f5f;
+    border-radius: 4px;
+    width: 50px; height: 50px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: bold; font-size: 0.8rem; color: #00d4ff;
+  }
+  .key.active { background: #00d4ff; color: #000; }
+  .key-label { font-size: 0.7rem; color: #888; text-align: center; margin-top: 2px; }
+  .indicator {
+    width: 10px; height: 10px; border-radius: 50%;
+    display: inline-block; margin-right: 6px;
+  }
+  .indicator.online { background: #00ff88; box-shadow: 0 0 8px #00ff88; }
+  .indicator.offline { background: #ff4444; box-shadow: 0 0 8px #ff4444; }
+  .hidden { display: none !important; }
+  .centered { text-align: center; padding-top: 40px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">MC3 MULTIPLAYER</div>
+    <div class="status" id="status">
+      <span class="indicator offline"></span>
+      Connecting...
+    </div>
+  </header>
+
+  <div class="sidebar">
+    <div class="section">
+      <div class="section-label">Games</div>
+      <div id="gameList">
+        <div class="centered" style="color: #666;">No games available</div>
+      </div>
+      <button id="btnCreate" class="secondary">Create Game</button>
+    </div>
+    <div class="section">
+      <div class="section-label">Controls (Spectator Input)</div>
+      <div class="controls">
+        <h3>Drive</h3>
+        <div class="keys">
+          <div class="key" data-key="ArrowUp">▲</div>
+          <div class="key" data-key="ArrowLeft">◀</div>
+          <div class="key" data-key="ArrowDown">▼</div>
+          <div class="key" data-key="ArrowRight">▶</div>
+        </div>
+        <div style="display:flex; gap:10px; margin-bottom:10px;">
+          <button class="key" style="width:auto; padding:8px 12px;" data-key="Enter">Enter</button>
+          <button class="key" style="width:auto; padding:8px 12px;" data-key="Space">Space</button>
+        </div>
+        <div class="key-label">Arrow keys steer, Enter = A, Space = B</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="section">
+      <h2>Game Lobby</h2>
+      <div id="lobbyInfo" class="hidden">
+        <div><strong>Game:</strong> <span id="lbGameId"></span></div>
+        <div><strong>Role:</strong> <span id="lbRole"></span></div>
+        <div><strong>Players:</strong> <span id="lbPlayers">0</span> / <span id="lbMax">8</span></div>
+        <div><strong>Started:</strong> <span id="lbStarted">No</span></div>
+      </div>
+      <div id="notJoined" class="centered">
+        <p>No game joined. Create or join a game from the sidebar.</p>
+      </div>
+    </div>
+    <div class="section">
+      <div class="chat">
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-input">
+          <input type="text" id="chatInput" placeholder="Type a message...">
+          <button id="btnSend">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div>
+      Relay: <span id="relayAddr"></span>
+    </div>
+    <div id="playerCount" style="margin-left:auto;">Players: 0</div>
+  </footer>
+</div>
+
+<script>
+const RELAY_URL = (() => {
+  const p = new URLSearchParams(window.location.search);
+  return p.get('relay') || 'ws://localhost:8080';
+})();
+
+let ws = null;
+let myId = null;
+let myRole = null;
+let myColor = null;
+let currentGameId = null;
+let connected = false;
+
+const statusEl = document.getElementById('status');
+const gameListEl = document.getElementById('gameList');
+const btnCreate = document.getElementById('btnCreate');
+const lobbyInfo = document.getElementById('lobbyInfo');
+const notJoined = document.getElementById('notJoined');
+const chatMessages = document.getElementById('chatMessages');
+const chatInput = document.getElementById('chatInput');
+const btnSend = document.getElementById('btnSend');
+const lbGameId = document.getElementById('lbGameId');
+const lbRole = document.getElementById('lbRole');
+const lbPlayers = document.getElementById('lbPlayers');
+const lbStarted = document.getElementById('lbStarted');
+const relayAddr = document.getElementById('relayAddr');
+const playerCountEl = document.getElementById('playerCount');
+
+relayAddr.textContent = RELAY_URL;
+
+function setStatus(connected, text) {
+  connected = connected;
+  statusEl.className = `status ${connected ? 'connected' : 'disconnected'}`;
+  statusEl.innerHTML = `<span class="indicator ${connected ? 'online' : 'offline'}"></span> ${text}`;
+}
+
+function addChat(msg, type = 'other') {
+  const div = document.createElement('div');
+  div.className = `chat-msg ${type}`;
+  const ts = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+  div.textContent = `[${ts}] ${msg}`;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function renderGames(games) {
+  gameListEl.innerHTML = '';
+  if (games.length === 0) {
+    gameListEl.innerHTML = '<div class="centered" style="color: #666;">No games available</div>';
+    return;
+  }
+  for (const g of games) {
+    const card = document.createElement('div');
+    card.className = `game-card ${g.playerCount >= g.maxPlayers ? 'full' : ''} ${g.started ? 'started' : ''}`;
+    card.innerHTML = `
+      <div class="game-id">#${g.id}</div>
+      <div class="game-info">${g.playerCount}/${g.maxPlayers} players${g.started ? ' • IN PROGRESS' : ''}</div>
+      <div class="players">
+        ${g.players.map(p => `<span class="player-badge" style="background:${p.color}">${p.name[0]}</span>`).join('')}
+      </div>
+    `;
+    card.onclick = () => {
+      if (g.playerCount < g.maxPlayers && !g.started) joinGame(g.id);
+    };
+    gameListEl.appendChild(card);
+  }
+}
+
+function connect() {
+  ws = new WebSocket(RELAY_URL);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    setStatus(true, 'Connected to relay');
+    addChat('Connected to relay server', 'system');
+    btnCreate.disabled = false;
+  };
+
+  ws.onclose = () => {
+    setStatus(false, 'Disconnected');
+    addChat('Disconnected from relay', 'system');
+    connected = false;
+    btnCreate.disabled = true;
+    // Reconnect after 3 seconds
+    setTimeout(connect, 3000);
+  };
+
+  ws.onmessage = (event) => {
+    if (typeof event.data === 'string') {
+      const msg = JSON.parse(event.data);
+      handleMessage(msg);
+    } else {
+      // Binary packet - game data, ignore for spectator UI
+      addChat('Received game state packet (binary)', 'system');
+    }
+  };
+
+  ws.onerror = (err) => {
+    console.error('WebSocket error', err);
+    setStatus(false, 'Connection error');
+  };
+}
+
+function handleMessage(msg) {
+  switch (msg.type) {
+    case 'joined':
+      myId = msg.id || myId;
+      myRole = msg.role;
+      myColor = msg.color;
+      currentGameId = msg.gameId;
+      addChat(`Joined game #${currentGameId} as ${myRole}`, 'system');
+      updateLobbyUI(msg.game);
+      break;
+    case 'created':
+      myId = msg.id;
+      myRole = msg.role;
+      myColor = msg.color;
+      currentGameId = msg.gameId;
+      addChat(`Created game #${currentGameId} as host`, 'system');
+      updateLobbyUI(msg.game);
+      break;
+    case 'gameList':
+      renderGames(msg.games);
+      break;
+    case 'playerJoined':
+      addChat(`${msg.name} joined the game`, 'system');
+      if (currentGameId) requestGameList();
+      break;
+    case 'playerLeft':
+      addChat(`${msg.name} left the game`, 'system');
+      if (currentGameId) requestGameList();
+      break;
+    case 'playerReady':
+      addChat(`${msg.name} is ${msg.ready ? 'ready' : 'not ready'}`, 'system');
+      break;
+    case 'gameStarted':
+      addChat('Game started!', 'system');
+      lbStarted.textContent = 'Yes';
+      break;
+    case 'error':
+      addChat(`Error: ${msg.error}`, 'system');
+      break;
+    case 'chat':
+      addChat(`${msg.from}: ${msg.text}`, msg.from === (document.getElementById('playerName')||{textContent:''}).textContent ? 'me' : 'other');
+      break;
+  }
+}
+
+function requestGameList() {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type: 'list'}));
+}
+
+function createGame() {
+  const name = prompt('Enter your name:', 'Player') || 'Player';
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({type: 'create', name}));
+  }
+}
+
+function joinGame(gameId) {
+  const name = prompt('Enter your name:', 'Player') || 'Player';
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({type: 'join', game: gameId, name}));
+  }
+}
+
+function leaveGame() {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type: 'leave'}));
+  currentGameId = null;
+  myRole = null;
+  myColor = null;
+  updateLobbyUI(null);
+  addChat('Left the game', 'system');
+}
+
+function updateLobbyUI(game) {
+  if (game) {
+    notJoined.classList.add('hidden');
+    lobbyInfo.classList.remove('hidden');
+    lbGameId.textContent = currentGameId;
+    lbRole.textContent = myRole;
+    lbPlayers.textContent = game.playerCount;
+    lbMax.textContent = game.maxPlayers;
+    lbStarted.textContent = game.started ? 'Yes' : 'No';
+  } else {
+    notJoined.classList.remove('hidden');
+    lobbyInfo.classList.add('hidden');
+  }
+}
+
+function sendInput(key) {
+  if (!currentGameId || !ws || ws.readyState !== WebSocket.OPEN) return;
+  const keyEl = document.querySelector(`.key[data-key="${key}"]`);
+  if (keyEl) keyEl.classList.add('active');
+  setTimeout(() => { if (keyEl) keyEl.classList.remove('active'); }, 150);
+
+  // Send input as a binary packet to the relay (game proxy will forward to game)
+  // Packet format: 1 byte type (0x01 = input) + 1 byte keycode + payload
+  const buf = new Uint8Array(4);
+  buf[0] = 0x01; // input packet
+  buf[1] = key.charCodeAt(0) & 0xFF;
+  buf[2] = 1;    // pressed
+  buf[3] = 0;    // reserved
+  ws.send(buf);
+}
+
+function sendChat() {
+  const text = chatInput.value.trim();
+  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({type: 'chat', text}));
+  chatInput.value = '';
+}
+
+// Event listeners
+btnCreate.onclick = createGame;
+btnSend.onclick = sendChat;
+chatInput.onkeypress = (e) => { if (e.key === 'Enter') sendChat(); };
+
+// Keyboard input for spectator control
+const keyMap = {
+  'ArrowUp': 'ArrowUp',
+  'ArrowDown': 'ArrowDown',
+  'ArrowLeft': 'ArrowLeft',
+  'ArrowRight': 'ArrowRight',
+  'Enter': 'Enter',
+  ' ': 'Space',
+};
+
+window.addEventListener('keydown', (e) => {
+  if (!connected || !currentGameId) return;
+  const key = keyMap[e.key];
+  if (key) {
+    e.preventDefault();
+    sendInput(key);
+  }
+});
+
+// Connect
+connect();
+
+</script>
+</html>

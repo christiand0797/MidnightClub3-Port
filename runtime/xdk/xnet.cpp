@@ -49,6 +49,12 @@ constexpr uint32_t kLinkUp = 0x01 | 0x02 | 0x08;          // active, 100 Mbps, f
 constexpr uint32_t kXnAddrEthernet = 0x02 | 0x04;         // ethernet, static address
 constexpr DWORD kUdpConnReset = 0x9800000C;  // SIO_UDP_CONNRESET: off, or a send to a closed port fails the next recv
 constexpr int kLoopbackInstances = 8;
+// Browser multiplayer proxy: forward LAN broadcast packets to the local proxy so they
+// reach the WebSocket relay and can be played over the internet.
+constexpr uint16_t kProxyPort = 30741;       // UDP port the proxy listens on
+constexpr uint32_t kProxyAddr = 0x7F000001;  // 127.0.0.1
+constexpr uint32_t kProxyMagic = 0x4D433350;  // "MC3P"
+uint16_t g_game_udp_port = 0;                 // learned from bind(), forwarded to proxy
 
 struct Socket {
     SOCKET s = INVALID_SOCKET;
@@ -251,6 +257,21 @@ int SendOnce(SOCKET s, const uint8_t* data, int len, const sockaddr_in* to) {
         }
         for (const sockaddr_in& a : also)
             ::sendto(s, reinterpret_cast<const char*>(data), len, 0, reinterpret_cast<const sockaddr*>(&a), sizeof(a));
+        // Forward the broadcast to the local browser-multiplayer proxy so it reaches
+        // the WebSocket relay for internet play. Prefix with magic + our UDP port so
+        // the proxy can route replies back to the game's socket.
+        if (g_game_udp_port) {
+            uint8_t buf[65536 + 6];
+            std::memcpy(buf, &kProxyMagic, 4);
+            std::memcpy(buf + 4, &g_game_udp_port, 2);
+            std::memcpy(buf + 6, data, static_cast<size_t>(len));
+            sockaddr_in proxy{};
+            proxy.sin_family = AF_INET;
+            proxy.sin_port = htons(kProxyPort);
+            proxy.sin_addr.s_addr = kProxyAddr;
+            ::sendto(s, reinterpret_cast<const char*>(buf), len + 6, 0,
+                     reinterpret_cast<const sockaddr*>(&proxy), sizeof(proxy));
+        }
     } else {
         std::lock_guard<std::mutex> lock(g_nat_lock);
         auto it = g_nat.find(NatKey(d.sin_addr.s_addr, d.sin_port));
@@ -558,7 +579,10 @@ HLE_STDCALL(bind, 3) {
     int len = sizeof(me);
     ::getsockname(k.s, reinterpret_cast<sockaddr*>(&me), &len);
     std::lock_guard<std::mutex> lock(g_lock);
-    if (auto it = g_sockets.find(a[0]); it != g_sockets.end()) it->second.port = me.sin_port;
+    if (auto it = g_sockets.find(a[0]); it != g_sockets.end()) {
+        it->second.port = me.sin_port;
+        g_game_udp_port = me.sin_port;  // learn our UDP port for proxy forwarding
+    }
     return 0;
 }
 HLE_STDCALL(connect, 3) {

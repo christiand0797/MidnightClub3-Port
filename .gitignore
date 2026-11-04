@@ -29,3 +29,10 @@ __pycache__/
 /build_hd.log
 /build_hd.pbr*.log
 /done.txt
+
+# Multiplayer tools
+tools/multiplayer/relay/node_modules/
+tools/multiplayer/relay/package-lock.json
+tools/multiplayer/relay/relay.log
+tools/multiplayer/relay/relay.err
+tools/multiplayer/proxy/__pycache__/
