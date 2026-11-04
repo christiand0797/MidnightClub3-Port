@@ -85,7 +85,7 @@ void Check(HRESULT hr,Status s=Status::DeviceFailure){if(FAILED(hr))throw Failur
 }
 
 const char* StatusText(Status s){switch(s){
-    case Status::Planned:return "CPU plan only";case Status::Recorded:return "CPU draw call recorded";case Status::Disabled:return "disabled";
+    case Status::Planned:return "CPU plan only";case Status::Prepared:return "CPU map bindings prepared";case Status::Recorded:return "CPU draw call recorded";case Status::Disabled:return "disabled";
     case Status::InvalidLibrary:return "invalid immutable library/key";case Status::MaterialRejected:return "reviewed material rejected";
     case Status::UnsupportedDraw:return "unsupported or unproved draw";case Status::InvalidMesh:return "invalid packed mesh";
     case Status::InvalidConstants:return "invalid constants/output policy";case Status::InvalidSampler:return "invalid material sampler";
@@ -146,9 +146,34 @@ Status PlanDraw(const Input& in,const Limits& limits,Plan& result){
     result=std::move(plan);return Status::Planned;
 }
 
+Status PlanVehicleMaps(const VehicleMapInput& in,const Limits& limits,VehicleMapPlan& result){
+    result={};if(!in.enabled)return Status::Disabled;
+    if(!LimitsValid(limits))return Status::BudgetExceeded;
+    const auto& a=in.key.assignment;
+    if(!in.library||in.library->status!=LoadStatus::Ready||!in.library->errors.empty()||in.library->materials.size()>8192||
+       !controls::ValidDigest(in.library->manifest_sha256)||!controls::DigestEqual(in.library->manifest_sha256,in.key.approved_manifest_sha256)||
+       !controls::ValidAssignment(a))return Status::InvalidLibrary;
+    if(a.surface!=SurfaceClass::Vehicle||a.vertex_shader==kAnyShader||a.pixel_shader==kAnyShader||a.uv_set==kAnyUv)
+        return Status::MaterialRejected;
+    const Material* selected=nullptr;bool duplicate=false,invalid_row=false;
+    ForTexture(*in.library,a.original_texture,[&](uint32_t row){
+        if(row>=in.library->materials.size()){invalid_row=true;return;}
+        const auto& m=in.library->materials[row];
+        if(controls::AssignmentEqual(m.assignment,a)){duplicate|=selected!=nullptr;selected=&m;}
+    });
+    if(invalid_row||duplicate||!selected||!selected->game_albedo||!controls::ValidDigest(selected->review_sha256)||
+       (selected->normal_convention!=NormalConvention::OpenGl&&selected->normal_convention!=NormalConvention::DirectX))return Status::MaterialRejected;
+    VehicleMapPlan plan;plan.owner=in.library;plan.material=selected;
+    if(!PlanMap(&selected->normal,MapRole::Normal,plan.maps[0])||!PlanMap(&selected->orm,MapRole::Orm,plan.maps[1]))
+        return Status::MaterialRejected;
+    for(const auto& map:plan.maps){plan.texture_upload_bytes+=map.upload_bytes;plan.resident_estimate+=map.resident_estimate;}
+    if(plan.texture_upload_bytes>limits.draw_upload_bytes||plan.resident_estimate>limits.resident_bytes)return Status::BudgetExceeded;
+    result=std::move(plan);return Status::Planned;
+}
+
 struct Device::Impl {
     ID3D12Device* device=nullptr;const void* queue=nullptr;Limits limits;
-    bool poisoned=false;
+    bool poisoned=false,draw_ready=false;
     std::shared_ptr<const Library> owner;
     ComPtr<ID3D12RootSignature> root;
     ComPtr<ID3D12DescriptorHeap> srv_heap,sampler_heap;
@@ -165,14 +190,20 @@ struct Device::Impl {
         std::vector<GameTable> game_tables;};
     struct SamplerEntry {std::vector<uint32_t> key;uint32_t slot=0;};
     struct PsoEntry {std::vector<uint32_t> key;ComPtr<ID3D12PipelineState> pso;};
+    struct VehicleEntry {controls::ExactMaterialKey key;std::array<Texture,2> textures;bool uploaded=false;};
     std::vector<MaterialEntry> materials;
+    std::vector<VehicleEntry> vehicle_materials;
     std::unordered_map<uint64_t,std::vector<uint32_t>> material_rows;  // original_texture -> materials indices
     std::vector<SamplerEntry> samplers;
     std::vector<PsoEntry> psos;
 
-    void Initialize(const Context& context,const Plan& plan,const Limits& requested){
-        device=context.device;queue=context.queue_identity;owner=plan.owner;limits=requested;
+    void InitializeOwnership(const Context& context,std::shared_ptr<const Library> library,const Limits& requested){
+        device=context.device;queue=context.queue_identity;owner=std::move(library);limits=requested;
         materials.reserve(limits.materials);samplers.reserve(limits.samplers);psos.reserve(limits.psos);
+        vehicle_materials.reserve(limits.materials);
+    }
+    void InitializeDrawResources(){
+        if(draw_ready)return;
         const std::string source[]={pipeline::VertexHlsl(),pipeline::VertexHlsl(true),pipeline::PixelHlsl(),pipeline::HullHlsl(),pipeline::DomainHlsl()};
         const char* targets[]={"vs_5_0","vs_5_0","ps_5_0","hs_5_0","ds_5_0"};
         // the disk cache keeps these five out of the first PBR frame after the first run
@@ -187,6 +218,7 @@ struct Device::Impl {
         srv_increment=device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         sampler_increment=device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
         Require(srv_increment&&sampler_increment,Status::DeviceFailure);
+        draw_ready=true;
     }
     pipeline::ShaderSet ShaderSet(controls::HeightMode mode){
         auto code=[&](unsigned i){return D3D12_SHADER_BYTECODE{shaders[i]->GetBufferPointer(),shaders[i]->GetBufferSize()};};
@@ -230,7 +262,7 @@ struct Device::Impl {
     MaterialEntry& MaterialResources(const Input& in,const Plan& plan){
         if(const auto it=material_rows.find(in.key.assignment.original_texture);it!=material_rows.end())
             for(uint32_t row:it->second)if(controls::KeyEqual(materials[row].key,in.key))return materials[row];
-        Require(materials.size()<limits.materials&&srv_next<=limits.srv_descriptors-5,Status::BudgetExceeded);
+        Require(materials.size()+vehicle_materials.size()<limits.materials&&srv_next<=limits.srv_descriptors-5,Status::BudgetExceeded);
         MaterialEntry entry;entry.key=in.key;entry.srv_start=srv_next;
         uint64_t allocation=0;
         for(unsigned i=0;i<5;++i){auto& t=entry.textures[i];t.plan=plan.maps[i];auto d=TextureDesc(t.plan);
@@ -248,9 +280,32 @@ struct Device::Impl {
         material_rows[in.key.assignment.original_texture].push_back(uint32_t(materials.size()));
         materials.push_back(std::move(entry));return materials.back();
     }
+    VehicleEntry& VehicleResources(const VehicleMapInput& in,const VehicleMapPlan& plan){
+        for(auto& entry:vehicle_materials)if(controls::KeyEqual(entry.key,in.key))return entry;
+        Require(materials.size()+vehicle_materials.size()<limits.materials,Status::BudgetExceeded);
+        VehicleEntry entry;entry.key=in.key;uint64_t allocation=0;
+        for(unsigned i=0;i<2;++i){auto& t=entry.textures[i];t.plan=plan.maps[i];auto d=TextureDesc(t.plan);
+            const auto info=device->GetResourceAllocationInfo(0,1,&d);
+            Require(info.SizeInBytes&&info.SizeInBytes!=UINT64_MAX&&allocation<=limits.resident_bytes&&
+                info.SizeInBytes<=limits.resident_bytes-allocation,Status::BudgetExceeded);
+            allocation+=info.SizeInBytes;t.allocation_bytes=info.SizeInBytes;
+        }
+        Require(resident<=limits.resident_bytes-allocation,Status::BudgetExceeded);
+        D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
+        for(auto& t:entry.textures){auto d=TextureDesc(t.plan);
+            Check(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&d,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&t.resource)));}
+        vehicle_materials.push_back(std::move(entry));resident+=allocation;return vehicle_materials.back();
+    }
 };
 
 namespace {
+void ValidateContext(const Context& context){
+    Require(context.device&&context.list&&context.queue_identity&&context.allocate_upload&&context.retain,Status::InvalidContext);
+    Require(context.list->GetType()==D3D12_COMMAND_LIST_TYPE_DIRECT,Status::InvalidContext);
+    Check(context.device->GetDeviceRemovedReason());
+    ComPtr<ID3D12Device> list_device;Check(context.list->GetDevice(IID_PPV_ARGS(&list_device)),Status::InvalidContext);
+    Require(list_device.Get()==context.device,Status::InvalidContext);
+}
 UploadAllocation Allocate(const Context& c,uint64_t bytes,uint64_t alignment){
     Require(bytes&&bytes<=kMaximumUpload,Status::UploadFailure);auto a=c.allocate_upload(bytes,alignment);
     Require(a.cpu&&a.resource&&a.gpu&&a.capacity>=bytes&&a.offset<=UINT64_MAX-a.capacity&&a.gpu%alignment==0&&a.offset%alignment==0,Status::UploadFailure);
@@ -284,6 +339,17 @@ StagedTexture StageTexture(const Context& context,const MapPlan& p,ID3D12Resourc
         f.Offset+=staged.upload.offset;
     }return staged;
 }
+void CopyStagedTextures(const Context& context,const std::vector<StagedTexture>& textures){
+    for(const auto& t:textures){for(uint32_t i=0;i<t.footprints.size();++i){D3D12_TEXTURE_COPY_LOCATION src{},dst{};
+        src.pResource=t.upload.resource;src.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;src.PlacedFootprint=t.footprints[i];
+        dst.pResource=t.texture;dst.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;dst.SubresourceIndex=i;
+        context.list->CopyTextureRegion(&dst,0,0,0,&src,nullptr);}
+        D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;barrier.Transition.pResource=t.texture;
+        barrier.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;barrier.Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_DEST;
+        barrier.Transition.StateAfter=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE|D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        context.list->ResourceBarrier(1,&barrier);
+    }
+}
 }
 
 Device::Device()=default;
@@ -303,17 +369,14 @@ Result Device::RecordDraw(const Context& context,const Input& input,const Plan& 
         Require(input.evidence.enabled&&plan.owner&&plan.owner.get()==input.library.get()&&plan.material&&
                 controls::AssignmentEqual(plan.material->assignment,input.key.assignment),Status::MaterialRejected);
         result.status=Status::Planned;
-        Require(context.device&&context.list&&context.queue_identity&&context.allocate_upload&&context.retain,Status::InvalidContext);
-        Require(context.list->GetType()==D3D12_COMMAND_LIST_TYPE_DIRECT,Status::InvalidContext);
-        Check(context.device->GetDeviceRemovedReason());
-        ComPtr<ID3D12Device> list_device;Check(context.list->GetDevice(IID_PPV_ARGS(&list_device)),Status::InvalidContext);
-        Require(list_device.Get()==context.device,Status::InvalidContext);
-        if(!impl_){auto created=std::make_unique<Impl>();created->Initialize(context,plan,limits);impl_=std::move(created);}
+        ValidateContext(context);
+        if(!impl_){auto created=std::make_unique<Impl>();created->InitializeOwnership(context,plan.owner,limits);impl_=std::move(created);}
         auto& c=*impl_;result.resident_bytes=c.resident;
         Require(!c.poisoned,Status::DeviceFailure);
         Require(c.device==context.device&&c.queue==context.queue_identity&&c.owner.get()==plan.owner.get()&&
             c.owner->manifest_sha256==plan.owner->manifest_sha256,Status::OwnershipChanged);
         Require(limits==c.limits,Status::OwnershipChanged);
+        c.InitializeDrawResources();
         Require(plan.material->game_albedo==(input.game_albedo!=nullptr),Status::MaterialRejected);
         Require((input.geometry.options[3]!=0)==(input.game_layer!=nullptr),Status::MaterialRejected);
         auto pso=c.Pso(input,plan.height_mode);uint32_t sampler=c.Sampler(input.actual_sampler);auto& material=c.MaterialResources(input,plan);
@@ -337,12 +400,7 @@ Result Device::RecordDraw(const Context& context,const Input& input,const Plan& 
         // All referenced objects are retained already, even if later device-removal diagnostics fail.
         Check(context.device->GetDeviceRemovedReason());
         commands_started=true;
-        for(auto& t:textures){for(uint32_t i=0;i<t.footprints.size();++i){D3D12_TEXTURE_COPY_LOCATION src{},dst{};
-            src.pResource=t.upload.resource;src.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;src.PlacedFootprint=t.footprints[i];
-            dst.pResource=t.texture;dst.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;dst.SubresourceIndex=i;context.list->CopyTextureRegion(&dst,0,0,0,&src,nullptr);}
-            D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;barrier.Transition.pResource=t.texture;
-            barrier.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;barrier.Transition.StateBefore=D3D12_RESOURCE_STATE_COPY_DEST;
-            barrier.Transition.StateAfter=D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE|D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;context.list->ResourceBarrier(1,&barrier);}
+        CopyStagedTextures(context,textures);
         ID3D12DescriptorHeap* heaps[]={c.srv_heap.Get(),c.sampler_heap.Get()};result.legacy_bindings_invalidated=true;context.list->SetDescriptorHeaps(2,heaps);
         context.list->SetGraphicsRootSignature(c.root.Get());context.list->SetPipelineState(pso);
         context.list->SetGraphicsRootConstantBufferView(0,geometry.gpu);context.list->SetGraphicsRootConstantBufferView(1,factors.gpu);context.list->SetGraphicsRootConstantBufferView(2,scene.gpu);
@@ -356,6 +414,37 @@ Result Device::RecordDraw(const Context& context,const Input& input,const Plan& 
         result.draw_call_recorded=true;
         Check(context.device->GetDeviceRemovedReason());
         material.uploaded=true;result.status=Status::Recorded;return result;
+    }catch(const Failure& f){if(commands_started&&impl_)impl_->poisoned=true;result.status=f.status;result.error=f.error;return result;}
+     catch(...){if(commands_started&&impl_)impl_->poisoned=true;result.status=Status::AllocationFailure;return result;}
+}
+
+VehicleMapResult Device::PrepareVehicleMaps(const Context& context,const VehicleMapInput& input,Limits limits) noexcept {
+    VehicleMapResult result;bool commands_started=false;
+    try{
+        VehicleMapPlan plan;result.status=PlanVehicleMaps(input,limits,plan);
+        if(result.status!=Status::Planned)return result;
+        ValidateContext(context);
+        if(!impl_){auto created=std::make_unique<Impl>();created->InitializeOwnership(context,plan.owner,limits);impl_=std::move(created);}
+        auto& c=*impl_;result.resident_bytes=c.resident;
+        Require(!c.poisoned,Status::DeviceFailure);
+        Require(c.device==context.device&&c.queue==context.queue_identity&&c.owner.get()==plan.owner.get()&&
+            c.owner->manifest_sha256==plan.owner->manifest_sha256&&limits==c.limits,Status::OwnershipChanged);
+        auto& entry=c.VehicleResources(input,plan);result.resident_bytes=c.resident;
+        std::vector<StagedTexture> textures;
+        if(!entry.uploaded){textures.reserve(2);for(auto& t:entry.textures)textures.push_back(StageTexture(context,t.plan,t.resource.Get()));}
+        std::vector<IUnknown*> retained;retained.reserve(4);
+        for(auto& t:entry.textures)retained.push_back(t.resource.Get());
+        for(auto& t:textures)retained.push_back(t.upload.resource);
+        Require(context.retain(retained),Status::RetentionFailure);
+        Check(context.device->GetDeviceRemovedReason());
+        // No fallible allocations/callbacks after the first copy. Map resources and uploads were retained
+        // before recording, including failures subsequently detected through device-removal diagnostics.
+        if(!textures.empty()){commands_started=true;result.copies_recorded=true;CopyStagedTextures(context,textures);}
+        Check(context.device->GetDeviceRemovedReason());
+        entry.uploaded=true;
+        auto binding=[](const Impl::Texture& t){return VehicleMapBinding{t.resource.Get(),t.plan.format,t.plan.width,t.plan.height,t.plan.levels};};
+        result.normal=binding(entry.textures[0]);result.orm=binding(entry.textures[1]);
+        result.owner=plan.owner;result.material=plan.material;result.status=Status::Prepared;return result;
     }catch(const Failure& f){if(commands_started&&impl_)impl_->poisoned=true;result.status=f.status;result.error=f.error;return result;}
      catch(...){if(commands_started&&impl_)impl_->poisoned=true;result.status=Status::AllocationFailure;return result;}
 }

@@ -129,6 +129,52 @@ void SamplersAndHeight(){
     f.in.indices=indices;assert(f.Get(p)==Status::BudgetExceeded);
     f.in.indices={};m.height.storage=Storage::Rgba8;assert(f.Get(p)==Status::MaterialRejected);
 }
+void VehicleMaps(){
+    Fixture f;auto& m=f.library->materials[0];m.assignment.surface=SurfaceClass::Vehicle;m.game_albedo=true;
+    VehicleMapInput input;input.enabled=true;input.library=f.library;
+    input.key=controls::ExactKey(m.assignment,f.library->manifest_sha256);
+    VehicleMapPlan plan;assert(PlanVehicleMaps(input,{},plan)==Status::Planned);
+    assert(plan.owner.get()==f.library.get()&&plan.material==&m&&plan.maps[0].map==&m.normal&&plan.maps[1].map==&m.orm);
+    assert(plan.maps[0].format==DXGI_FORMAT_R8G8B8A8_UNORM&&plan.maps[0].levels==1&&plan.maps[0].width==1&&plan.maps[0].height==1);
+    assert(plan.texture_upload_bytes==1024&&plan.resident_estimate==2*65536);
+    // No mesh, camera, lighting constants, sampler, replacement albedo or synthetic optional maps are inspected.
+    m.albedo={};m.has_height=m.has_emission=true;
+    assert(PlanVehicleMaps(input,{},plan)==Status::Planned);
+    Device device;Context context;unsigned callbacks=0;
+    context.allocate_upload=[&](uint64_t,uint64_t){++callbacks;return UploadAllocation{};};
+    context.retain=[&](std::span<IUnknown* const>){++callbacks;return false;};
+    auto prepared=device.PrepareVehicleMaps(context,input);assert(prepared.status==Status::InvalidContext&&!prepared.copies_recorded&&
+        !prepared.normal.resource&&!prepared.orm.resource&&!prepared.owner&&callbacks==0);
+    auto off=input;off.enabled=false;off.library.reset();off.key={};
+    assert(PlanVehicleMaps(off,{},plan)==Status::Disabled&&!plan.owner&&!plan.material);
+    prepared=device.PrepareVehicleMaps(context,off);assert(prepared.status==Status::Disabled&&!prepared.copies_recorded&&callbacks==0);
+    auto bad=input;bad.key.approved_manifest_sha256=std::string(64,'d');assert(PlanVehicleMaps(bad,{},plan)==Status::InvalidLibrary);
+    bad=input;bad.key.assignment.stage=1;assert(PlanVehicleMaps(bad,{},plan)==Status::MaterialRejected);
+    bad=input;bad.key.assignment.uv_set=1;assert(PlanVehicleMaps(bad,{},plan)==Status::MaterialRejected);
+    bad=input;bad.key.assignment.cutout=true;assert(PlanVehicleMaps(bad,{},plan)==Status::MaterialRejected);
+    bad=input;bad.key.assignment.vertex_shader=kAnyShader;assert(PlanVehicleMaps(bad,{},plan)==Status::MaterialRejected);
+    bad=input;bad.key.assignment.pixel_shader=kAnyShader;assert(PlanVehicleMaps(bad,{},plan)==Status::MaterialRejected);
+    bad=input;bad.key.assignment.uv_set=kAnyUv;assert(PlanVehicleMaps(bad,{},plan)==Status::MaterialRejected);
+    bad=input;bad.key.assignment.surface=SurfaceClass::World;assert(PlanVehicleMaps(bad,{},plan)==Status::MaterialRejected);
+    m.game_albedo=false;assert(PlanVehicleMaps(input,{},plan)==Status::MaterialRejected);m.game_albedo=true;
+    m.review_sha256.clear();assert(PlanVehicleMaps(input,{},plan)==Status::MaterialRejected);m.review_sha256=std::string(64,'b');
+    m.normal.color_space=ColorSpace::Srgb;assert(PlanVehicleMaps(input,{},plan)==Status::MaterialRejected);m.normal.color_space=ColorSpace::Linear;
+    m.orm.storage=Storage::R16Unorm;assert(PlanVehicleMaps(input,{},plan)==Status::MaterialRejected);m.orm.storage=Storage::Rgba8;
+    m.normal.levels.push_back(m.normal.levels[0]);assert(PlanVehicleMaps(input,{},plan)==Status::MaterialRejected);m.normal.levels.pop_back();
+    Limits limits;limits.draw_upload_bytes=1023;assert(PlanVehicleMaps(input,limits,plan)==Status::BudgetExceeded);
+    limits.draw_upload_bytes=1024;assert(PlanVehicleMaps(input,limits,plan)==Status::Planned);
+    limits={};limits.resident_bytes=2*65536-1;assert(PlanVehicleMaps(input,limits,plan)==Status::BudgetExceeded);
+    limits.resident_bytes=2*65536;assert(PlanVehicleMaps(input,limits,plan)==Status::Planned);
+    // BC maps retain their actual formats and complete mip chain; byte-truncated blocks are rejected.
+    m.normal.storage=Storage::Bc5;m.orm.storage=Storage::Bc7;
+    for(Map* map:{&m.normal,&m.orm}){map->levels.clear();for(uint32_t dim:{4u,2u,1u})map->levels.push_back({dim,dim,std::vector<uint8_t>(16)});}
+    assert(PlanVehicleMaps(input,{},plan)==Status::Planned&&plan.maps[0].format==DXGI_FORMAT_BC5_UNORM&&
+        plan.maps[1].format==DXGI_FORMAT_BC7_UNORM&&plan.maps[0].levels==3&&plan.maps[0].blocks&&plan.maps[1].blocks);
+    m.orm.levels[1].pixels.pop_back();assert(PlanVehicleMaps(input,{},plan)==Status::MaterialRejected);m.orm.levels[1].pixels.push_back(0);
+    f.library->materials.push_back(m);assert(PlanVehicleMaps(input,{},plan)==Status::MaterialRejected);f.library->materials.pop_back();
+    f.library->by_texture[input.key.assignment.original_texture]={999};assert(PlanVehicleMaps(input,{},plan)==Status::MaterialRejected);
+    device.ResetGpuIdle(); // No GPU objects or commands existed in these callback-rejection tests.
+}
 void CompileActualStagesWithoutDevice(){
     const std::string sources[]={pipeline::VertexHlsl(),pipeline::VertexHlsl(true),pipeline::PixelHlsl(),pipeline::HullHlsl(),pipeline::DomainHlsl()};
     const char* profiles[]={"vs_5_0","vs_5_0","ps_5_0","hs_5_0","ds_5_0"};
@@ -150,5 +196,5 @@ void CompileActualStagesWithoutDevice(){
     assert(desc.NumParameters==5&&layout.ranges[0].NumDescriptors==5&&layout.ranges[1].NumDescriptors==1);
 }
 }
-int main(){DisabledAndIdentity();FormatsAndOwnership();BudgetsAndOutput();SamplersAndHeight();CompileActualStagesWithoutDevice();
+int main(){DisabledAndIdentity();FormatsAndOwnership();BudgetsAndOutput();SamplersAndHeight();VehicleMaps();CompileActualStagesWithoutDevice();
     std::cout<<"pbr device: CPU-only exact-owner/material planning, format/mip/upload/resident/tess budgets, real output/sampler contracts and default-off/invalid-context no-callback checks passed; actual D3D12 creation/draw code compiled, no GPU device created\n";}

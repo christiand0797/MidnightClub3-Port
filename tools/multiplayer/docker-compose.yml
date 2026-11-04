@@ -1,0 +1,30 @@
+# MC3 Multiplayer — Docker Compose (Production)
+# Deploys the relay server with persistent data volume
+
+version: '3.8'
+
+services:
+  mc3-relay:
+    build: ./relay
+    container_name: mc3-relay
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - RELAY_PORT=8080
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - DATABASE_PATH=/data/mc3_relay.db
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
+      - MAX_PLAYERS=8
+      - GAME_TIMEOUT=3600
+    volumes:
+      - mc3-relay-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/api/games?status=waiting', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  mc3-relay-data:

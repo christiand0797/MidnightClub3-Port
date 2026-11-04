@@ -37,6 +37,7 @@ const char* ReasonText(Reason reason) {
     case Reason::ParallaxUnavailable:return "Verified view/UV derivatives and height units required for parallax";
     case Reason::DisplacementUnavailable:return "True geometry displacement and tessellation bindings unavailable";
     case Reason::Ready:return "PBR bindings ready for this exact draw";
+    case Reason::VehicleMappedLighting:return "Vehicle maps drawn with original car lighting (SDR compatibility)";
     }
     return "Unknown PBR state";
 }

@@ -1,0 +1,2169 @@
+{
+"description": "Vehicle textures (player cars, traffic, car parts, riders) that had no generated PBR maps on 2026-11-04, with their path-based classes.",
+"textures": [
+{
+"hash": "0D6B7ABD9895F746",
+"class": "car_light"
+},
+{
+"hash": "2BAA2783458F14C2",
+"class": "grill"
+},
+{
+"hash": "5555D66D460EDC9D",
+"class": "metal_painted"
+},
+{
+"hash": "645549CA7C64B439",
+"class": "exhaust"
+},
+{
+"hash": "78DCACBBDE69C2DD",
+"class": "car_light"
+},
+{
+"hash": "8AB995A3321E15EF",
+"class": "car_light"
+},
+{
+"hash": "9FBCB5BBBA69FEFE",
+"class": "car_light"
+},
+{
+"hash": "B6F21D803C642BC4",
+"class": "car_light"
+},
+{
+"hash": "BABFB0671B9D5361",
+"class": "chrome"
+},
+{
+"hash": "BF5FD366D6A1145B",
+"class": "grill"
+},
+{
+"hash": "C11E102F5E2D789F",
+"class": "grill"
+},
+{
+"hash": "C58D9FE84501BD33",
+"class": "car_light"
+},
+{
+"hash": "D782DDE494FA770E",
+"class": "metal_painted"
+},
+{
+"hash": "E418FDA4498FEC8E",
+"class": "carbon"
+},
+{
+"hash": "E810E03206C884C2",
+"class": "grill"
+},
+{
+"hash": "34A14CC6925FBA8F",
+"class": "rider"
+},
+{
+"hash": "46CB58E1FA0EF3ED",
+"class": "rider"
+},
+{
+"hash": "55832A29E5292304",
+"class": "rider"
+},
+{
+"hash": "560F35FA03E3EBE0",
+"class": "rider"
+},
+{
+"hash": "820032E0FB24249D",
+"class": "rider"
+},
+{
+"hash": "8FE5EAA84406A6A7",
+"class": "rider"
+},
+{
+"hash": "952BB9D36CE9464B",
+"class": "rider"
+},
+{
+"hash": "97F48D997887EFBC",
+"class": "rider"
+},
+{
+"hash": "C3B9E701D6337427",
+"class": "rider"
+},
+{
+"hash": "C4F0795BB6C26853",
+"class": "rider"
+},
+{
+"hash": "EF587B2F642BCD1C",
+"class": "rider"
+},
+{
+"hash": "007E7791F749A64D",
+"class": "car_atlas"
+},
+{
+"hash": "00AC30CDFD943E4E",
+"class": "brake"
+},
+{
+"hash": "00BE8EB57976A151",
+"class": "rim"
+},
+{
+"hash": "00C9B316014A26D7",
+"class": "car_atlas"
+},
+{
+"hash": "0121CE13D3A8CE57",
+"class": "rider"
+},
+{
+"hash": "01635D901168E5FF",
+"class": "rim"
+},
+{
+"hash": "0173F0919F4FAC4B",
+"class": "tire"
+},
+{
+"hash": "0195BC407DDD0942",
+"class": "car_atlas"
+},
+{
+"hash": "01BCACC5F561DDAA",
+"class": "car_atlas"
+},
+{
+"hash": "01FCA53BE832F0DD",
+"class": "rim"
+},
+{
+"hash": "020EF93202F00B74",
+"class": "rider"
+},
+{
+"hash": "02B048DCDFE516A6",
+"class": "rim"
+},
+{
+"hash": "02B56598C2770F14",
+"class": "tire"
+},
+{
+"hash": "02C8DB08E4C4FD95",
+"class": "rim"
+},
+{
+"hash": "03439C06FD5B79CC",
+"class": "brake"
+},
+{
+"hash": "037871238AF5200F",
+"class": "tire"
+},
+{
+"hash": "04F89BF93DB9ADCF",
+"class": "rim"
+},
+{
+"hash": "06374BFD6FE0600D",
+"class": "rim"
+},
+{
+"hash": "06578774B951E9A1",
+"class": "rim"
+},
+{
+"hash": "0701D09F549D627A",
+"class": "rim"
+},
+{
+"hash": "07D1C1AFDDA04005",
+"class": "rim"
+},
+{
+"hash": "08591BD9DBC28D2B",
+"class": "rim"
+},
+{
+"hash": "08640975EC474831",
+"class": "rim"
+},
+{
+"hash": "086698B747A9FF2F",
+"class": "rim"
+},
+{
+"hash": "08B9551FE781254C",
+"class": "rider"
+},
+{
+"hash": "08C61EA092A8922C",
+"class": "rim"
+},
+{
+"hash": "0972C6CCE269D2B3",
+"class": "car_atlas"
+},
+{
+"hash": "09D438A01D9C3879",
+"class": "rim"
+},
+{
+"hash": "0B93156DB4747F13",
+"class": "rim"
+},
+{
+"hash": "0DD27377B7344741",
+"class": "tire"
+},
+{
+"hash": "0E2487DC0991BB57",
+"class": "rider"
+},
+{
+"hash": "0E3AE429E9FAD1FC",
+"class": "car_atlas"
+},
+{
+"hash": "0F3B97FAF9FEABA8",
+"class": "tire"
+},
+{
+"hash": "0F64EF5BE304433B",
+"class": "rim"
+},
+{
+"hash": "0FB8E7CB3C2C26DF",
+"class": "rim"
+},
+{
+"hash": "10519DA9B3319D8F",
+"class": "rim"
+},
+{
+"hash": "10B2A4F236FC3972",
+"class": "rider"
+},
+{
+"hash": "10FC62A584ED97B9",
+"class": "rider"
+},
+{
+"hash": "113272DB78A174A7",
+"class": "rim"
+},
+{
+"hash": "11EB800361904242",
+"class": "brake"
+},
+{
+"hash": "12339A1B6BA3308B",
+"class": "rim"
+},
+{
+"hash": "12BA4668057CB52C",
+"class": "rim"
+},
+{
+"hash": "1550DE38D0136B10",
+"class": "rim"
+},
+{
+"hash": "1637F2601741C0B9",
+"class": "rim"
+},
+{
+"hash": "16E6B5B79A73A092",
+"class": "car_atlas"
+},
+{
+"hash": "1725734457D05472",
+"class": "rim"
+},
+{
+"hash": "17A0F9C375399DD3",
+"class": "rim"
+},
+{
+"hash": "18488404010C400D",
+"class": "rim"
+},
+{
+"hash": "184B199D546BA9BE",
+"class": "rim"
+},
+{
+"hash": "199816AD9FE28D79",
+"class": "rim"
+},
+{
+"hash": "19D623AEC8A71A88",
+"class": "tire"
+},
+{
+"hash": "1A32E07CDA0E779E",
+"class": "rim"
+},
+{
+"hash": "1A8F68D456CA35FA",
+"class": "rim"
+},
+{
+"hash": "1AA61E55BAEB0B3A",
+"class": "rim"
+},
+{
+"hash": "1AFB2A55207B5EE1",
+"class": "rim"
+},
+{
+"hash": "1B0896995EF3D21F",
+"class": "rim"
+},
+{
+"hash": "1B9C0F2DBBDDD89F",
+"class": "rim"
+},
+{
+"hash": "1BE54F0776AB0E09",
+"class": "brake"
+},
+{
+"hash": "1C6553876BBCCF2F",
+"class": "tire"
+},
+{
+"hash": "1CF0600B4720F095",
+"class": "car_atlas"
+},
+{
+"hash": "1D7B14EE48A773A4",
+"class": "rim"
+},
+{
+"hash": "1F77D604D366B0AA",
+"class": "rim"
+},
+{
+"hash": "1FF9F2F5D55EA468",
+"class": "rim"
+},
+{
+"hash": "2081F8FFA7B41AC8",
+"class": "rim"
+},
+{
+"hash": "20CEF22D3CD54B3E",
+"class": "car_atlas"
+},
+{
+"hash": "218FA96B8F48FA33",
+"class": "tire"
+},
+{
+"hash": "224E946B2ED2D33B",
+"class": "tire"
+},
+{
+"hash": "22A0D9C28E0F5FE8",
+"class": "rim"
+},
+{
+"hash": "22E91DB3E790141F",
+"class": "rim"
+},
+{
+"hash": "250785D9AA84BD90",
+"class": "rim"
+},
+{
+"hash": "25194685849B5743",
+"class": "rim"
+},
+{
+"hash": "252599DB0B124CE0",
+"class": "rim"
+},
+{
+"hash": "256791F364BFBCFB",
+"class": "rim"
+},
+{
+"hash": "2581114575209639",
+"class": "rim"
+},
+{
+"hash": "26108F0EB3DCC86C",
+"class": "rider"
+},
+{
+"hash": "264D542E8C24B63B",
+"class": "rim"
+},
+{
+"hash": "2659DA884B00ED4F",
+"class": "rim"
+},
+{
+"hash": "273F631585FFAFA7",
+"class": "rider"
+},
+{
+"hash": "27A8FD1DB7C09E55",
+"class": "rim"
+},
+{
+"hash": "27E5C268D1AC9F6E",
+"class": "rim"
+},
+{
+"hash": "2806A22EA9484F5E",
+"class": "rim"
+},
+{
+"hash": "296C04F2305B1A16",
+"class": "rim"
+},
+{
+"hash": "29A207D4CCDCC119",
+"class": "rim"
+},
+{
+"hash": "2AD54CCB5467FCE9",
+"class": "rim"
+},
+{
+"hash": "2AD7189E7A02AF1E",
+"class": "rider"
+},
+{
+"hash": "2D7804BCBE3A9DB5",
+"class": "rim"
+},
+{
+"hash": "2F91DE579AB77257",
+"class": "rim"
+},
+{
+"hash": "316FD74F982A5A1F",
+"class": "rim"
+},
+{
+"hash": "31B9DB255E1A349F",
+"class": "rim"
+},
+{
+"hash": "3257930BD824F3C8",
+"class": "car_atlas"
+},
+{
+"hash": "32B5A387D08CB426",
+"class": "rim"
+},
+{
+"hash": "33E1594043945DBB",
+"class": "rim"
+},
+{
+"hash": "353651D1AF2D3775",
+"class": "rim"
+},
+{
+"hash": "370447BBC8AACEFC",
+"class": "rider"
+},
+{
+"hash": "375313190FBBF82E",
+"class": "car_atlas"
+},
+{
+"hash": "379C0703A725C7FA",
+"class": "rim"
+},
+{
+"hash": "388EF42732FD8C65",
+"class": "tire"
+},
+{
+"hash": "38C9CFD875A64754",
+"class": "car_atlas"
+},
+{
+"hash": "39863777FE15ED27",
+"class": "rim"
+},
+{
+"hash": "3A18FDF26F77C6E5",
+"class": "rim"
+},
+{
+"hash": "3ABEE42F56B0C5D1",
+"class": "rim"
+},
+{
+"hash": "3AF20692939CF04F",
+"class": "rim"
+},
+{
+"hash": "3B4DD392A36B3B07",
+"class": "rim"
+},
+{
+"hash": "3BF7C1C4EF1C1FDA",
+"class": "brake"
+},
+{
+"hash": "3DBB78E480AC89CB",
+"class": "car_atlas"
+},
+{
+"hash": "3ED6C94D110FABC3",
+"class": "rim"
+},
+{
+"hash": "3F0F4B8C53F08049",
+"class": "rim"
+},
+{
+"hash": "40092A2226CA822B",
+"class": "rim"
+},
+{
+"hash": "41383D0C1BFEF288",
+"class": "rim"
+},
+{
+"hash": "41441A3E99806A59",
+"class": "tire"
+},
+{
+"hash": "43E0EC29F9761BA1",
+"class": "rim"
+},
+{
+"hash": "43EA0B55808B674B",
+"class": "brake"
+},
+{
+"hash": "44A8C60036AF6D71",
+"class": "car_atlas"
+},
+{
+"hash": "44B7A52B22EDD4F1",
+"class": "rim"
+},
+{
+"hash": "452B07149459B3AE",
+"class": "rim"
+},
+{
+"hash": "47067FC923CDE8EA",
+"class": "rim"
+},
+{
+"hash": "4725CA1AD0ACAA5A",
+"class": "rim"
+},
+{
+"hash": "477993199E9D202C",
+"class": "rider"
+},
+{
+"hash": "47A8A4E75DE6F74D",
+"class": "rim"
+},
+{
+"hash": "47B82FAE589FD4B3",
+"class": "rim"
+},
+{
+"hash": "47C1B33471117803",
+"class": "rim"
+},
+{
+"hash": "4950CD20DFA4A709",
+"class": "rim"
+},
+{
+"hash": "497E7C0A3A6E44EC",
+"class": "rim"
+},
+{
+"hash": "49A02B7A279A16FA",
+"class": "tire"
+},
+{
+"hash": "49EF27548B0C2309",
+"class": "car_atlas"
+},
+{
+"hash": "4A9E24AC952679F9",
+"class": "rider"
+},
+{
+"hash": "4AB29BFAFDC9380D",
+"class": "rim"
+},
+{
+"hash": "4B25582EF028BFE7",
+"class": "rim"
+},
+{
+"hash": "4C92C2E0CBA7785B",
+"class": "rim"
+},
+{
+"hash": "4C9AF43B514B417E",
+"class": "rim"
+},
+{
+"hash": "4D16870FFBF8C3E8",
+"class": "tire"
+},
+{
+"hash": "4D2E15E2D7CB61B8",
+"class": "car_atlas"
+},
+{
+"hash": "4F3C4679A8FBA8DE",
+"class": "brake"
+},
+{
+"hash": "4F64C9EC530D9AC7",
+"class": "rim"
+},
+{
+"hash": "4F93DADB8782E501",
+"class": "rim"
+},
+{
+"hash": "4FC85759E0724523",
+"class": "car_atlas"
+},
+{
+"hash": "500DD834D00A46B5",
+"class": "rim"
+},
+{
+"hash": "5020A7F529E9D5F4",
+"class": "rim"
+},
+{
+"hash": "5203BE725AC13C7D",
+"class": "rim"
+},
+{
+"hash": "5260D2234F98A581",
+"class": "rim"
+},
+{
+"hash": "52AFD1822526B728",
+"class": "car_atlas"
+},
+{
+"hash": "530C3043955F4468",
+"class": "rim"
+},
+{
+"hash": "53391C75295792F1",
+"class": "rim"
+},
+{
+"hash": "53EEFF76106D405C",
+"class": "tire"
+},
+{
+"hash": "5441B03F370CE28B",
+"class": "car_atlas"
+},
+{
+"hash": "55547B63FE04992E",
+"class": "rim"
+},
+{
+"hash": "559733D8AB15AC67",
+"class": "rim"
+},
+{
+"hash": "5762EBDD4BC40BF6",
+"class": "rim"
+},
+{
+"hash": "57C5C10D30C95038",
+"class": "car_atlas"
+},
+{
+"hash": "581599AD9D439DD7",
+"class": "rim"
+},
+{
+"hash": "599494F7E2DC805E",
+"class": "rim"
+},
+{
+"hash": "59B30509B61DD367",
+"class": "tire"
+},
+{
+"hash": "59F613005AEF98B5",
+"class": "rider"
+},
+{
+"hash": "5AADF29FDF58690D",
+"class": "rim"
+},
+{
+"hash": "5B4D7B668414A8B6",
+"class": "rim"
+},
+{
+"hash": "5BF3DEADDBB3730B",
+"class": "rim"
+},
+{
+"hash": "5BF8B157B9783C76",
+"class": "rim"
+},
+{
+"hash": "5C6927A533AEA74E",
+"class": "rim"
+},
+{
+"hash": "5CB414A6BD4703E6",
+"class": "tire"
+},
+{
+"hash": "5D5D100EDF27BD5F",
+"class": "car_atlas"
+},
+{
+"hash": "5D749C189068BF4B",
+"class": "rim"
+},
+{
+"hash": "5D774F367AD6B2D7",
+"class": "rim"
+},
+{
+"hash": "5EAECC6092CDCB6C",
+"class": "rim"
+},
+{
+"hash": "6083C20F798525ED",
+"class": "car_atlas"
+},
+{
+"hash": "608DD07ED5EE008C",
+"class": "rim"
+},
+{
+"hash": "60A88D765CB942C2",
+"class": "rim"
+},
+{
+"hash": "60A93EE9CD7B7481",
+"class": "car_atlas"
+},
+{
+"hash": "6115F8B2FD86E341",
+"class": "rim"
+},
+{
+"hash": "611AD14284BD5D88",
+"class": "rim"
+},
+{
+"hash": "61286B04A3C4EF2B",
+"class": "rim"
+},
+{
+"hash": "613E27F6AF23BE62",
+"class": "rim"
+},
+{
+"hash": "63A9D4C759242CCD",
+"class": "rim"
+},
+{
+"hash": "63D6A9BBA339D611",
+"class": "car_atlas"
+},
+{
+"hash": "656FC5318BE31D1E",
+"class": "rim"
+},
+{
+"hash": "6581F940184B607A",
+"class": "rim"
+},
+{
+"hash": "65912139AE19600B",
+"class": "rim"
+},
+{
+"hash": "66A746E79BDC6482",
+"class": "rim"
+},
+{
+"hash": "6726F41185FEDC9B",
+"class": "rim"
+},
+{
+"hash": "67B22FD2BAC82BAF",
+"class": "rim"
+},
+{
+"hash": "67FA19D1D0758240",
+"class": "rim"
+},
+{
+"hash": "6855E11CD8DC99C6",
+"class": "rim"
+},
+{
+"hash": "685CCB6444DC61F5",
+"class": "rim"
+},
+{
+"hash": "689B73F8F3CA1622",
+"class": "rim"
+},
+{
+"hash": "698ACCA7576E033C",
+"class": "tire"
+},
+{
+"hash": "69AD6256044B3BBA",
+"class": "rim"
+},
+{
+"hash": "69CE8EE1BA3B8FB9",
+"class": "rider"
+},
+{
+"hash": "69F8EE2167E1ABF5",
+"class": "tire"
+},
+{
+"hash": "6A1F159F415B00E9",
+"class": "rim"
+},
+{
+"hash": "6A2CEF2704BA1BE8",
+"class": "car_atlas"
+},
+{
+"hash": "6A95CF77F5D8ED8B",
+"class": "rim"
+},
+{
+"hash": "6B63F747AFAA3015",
+"class": "rim"
+},
+{
+"hash": "6BCB5A3A9BA862AC",
+"class": "tire"
+},
+{
+"hash": "6BFF0A4D62676084",
+"class": "rim"
+},
+{
+"hash": "6D7B460311F63133",
+"class": "rim"
+},
+{
+"hash": "6D841D9C7F0798C3",
+"class": "rim"
+},
+{
+"hash": "6DEC885C619EFDE7",
+"class": "rider"
+},
+{
+"hash": "6E3D9E85F51218D9",
+"class": "rim"
+},
+{
+"hash": "6EB03D431DBFC179",
+"class": "brake"
+},
+{
+"hash": "6F55E2D05F838FB5",
+"class": "rim"
+},
+{
+"hash": "70CAE6256EB239F4",
+"class": "tire"
+},
+{
+"hash": "70D1404DFBFEFC33",
+"class": "rim"
+},
+{
+"hash": "71753BD68325E531",
+"class": "rim"
+},
+{
+"hash": "71DB37785EEC5E92",
+"class": "rim"
+},
+{
+"hash": "722AFD5AE49CB968",
+"class": "rim"
+},
+{
+"hash": "72B2E495613F3C09",
+"class": "rim"
+},
+{
+"hash": "73106CC8049E0F9B",
+"class": "rim"
+},
+{
+"hash": "7332BAE4C9E1514B",
+"class": "car_atlas"
+},
+{
+"hash": "735B3D7467C120E5",
+"class": "brake"
+},
+{
+"hash": "73B80F1B9DB7948B",
+"class": "tire"
+},
+{
+"hash": "73D95ADFEBB8D2B6",
+"class": "car_atlas"
+},
+{
+"hash": "73EA04AA41F21FE6",
+"class": "tire"
+},
+{
+"hash": "746210E38576FA9D",
+"class": "rim"
+},
+{
+"hash": "74EB2AA8C92C06C8",
+"class": "rider"
+},
+{
+"hash": "75B24E8D085D3CCF",
+"class": "rim"
+},
+{
+"hash": "76A71D2FC997253F",
+"class": "rim"
+},
+{
+"hash": "773307882476581D",
+"class": "tire"
+},
+{
+"hash": "77A8D047374FAA62",
+"class": "rim"
+},
+{
+"hash": "784DC22F78BE5ACB",
+"class": "rim"
+},
+{
+"hash": "797143A939F62FCB",
+"class": "rim"
+},
+{
+"hash": "7987E9BCE36948F1",
+"class": "rim"
+},
+{
+"hash": "7A0E1EC6FBA5907F",
+"class": "rim"
+},
+{
+"hash": "7B156645E1E6AF71",
+"class": "rim"
+},
+{
+"hash": "7BFEA2AAA961FAA4",
+"class": "tire"
+},
+{
+"hash": "7C26F4F5297D369A",
+"class": "rim"
+},
+{
+"hash": "7C36E467F44605E9",
+"class": "brake"
+},
+{
+"hash": "7C77C4F1CB2726F9",
+"class": "rim"
+},
+{
+"hash": "7CC69AB15416D5BD",
+"class": "rim"
+},
+{
+"hash": "7CD8B1C1B902E5A0",
+"class": "tire"
+},
+{
+"hash": "7D4AC3EC18B96554",
+"class": "brake"
+},
+{
+"hash": "7D70A97E63B4BC40",
+"class": "rim"
+},
+{
+"hash": "7E42862C7BD303A8",
+"class": "tire"
+},
+{
+"hash": "7F41DE31CF7DD87A",
+"class": "rider"
+},
+{
+"hash": "803F92F0D7C40A3E",
+"class": "rim"
+},
+{
+"hash": "8054A33759341B15",
+"class": "rim"
+},
+{
+"hash": "807DE005A308BEEF",
+"class": "rim"
+},
+{
+"hash": "80FFA17D289CDEAB",
+"class": "rim"
+},
+{
+"hash": "810C52F992AF4EEE",
+"class": "brake"
+},
+{
+"hash": "81C221D87DF13324",
+"class": "rim"
+},
+{
+"hash": "81D020B14A5941E5",
+"class": "rider"
+},
+{
+"hash": "81DF6958721EEF81",
+"class": "rim"
+},
+{
+"hash": "8282D41EF9846420",
+"class": "rim"
+},
+{
+"hash": "83810EEFC8C88AAC",
+"class": "rider"
+},
+{
+"hash": "83DEBD275830F7F3",
+"class": "tire"
+},
+{
+"hash": "840233C2A1912574",
+"class": "tire"
+},
+{
+"hash": "847CD5A1E621E6CA",
+"class": "rider"
+},
+{
+"hash": "85AF9D08228F1AE3",
+"class": "rim"
+},
+{
+"hash": "85BF891A07EC4FC7",
+"class": "rim"
+},
+{
+"hash": "8644B9B374079495",
+"class": "rim"
+},
+{
+"hash": "865CF4C3AE3611A1",
+"class": "rim"
+},
+{
+"hash": "8691A88EA7EF6B0F",
+"class": "rim"
+},
+{
+"hash": "86B8CF0A4DECE757",
+"class": "rim"
+},
+{
+"hash": "86D8C6C2DE1FC5AB",
+"class": "tire"
+},
+{
+"hash": "888CD40910BB636F",
+"class": "rim"
+},
+{
+"hash": "88AD8B737DE3E2ED",
+"class": "tire"
+},
+{
+"hash": "88F2EC3F542966DB",
+"class": "rider"
+},
+{
+"hash": "894FD717753A6F45",
+"class": "rim"
+},
+{
+"hash": "89664DE60F447E7B",
+"class": "rim"
+},
+{
+"hash": "8998D8E91592167F",
+"class": "rim"
+},
+{
+"hash": "89B476E6F6E647F7",
+"class": "rim"
+},
+{
+"hash": "8A0D671559506D43",
+"class": "rim"
+},
+{
+"hash": "8A19AAC3F5AC55C4",
+"class": "rim"
+},
+{
+"hash": "8A95E2F1A89CDA11",
+"class": "rim"
+},
+{
+"hash": "8B3FF0BE59FDD80B",
+"class": "tire"
+},
+{
+"hash": "8BC42AC962F8C1A7",
+"class": "rim"
+},
+{
+"hash": "8C187996CC0F9FA4",
+"class": "rim"
+},
+{
+"hash": "8D4FD7D5CC5D242D",
+"class": "rim"
+},
+{
+"hash": "8D78AA8D0BCDD16E",
+"class": "rim"
+},
+{
+"hash": "8D7F895172C1627F",
+"class": "brake"
+},
+{
+"hash": "8E38DAF11D877EE1",
+"class": "rim"
+},
+{
+"hash": "8E5ED1561F3C1A8D",
+"class": "tire"
+},
+{
+"hash": "8E61C19C97451C22",
+"class": "tire"
+},
+{
+"hash": "8EDEE07C743F4D8C",
+"class": "rim"
+},
+{
+"hash": "9029CDA1ACF88399",
+"class": "rim"
+},
+{
+"hash": "9068F82769ECBE2F",
+"class": "rim"
+},
+{
+"hash": "90D64B43C77D697C",
+"class": "rim"
+},
+{
+"hash": "912E59B8DBA93613",
+"class": "rim"
+},
+{
+"hash": "91A07B643AB9064F",
+"class": "car_atlas"
+},
+{
+"hash": "91BFF8B9C9EAD595",
+"class": "rim"
+},
+{
+"hash": "93166048DDC76970",
+"class": "car_atlas"
+},
+{
+"hash": "93265B83FEA36BE2",
+"class": "rider"
+},
+{
+"hash": "93503F5E5783FB11",
+"class": "tire"
+},
+{
+"hash": "94AA6A88AAAC845E",
+"class": "rim"
+},
+{
+"hash": "9577323B77D177BC",
+"class": "rim"
+},
+{
+"hash": "95E5EA08576FD875",
+"class": "rider"
+},
+{
+"hash": "97378BCF962B5759",
+"class": "rim"
+},
+{
+"hash": "9766352D0A9D181A",
+"class": "rim"
+},
+{
+"hash": "979A03BED5ECC5C7",
+"class": "car_atlas"
+},
+{
+"hash": "98253A800009D357",
+"class": "tire"
+},
+{
+"hash": "998E089CD571164D",
+"class": "rim"
+},
+{
+"hash": "9A04971F4CC8D92D",
+"class": "rim"
+},
+{
+"hash": "9A0BCFCC15CCE41C",
+"class": "rim"
+},
+{
+"hash": "9A52AFB3AE337283",
+"class": "car_atlas"
+},
+{
+"hash": "9AA9B189C8429A67",
+"class": "tire"
+},
+{
+"hash": "9B0C15BA80264EF0",
+"class": "car_atlas"
+},
+{
+"hash": "9BC14500DBEBC8ED",
+"class": "rim"
+},
+{
+"hash": "9BDC5B6347B681C9",
+"class": "brake"
+},
+{
+"hash": "9C10BE797453CEB8",
+"class": "rim"
+},
+{
+"hash": "9E13CAE31ADD5E30",
+"class": "car_atlas"
+},
+{
+"hash": "9EBCC730EA392E79",
+"class": "tire"
+},
+{
+"hash": "9EED21E6164ACEAE",
+"class": "rim"
+},
+{
+"hash": "A0EB4E6EAB91CB4F",
+"class": "rider"
+},
+{
+"hash": "A10989BB89A396B3",
+"class": "rim"
+},
+{
+"hash": "A17D1A70693BB805",
+"class": "rim"
+},
+{
+"hash": "A301C5A7A9FDB0CE",
+"class": "tire"
+},
+{
+"hash": "A3B1F47134FE31BD",
+"class": "tire"
+},
+{
+"hash": "A42A95F2BFF97F83",
+"class": "rim"
+},
+{
+"hash": "A4705BD945CA8144",
+"class": "tire"
+},
+{
+"hash": "A4F102E2AD0502D3",
+"class": "rim"
+},
+{
+"hash": "A51592E80FA9251C",
+"class": "rim"
+},
+{
+"hash": "A51EE45507EFEEBC",
+"class": "rim"
+},
+{
+"hash": "A55AEA247E88ED1B",
+"class": "tire"
+},
+{
+"hash": "A58BFD92410CC416",
+"class": "tire"
+},
+{
+"hash": "A69C02A2C05570BE",
+"class": "rim"
+},
+{
+"hash": "A90F94A5CA3CA145",
+"class": "rim"
+},
+{
+"hash": "AA4886A7425A6F75",
+"class": "rim"
+},
+{
+"hash": "AA9F2513F89F780B",
+"class": "rim"
+},
+{
+"hash": "ABC741863599A35E",
+"class": "tire"
+},
+{
+"hash": "ACABD20011B3267E",
+"class": "rim"
+},
+{
+"hash": "ACCC59398010BBF1",
+"class": "car_atlas"
+},
+{
+"hash": "AD7324FDD5B58F68",
+"class": "tire"
+},
+{
+"hash": "ADE622555A6A6973",
+"class": "rim"
+},
+{
+"hash": "ADF7AA7B0345F740",
+"class": "rim"
+},
+{
+"hash": "AE53B5DB150AD230",
+"class": "rim"
+},
+{
+"hash": "AE94DFAE9B653923",
+"class": "rim"
+},
+{
+"hash": "AF70CEE6352D2EA2",
+"class": "rim"
+},
+{
+"hash": "AF732765B56B38CF",
+"class": "rim"
+},
+{
+"hash": "AF822193A4CB111A",
+"class": "rim"
+},
+{
+"hash": "B09DC4CB444CFED9",
+"class": "rim"
+},
+{
+"hash": "B0F5E9DF8F0F2969",
+"class": "rim"
+},
+{
+"hash": "B14385040C662D98",
+"class": "rim"
+},
+{
+"hash": "B3D59D8D32F6FC1D",
+"class": "rim"
+},
+{
+"hash": "B4C96BA7068080FC",
+"class": "tire"
+},
+{
+"hash": "B4CAB8216DF2E3E2",
+"class": "rim"
+},
+{
+"hash": "B5AC9D45958A79AF",
+"class": "rim"
+},
+{
+"hash": "B6B1C015B832C6AD",
+"class": "rim"
+},
+{
+"hash": "B84AC1A9EC5F6A2B",
+"class": "rim"
+},
+{
+"hash": "B8674636FE0706F7",
+"class": "rim"
+},
+{
+"hash": "B88CD9F3A5F12621",
+"class": "rim"
+},
+{
+"hash": "B8C8936E212E0A4B",
+"class": "brake"
+},
+{
+"hash": "B948843B188AD0F2",
+"class": "rim"
+},
+{
+"hash": "B9527FE5B62CF3D7",
+"class": "rim"
+},
+{
+"hash": "B9A8FEE7C43F0966",
+"class": "rim"
+},
+{
+"hash": "BA681172F01561BE",
+"class": "tire"
+},
+{
+"hash": "BAED5CDC1FD3D69C",
+"class": "rim"
+},
+{
+"hash": "BB4D80050BFC7B6E",
+"class": "rim"
+},
+{
+"hash": "BB5856E40A34412B",
+"class": "rim"
+},
+{
+"hash": "BB9569151B9585BC",
+"class": "rim"
+},
+{
+"hash": "BB9D9B04BF0E7101",
+"class": "tire"
+},
+{
+"hash": "BBCC4AC3ADBED53E",
+"class": "car_atlas"
+},
+{
+"hash": "BBF32B4F12D92A15",
+"class": "rim"
+},
+{
+"hash": "BC0BE8AC9E9B7333",
+"class": "rim"
+},
+{
+"hash": "BDA5BE706C1258DA",
+"class": "rim"
+},
+{
+"hash": "BE7E3929CC5CD3B1",
+"class": "rim"
+},
+{
+"hash": "BE945A6CC01EF070",
+"class": "rim"
+},
+{
+"hash": "BF599A65E228B986",
+"class": "rim"
+},
+{
+"hash": "BF96E9DAA8364D88",
+"class": "rim"
+},
+{
+"hash": "C06C590D623C81DE",
+"class": "rider"
+},
+{
+"hash": "C073A448997D5B36",
+"class": "car_atlas"
+},
+{
+"hash": "C1594264C7CA8BB9",
+"class": "rim"
+},
+{
+"hash": "C1DFD88F009743C7",
+"class": "rim"
+},
+{
+"hash": "C258207E09CFB1B6",
+"class": "car_atlas"
+},
+{
+"hash": "C26578909D1E3790",
+"class": "car_atlas"
+},
+{
+"hash": "C2BA5A7CCD360F00",
+"class": "rim"
+},
+{
+"hash": "C2F2ABFC283DEBE5",
+"class": "rim"
+},
+{
+"hash": "C2F91E15FBBB9289",
+"class": "rim"
+},
+{
+"hash": "C4A3DECFBD641375",
+"class": "rim"
+},
+{
+"hash": "C4D7D1B2134BA799",
+"class": "rim"
+},
+{
+"hash": "C4DCCD8E77432447",
+"class": "rim"
+},
+{
+"hash": "C546C1151A9AF718",
+"class": "rim"
+},
+{
+"hash": "C57D26E912345686",
+"class": "rim"
+},
+{
+"hash": "C5CD9C40175CED62",
+"class": "rim"
+},
+{
+"hash": "C6958FA7D08175ED",
+"class": "rim"
+},
+{
+"hash": "C7370B986993A85D",
+"class": "rim"
+},
+{
+"hash": "C7CE2F20AC9505D6",
+"class": "rim"
+},
+{
+"hash": "C7D52A1BD0B91847",
+"class": "tire"
+},
+{
+"hash": "C80D79F0A129D97D",
+"class": "rim"
+},
+{
+"hash": "C87346EFA8F23CCA",
+"class": "rim"
+},
+{
+"hash": "C88E36FACC58BC6D",
+"class": "car_atlas"
+},
+{
+"hash": "C8C2E6098992CB88",
+"class": "car_atlas"
+},
+{
+"hash": "C91AF717179ECEC7",
+"class": "rim"
+},
+{
+"hash": "C9335AC76DD5A24C",
+"class": "rim"
+},
+{
+"hash": "C9DEEF6DB06E7CC4",
+"class": "rim"
+},
+{
+"hash": "CA467304A880D2D0",
+"class": "rim"
+},
+{
+"hash": "CAD39FBE4337A439",
+"class": "car_atlas"
+},
+{
+"hash": "CC7B1FF64A568A8D",
+"class": "tire"
+},
+{
+"hash": "CCA3BDBEEE7BC4CF",
+"class": "tire"
+},
+{
+"hash": "CD51C81ECFFA25DA",
+"class": "rim"
+},
+{
+"hash": "CD8B720F089B3DD7",
+"class": "rim"
+},
+{
+"hash": "CF10DDC024E948FA",
+"class": "rim"
+},
+{
+"hash": "D05B3EB41D316665",
+"class": "rim"
+},
+{
+"hash": "D14487E5E90DC7BB",
+"class": "tire"
+},
+{
+"hash": "D144FB34159626F9",
+"class": "tire"
+},
+{
+"hash": "D211378F48B3A88E",
+"class": "rim"
+},
+{
+"hash": "D24D7862820B4059",
+"class": "rim"
+},
+{
+"hash": "D284E7352AE19DB7",
+"class": "rim"
+},
+{
+"hash": "D2E3D842468C8AEC",
+"class": "brake"
+},
+{
+"hash": "D331C7E4B931CE54",
+"class": "tire"
+},
+{
+"hash": "D364696DF5F4AD14",
+"class": "rim"
+},
+{
+"hash": "D3B370B07FEF19D6",
+"class": "rim"
+},
+{
+"hash": "D3D659EE8D352BEE",
+"class": "rim"
+},
+{
+"hash": "D44ED7A533791D3C",
+"class": "rider"
+},
+{
+"hash": "D556A2065D07A442",
+"class": "rim"
+},
+{
+"hash": "D58B1B7180A9DB02",
+"class": "car_atlas"
+},
+{
+"hash": "D5B58DB46FF82FB9",
+"class": "rim"
+},
+{
+"hash": "D5D6B22D2D0EA8E3",
+"class": "rim"
+},
+{
+"hash": "D6154F790B2E857E",
+"class": "rim"
+},
+{
+"hash": "D625C93D624C3435",
+"class": "rim"
+},
+{
+"hash": "D69C4FB59B1BCDD6",
+"class": "rider"
+},
+{
+"hash": "D705CA60EF701A7E",
+"class": "rim"
+},
+{
+"hash": "D7662B3A149F30BE",
+"class": "rim"
+},
+{
+"hash": "D780A5C14C96932D",
+"class": "rim"
+},
+{
+"hash": "D7EDB83018365064",
+"class": "rim"
+},
+{
+"hash": "D8EEFF6CA2491B0D",
+"class": "rider"
+},
+{
+"hash": "DA9F04123940B3A7",
+"class": "rim"
+},
+{
+"hash": "DB03B0B6E59EC27C",
+"class": "rim"
+},
+{
+"hash": "DB06EE38A36190E1",
+"class": "rim"
+},
+{
+"hash": "DB411AD31F111DFD",
+"class": "rim"
+},
+{
+"hash": "DBE625BFE8ACCD16",
+"class": "rim"
+},
+{
+"hash": "DC7EB82107606C4C",
+"class": "rim"
+},
+{
+"hash": "DCC1826A66011216",
+"class": "car_atlas"
+},
+{
+"hash": "DCED63BDD58C4C4E",
+"class": "rim"
+},
+{
+"hash": "DD986FD16505A60D",
+"class": "rider"
+},
+{
+"hash": "DDA6ECB00D19E651",
+"class": "rim"
+},
+{
+"hash": "DF2389E051CC33B9",
+"class": "car_atlas"
+},
+{
+"hash": "E0119C49A58BF317",
+"class": "rim"
+},
+{
+"hash": "E05F262AA4F51165",
+"class": "rim"
+},
+{
+"hash": "E0A6D2411DD96E74",
+"class": "rider"
+},
+{
+"hash": "E112EB811B216BC1",
+"class": "rim"
+},
+{
+"hash": "E16DF92FBB40CBB8",
+"class": "rim"
+},
+{
+"hash": "E1B0FB8189DA3A56",
+"class": "tire"
+},
+{
+"hash": "E1E1FB0F2CEA6817",
+"class": "rim"
+},
+{
+"hash": "E24A1A6025AD6BB9",
+"class": "tire"
+},
+{
+"hash": "E254B7B2E1DA8379",
+"class": "rim"
+},
+{
+"hash": "E260130AE1634EC0",
+"class": "rim"
+},
+{
+"hash": "E3093EF973634F8A",
+"class": "car_atlas"
+},
+{
+"hash": "E36F49C3209761E6",
+"class": "rim"
+},
+{
+"hash": "E3A449184B67F464",
+"class": "rim"
+},
+{
+"hash": "E3D8671618BBFEF1",
+"class": "rim"
+},
+{
+"hash": "E4019F31BC2E913B",
+"class": "rim"
+},
+{
+"hash": "E46B85070740DD1C",
+"class": "rim"
+},
+{
+"hash": "E5273E16C5041DB1",
+"class": "rim"
+},
+{
+"hash": "E54FE2A3B535C329",
+"class": "car_atlas"
+},
+{
+"hash": "E67E0A1412CD531E",
+"class": "rim"
+},
+{
+"hash": "E6C6BAEA4E971F64",
+"class": "brake"
+},
+{
+"hash": "E7F54FE34E490BBB",
+"class": "rim"
+},
+{
+"hash": "E8C6185659761426",
+"class": "rim"
+},
+{
+"hash": "E910732A84DD8E88",
+"class": "rider"
+},
+{
+"hash": "E99A69A50B38D490",
+"class": "rim"
+},
+{
+"hash": "E9A6C36B2647C995",
+"class": "brake"
+},
+{
+"hash": "EA9CAA9E1213675D",
+"class": "rim"
+},
+{
+"hash": "EAFEB18ABE42A42C",
+"class": "rim"
+},
+{
+"hash": "EB26EEFBC9B8E2ED",
+"class": "rim"
+},
+{
+"hash": "EB5366D97B0D8F59",
+"class": "rim"
+},
+{
+"hash": "EB95AA715F6AE82D",
+"class": "rim"
+},
+{
+"hash": "EBBE6223B9C98513",
+"class": "tire"
+},
+{
+"hash": "EBCFB4CF1361817D",
+"class": "rim"
+},
+{
+"hash": "EC0A15DEAF9BD633",
+"class": "tire"
+},
+{
+"hash": "EC54FD8674AC11C4",
+"class": "rider"
+},
+{
+"hash": "ECCB53E488DFD5E6",
+"class": "rim"
+},
+{
+"hash": "ED063BE9419B43DE",
+"class": "rim"
+},
+{
+"hash": "EDDC26D4ED5B8E45",
+"class": "rim"
+},
+{
+"hash": "EE396BD003A34A77",
+"class": "tire"
+},
+{
+"hash": "EE56AA192202607F",
+"class": "rim"
+},
+{
+"hash": "EF9FCB5D65DABA63",
+"class": "rim"
+},
+{
+"hash": "EFB2C3BC19F5CD04",
+"class": "tire"
+},
+{
+"hash": "F00EF79FA960AC34",
+"class": "rider"
+},
+{
+"hash": "F017275FF841473E",
+"class": "rim"
+},
+{
+"hash": "F06ADE5DF076EA84",
+"class": "rim"
+},
+{
+"hash": "F1EFDE314F4813C0",
+"class": "rim"
+},
+{
+"hash": "F265011622DDC333",
+"class": "rim"
+},
+{
+"hash": "F284D338BC74706F",
+"class": "rim"
+},
+{
+"hash": "F3007E994432A263",
+"class": "rim"
+},
+{
+"hash": "F381FC587AC14439",
+"class": "rim"
+},
+{
+"hash": "F3B2DC5B3AA79800",
+"class": "rim"
+},
+{
+"hash": "F49C12EA209A5FB1",
+"class": "rider"
+},
+{
+"hash": "F4B1CFF0961DF6A1",
+"class": "rim"
+},
+{
+"hash": "F505A76FEE9C98A6",
+"class": "rim"
+},
+{
+"hash": "F659917B3B34C173",
+"class": "tire"
+},
+{
+"hash": "F6CC85608F76359B",
+"class": "rim"
+},
+{
+"hash": "F77AFD1B0643114B",
+"class": "rim"
+},
+{
+"hash": "F8175CF746FE8C55",
+"class": "rim"
+},
+{
+"hash": "F86267E2552EC5E0",
+"class": "tire"
+},
+{
+"hash": "F8A9DD9C633AE76D",
+"class": "rim"
+},
+{
+"hash": "F92B2330D7AB19FC",
+"class": "rim"
+},
+{
+"hash": "F96E85EF6602A221",
+"class": "rim"
+},
+{
+"hash": "F9B2E9593F15B399",
+"class": "rim"
+},
+{
+"hash": "FA16B2E2C88F5C84",
+"class": "rider"
+},
+{
+"hash": "FA320F177F2A0A06",
+"class": "rim"
+},
+{
+"hash": "FA71ED1817F4BA16",
+"class": "rim"
+},
+{
+"hash": "FB07FF81C05F4524",
+"class": "rim"
+},
+{
+"hash": "FD56E742A94AD427",
+"class": "car_atlas"
+},
+{
+"hash": "FD6D1C3ADBBDDC6C",
+"class": "tire"
+},
+{
+"hash": "FD78C5198494D053",
+"class": "rim"
+},
+{
+"hash": "FE974F899C35E419",
+"class": "rim"
+},
+{
+"hash": "FF04CC3EC6090EA0",
+"class": "rim"
+},
+{
+"hash": "FF5310888DB10105",
+"class": "rim"
+},
+{
+"hash": "FF72372691302221",
+"class": "tire"
+},
+{
+"hash": "FFEB34CCB2BF087D",
+"class": "rim"
+},
+{
+"hash": "04D92C23BAA7158D",
+"class": "traffic_atlas"
+},
+{
+"hash": "12C17611FABC5B1A",
+"class": "traffic_atlas"
+},
+{
+"hash": "153B6A2862FB0F30",
+"class": "traffic_atlas"
+},
+{
+"hash": "18994D576FECBF9E",
+"class": "traffic_atlas"
+},
+{
+"hash": "3050569F30EBB998",
+"class": "traffic_atlas"
+},
+{
+"hash": "3818E5062372CA60",
+"class": "traffic_atlas"
+},
+{
+"hash": "3B33BABFA75A8657",
+"class": "traffic_atlas"
+},
+{
+"hash": "3E46BFC438B9F152",
+"class": "traffic_atlas"
+},
+{
+"hash": "49CAFD8E64C67CA9",
+"class": "traffic_atlas"
+},
+{
+"hash": "6F01BF51D23F8DAF",
+"class": "traffic_atlas"
+},
+{
+"hash": "91B3351E7CC978AB",
+"class": "traffic_atlas"
+},
+{
+"hash": "BA970B6B659E6B23",
+"class": "traffic_atlas"
+},
+{
+"hash": "C574DA39107EB3B9",
+"class": "traffic_atlas"
+},
+{
+"hash": "CBF038907EEECD30",
+"class": "traffic_atlas"
+},
+{
+"hash": "E2AAEE1BAF5926A8",
+"class": "traffic_atlas"
+},
+{
+"hash": "EFEC9F5765586234",
+"class": "traffic_atlas"
+},
+{
+"hash": "FB90B4308864D8A0",
+"class": "traffic_atlas"
+}
+]
+}

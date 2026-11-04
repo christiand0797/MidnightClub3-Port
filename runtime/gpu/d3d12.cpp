@@ -47,6 +47,7 @@
 #include "gpu/capture_directory.h"
 #include "gpu/capture_control.h"
 #include "gpu/car_paint.h"
+#include "gpu/vehicle_pbr.h"
 #include "gpu/pbr_controls.h"
 #include "gpu/pbr_library_cache.h"
 #include "gpu/pbr_surface.h"
@@ -638,6 +639,8 @@ struct DrawTextures {
     uint32_t pbr_levels = 1;
     bool pbr_has_height = false;
     Tex* pbr_tex = nullptr;
+    DXGI_FORMAT vehicle_normal_format = DXGI_FORMAT_UNKNOWN, vehicle_orm_format = DXGI_FORMAT_UNKNOWN;
+    uint32_t vehicle_normal_levels = 0, vehicle_orm_levels = 0;
 };
 
 // what the last draw set on the command list, so the next one sets only what differs; anything else that sets them
@@ -672,6 +675,11 @@ struct DrawShaders {
     bool sprite = false;           // a program's points drawn as point sprites (SpriteHlsl)
     bool velocity = false;   // DLSS's variants (VelocityVertexHlsl, VelocityPixelHlsl): drawn into the frame target
     bool plain_ps = false;   // velocity drawn with the plain pixel shader: a screen effect, which leaves the target
+    uint64_t material_vkey = 0, material_pkey = 0; // Stable original draw identity, before optional shader variants.
+    uint32_t vehicle_stage_mask = 0;
+    size_t vehicle_row = SIZE_MAX;
+    pbr::controls::Parameters vehicle_parameters;
+    std::string vehicle_vertex, vehicle_pixel;
     FixedKey fk;
     uint64_t vkey = 0;
     uint64_t vh = 0;
@@ -804,6 +812,7 @@ private:
     void PublishPbrTelemetry();
     void UpdatePbrSettings();
     void CompletePbrFrame(Frame&);
+    void PrepareVehiclePbr(const State&,const Assembled&,DrawShaders&,PixelKey&,DrawTextures&);
     bool TryPbrDraw(const State&,const Assembled&,const DrawShaders&,const PixelKey&,const PsoKey&,
                     const DrawTextures&,GuestExtent,ID3D12PipelineState* legacy_pso);
     // an HD movie's picture in place of the texture the title decodes its Bink into (video_hd.h)
@@ -1021,6 +1030,7 @@ private:
         std::string detail;
     };
     std::unordered_map<uint64_t, PbrMeshEntry> pbr_mesh_cache_;
+    std::unordered_map<uint64_t, vehicle_pbr::Profile> vehicle_profiles_;
     static constexpr size_t kPbrMeshCacheEntries = 1024;  // reasons already logged per material row, so the log says each once
     pbr::controls::Capabilities pbr_capabilities_;
     std::unordered_map<uint64_t, Tex> pack_textures_;  // texture pack images by key, kept for the run
@@ -3138,6 +3148,7 @@ std::string SpriteSizeHlsl(std::string s) {
 }
 
 std::string VertexHlsl(const State& s, const Assembled& a, const DrawShaders& sh) {
+    if (!sh.vehicle_vertex.empty()) return sh.vehicle_vertex;
     if (sh.prog && sh.car_paint)
         return car_paint::VertexHlsl(VertexProgramHlsl(s.vs->program, a.regs, a.decode, sh.velocity));
     if (sh.prog) {
@@ -3193,7 +3204,8 @@ void D3D12Backend::EnsurePixelShader(const PixelKey& pk, DrawShaders& sh) {
         sh.ph = pit->second;
         return;
     }
-    std::string src = pk.car_paint ? car_paint::PixelHlsl(PixelHlsl(pk), CarPaintTargetMask(pk)) : PixelHlsl(pk);
+    std::string src = !sh.vehicle_pixel.empty() ? sh.vehicle_pixel :
+        pk.car_paint ? car_paint::PixelHlsl(PixelHlsl(pk), CarPaintTargetMask(pk)) : PixelHlsl(pk);
     if (sh.velocity && !sh.plain_ps) src = VelocityPixelHlsl(std::move(src));
     sh.ps_code = Compile(src, "main", "ps_5_0", sh.ph);
     shader_src_[sh.pkey ^ kPixelKeySalt] = sh.ph;
@@ -3803,10 +3815,16 @@ void D3D12Backend::CaptureShader(const char* kind, uint64_t key, const std::stri
 
 void D3D12Backend::CaptureShaders(const State& s, const Assembled& a, const DrawShaders& sh, const PixelKey& pk) {
     std::string src = ReversedDepthHlsl(VertexHlsl(s, a, sh));
+    if(sh.velocity)src=VelocityVertexHlsl(std::move(src));
     CaptureShader("vs", sh.vkey, sh.quad ? QuadHlsl(std::move(src)) : src);
-    CaptureShader("ps", sh.pkey, pk.car_paint ? car_paint::PixelHlsl(PixelHlsl(pk), CarPaintTargetMask(pk)) : PixelHlsl(pk));
+    std::string pixel=!sh.vehicle_pixel.empty()?sh.vehicle_pixel:
+        pk.car_paint?car_paint::PixelHlsl(PixelHlsl(pk),CarPaintTargetMask(pk)):PixelHlsl(pk);
+    if(sh.velocity&&!sh.plain_ps)pixel=VelocityPixelHlsl(std::move(pixel));
+    CaptureShader("ps",sh.pkey,pixel);
     // every draw's own keys, since the source files above are written once per key
     fprintf(cap_, "     keys vs %016llX ps %016llX\n", (unsigned long long)sh.vkey, (unsigned long long)sh.pkey);
+    fprintf(cap_, "     vehicle-keys vs %016llX ps %016llX bridge %u\n",
+        (unsigned long long)sh.material_vkey, (unsigned long long)sh.material_pkey, sh.vehicle_stage_mask);
 }
 
 D3D12_SRV_DIMENSION NullViewDimension(uint8_t kind) {
@@ -3881,11 +3899,13 @@ void D3D12Backend::SetTextureViewsAndSamplers(const State& s, const Assembled& a
     if (stages.pbr_nrm && stages.pbr_orm) {
         uint32_t pbr_slot = AllocSrvSlots(2);
         D3D12_SHADER_RESOURCE_VIEW_DESC psv{};
-        psv.Format = kBgra;
+        psv.Format = stages.vehicle_normal_format != DXGI_FORMAT_UNKNOWN ? stages.vehicle_normal_format : kBgra;
         psv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
         psv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        psv.Texture2D.MipLevels = stages.pbr_levels;
+        psv.Texture2D.MipLevels = stages.vehicle_normal_levels ? stages.vehicle_normal_levels : stages.pbr_levels;
         dev_->CreateShaderResourceView(stages.pbr_nrm, &psv, Cpu(srv_heap_.Get(), pbr_slot, srv_inc_));
+        psv.Format = stages.vehicle_orm_format != DXGI_FORMAT_UNKNOWN ? stages.vehicle_orm_format : kBgra;
+        psv.Texture2D.MipLevels = stages.vehicle_orm_levels ? stages.vehicle_orm_levels : stages.pbr_levels;
         dev_->CreateShaderResourceView(stages.pbr_orm, &psv, Cpu(srv_heap_.Get(), pbr_slot + 1, srv_inc_));
         cl_->SetGraphicsRootDescriptorTable(4, Gpu(srv_heap_.Get(), pbr_slot, srv_inc_));
     }
@@ -4104,25 +4124,30 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
     DrawShaders sh = ClassifyShaders(s, a, count);
     if (sh.prog) EnsureProgramHash(s);
     sh.vkey = VertexKey(s, a, sh);
+    sh.material_vkey = sh.vkey;
     const auto& graphics = app::Get().graphics;
     sh.car_paint = graphics.car_paint && sh.prog && !sh.quad && !a.pretransformed && CarLightingProgram(s, a);
-    if (sh.car_paint) sh.vkey ^= kCarPaintSalt;
     // DLSS: the frame target's draws in their velocity variants (jitter, motion vectors), apart from points and quads
     sh.velocity = bound_vel_ && !sh.quad && a.topology != Topology::Points;
-    if (sh.velocity) sh.vkey ^= kVelocitySalt;
-    EnsureVertexShader(s, a, sh);
 
     // stage textures, then the pixel shader made for them
     DrawTextures stages;
     if (!BindStageTexturesAndTargets(s, stages)) return;
     PixelKey pk = MakePixelKey(s, stages.info);
+    sh.material_pkey = Hash(&pk, sizeof(pk));
     pk.quad = sh.quad;
     pk.car_paint = sh.car_paint;
     // The old filename-companion shader has no approved assignment or physical scene bridge.
     // Only the separate reviewed-material pipeline may consume the PBR preference.
     pk.pbr = 0;
     stages.pbr_nrm = stages.pbr_orm = nullptr;
+    PrepareVehiclePbr(s, a, sh, pk, stages);
+    if (sh.car_paint) sh.vkey ^= kCarPaintSalt;
+    if (!sh.vehicle_vertex.empty()) sh.vkey ^= (0x564548504252ull << 8);
+    if (sh.velocity) sh.vkey ^= kVelocitySalt;
+    EnsureVertexShader(s, a, sh);
     sh.pkey = Hash(&pk, sizeof(pk));
+    if (!sh.vehicle_pixel.empty()) sh.pkey = Hash(sh.vehicle_pixel.data(), sh.vehicle_pixel.size(), sh.pkey);
     if (CoverageOn() && bound_rt_ && DlssFrameTarget(bound_rt_))
         for (Tex* tx : stages.accepted_color)
             if (tx && tx->pbr_hash) coverage_[tx->pbr_hash].draws++;
@@ -4209,6 +4234,14 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
         c.carpaint[2] = std::clamp(graphics.car_roughness, 0.05f, 0.8f);
         c.carpaint[3] = std::clamp(graphics.car_reflection, 0.0f, 2.0f);
     }
+    if (sh.vehicle_row != SIZE_MAX) {
+        const auto& p = sh.vehicle_parameters;
+        c.carpaint[0] = 1; // Map normals must affect the same original car lights even if car relighting was off.
+        c.pbr[0] = p.normal_strength; c.pbr[1] = p.ao_strength;
+        c.pbr[2] = p.roughness_override ? -(1+p.roughness) : p.roughness_factor;
+        c.pbr[3] = p.metallic_override ? -(1+p.metallic) : p.metallic_factor;
+        for (size_t i=0;i<3;++i) c.pbr2[i+1] = p.base_color[i];
+    }
     UploadConstants(s, sh, k, stages, size, c, evidence.get());
     // the camera of the frame's static world, for the motion of draws that do not write their own
     if (k.vel == 1 && sh.fixed_transform && !dlss_cam_.valid && !a.pretransformed) {
@@ -4248,6 +4281,11 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
     // geometry, counted while the title runs a visibility test
     uint32_t query = BeginCountedDraw(s);
     DrawGeometry(a, evidence.get());
+    if (sh.vehicle_row != SIZE_MAX) {
+        auto& frame = CurrentFrame();
+        if (frame.pbr_owner == pbr_library_.library && sh.vehicle_row < frame.pbr_pending_draws.size())
+            ++frame.pbr_pending_draws[sh.vehicle_row];
+    }
     if (signed_op) {
         k.op = kBlendOpRevSubtract;  // dst - src
         if (ID3D12PipelineState* sub = EnsurePipeline(k, sh.vs_code, sh.ps_code)) {
@@ -5151,6 +5189,88 @@ void D3D12Backend::CompletePbrFrame(Frame& frame) {
     }
     frame.pbr_pending_draws.clear();
     frame.pbr_owner.reset();
+}
+
+void D3D12Backend::PrepareVehiclePbr(const State& s,const Assembled& a,DrawShaders& sh,PixelKey& pk,DrawTextures& textures) {
+    namespace pc=pbr::controls;
+    if(!sh.prog||sh.quad||a.pretransformed||ext_||a.topology!=Topology::Triangles)return;
+    const bool approved=pbr_settings_&&pbr_settings_->settings().enabled&&pbr_library_.library;
+    bool candidate=false;
+    if(approved)for(uint32_t stage=0;stage<2;++stage) {
+        const Tex* color=textures.accepted_color[stage];
+        if(!color)continue;
+        pbr::ForTexture(*pbr_library_.library,color->photo_identity.original_hash,[&](uint32_t row){
+            const auto& a=pbr_library_.library->materials[row].assignment;
+            candidate|=a.surface==pbr::SurfaceClass::Vehicle&&a.stage==stage&&
+                a.vertex_shader==sh.material_vkey&&a.pixel_shader==sh.material_pkey;
+        });
+    }
+    if(!candidate&&!cap_)return;
+    auto [profile,inserted]=vehicle_profiles_.try_emplace(sh.material_vkey,vehicle_pbr::Profile::Unsupported);
+    if(inserted)profile->second=vehicle_pbr::Recognize(s.vs->program,a.regs,a.decode);
+    const auto bridge=profile->second;
+    if(!vehicle_pbr::ConstantsSupported(std::span<const float>(s.vsc[0].data(),192*4)))return;
+    for(uint32_t stage=0;stage<2;++stage)if(vehicle_pbr::SupportsStage(bridge,stage,0))
+        sh.vehicle_stage_mask|=1u<<stage;
+    if(!candidate||!sh.vehicle_stage_mask)return;
+    const auto& library=*pbr_library_.library;
+    const auto& settings=pbr_settings_->settings();
+    for(uint32_t stage=0;stage<2;++stage) {
+        Tex* color=textures.accepted_color[stage];const auto& info=textures.info[stage];
+        if(!color||!(sh.vehicle_stage_mask&(1u<<stage))||!textures.res[stage]||textures.rt[stage]||
+           info.kind!=kTex2D||info.rect||info.shadow||info.flags||((pk.proj>>stage)&1))continue;
+        size_t selected=SIZE_MAX; bool ambiguous=false;
+        pbr::ForTexture(library,color->photo_identity.original_hash,[&](uint32_t row){
+            const auto& m=library.materials[row];const auto& id=m.assignment;
+            if(id.surface!=pbr::SurfaceClass::Vehicle||id.stage!=stage||id.uv_set!=0||
+               id.vertex_shader!=sh.material_vkey||id.pixel_shader!=sh.material_pkey||
+               id.cutout!=(pk.alphatest!=0))return;
+            if(selected!=SIZE_MAX)ambiguous=true;else selected=row;
+        });
+        if(ambiguous||selected==SIZE_MAX)continue;
+        auto& observation=pbr_observed_[selected];++observation.observed_draws;
+        observation.reason=pc::Reason::UnsupportedDraw;
+        const auto& m=library.materials[selected];
+        if(!m.game_albedo||m.has_emission)continue; // No substituted alpha/colour or unsupported emission promise.
+        const auto* override=pbr_settings_->Find(m.assignment,library.manifest_sha256);
+        if(override&&!override->enabled){observation.reason=pc::Reason::MaterialDisabled;continue;}
+        auto params=override&&!override->use_global_parameters?override->parameters:settings.parameters;
+        pc::Sanitize(params);
+        if(params.height_mode!=pc::HeightMode::None) {
+            observation.reason=params.height_mode==pc::HeightMode::Parallax?pc::Reason::ParallaxUnavailable:pc::Reason::DisplacementUnavailable;
+            continue;
+        }
+        auto vertex=vehicle_pbr::VertexHlsl(car_paint::VertexHlsl(VertexProgramHlsl(s.vs->program,a.regs,a.decode,sh.velocity)),bridge,stage,0);
+        PixelKey variant=pk;variant.car_paint=1;
+        auto pixel=vehicle_pbr::PixelHlsl(car_paint::PixelHlsl(PixelHlsl(variant),CarPaintTargetMask(variant)),stage,
+            m.normal.storage==pbr::Storage::Bc5,m.normal_convention==pbr::NormalConvention::DirectX);
+        if(!vertex||!pixel)continue;
+        Frame& frame=CurrentFrame();
+        if(frame.pbr_owner&&frame.pbr_owner!=pbr_library_.library)return;
+        pbr::device::Context context;
+        context.device=dev_.Get();context.list=cl_.Get();context.queue_identity=queue_.Get();
+        context.allocate_upload=[this](uint64_t bytes,uint64_t alignment){auto u=Upload(bytes,alignment);
+            return pbr::device::UploadAllocation{u.cpu,u.gpu,u.res,u.off,bytes};};
+        context.retain=[&frame](std::span<IUnknown* const> objects){
+            frame.pbr_retained.reserve(frame.pbr_retained.size()+objects.size());
+            for(IUnknown* object:objects){if(!object)return false;frame.pbr_retained.emplace_back(object);}return true;};
+        pbr::device::VehicleMapInput input{true,pbr_library_.library,observation.key};
+        const auto prepared=pbr_device_.PrepareVehicleMaps(context,input);
+        if(prepared.copies_recorded&&prepared.status!=pbr::device::Status::Prepared)
+            CheckGpu(dev_.Get(),FAILED(prepared.error)?prepared.error:E_FAIL,"preparing reviewed vehicle maps");
+        if(prepared.status!=pbr::device::Status::Prepared){
+            if(prepared.status==pbr::device::Status::BudgetExceeded)pbr_evict_=true;
+            continue;
+        }
+        if(!frame.pbr_owner){frame.pbr_owner=input.library;frame.pbr_pending_draws.assign(pbr_observed_.size(),0);}
+        textures.pbr_nrm=prepared.normal.resource;textures.pbr_orm=prepared.orm.resource;
+        textures.vehicle_normal_format=prepared.normal.format;textures.vehicle_normal_levels=prepared.normal.levels;
+        textures.vehicle_orm_format=prepared.orm.format;textures.vehicle_orm_levels=prepared.orm.levels;
+        sh.vehicle_vertex=std::move(*vertex);sh.vehicle_pixel=std::move(*pixel);
+        sh.vehicle_parameters=params;sh.vehicle_row=selected;sh.car_paint=true;pk.car_paint=1;
+        observation.reason=pc::Reason::VehicleMappedLighting;
+        return;
+    }
 }
 
 bool D3D12Backend::TryPbrDraw(const State& s,const Assembled& a,const DrawShaders& sh,const PixelKey& pk,

@@ -86,8 +86,8 @@
     font-size: 0.85rem;
   }
 
-  /* ---------- Lobby ---------- */
-  #lobby {
+  /* ---------- Auth screens ---------- */
+  #authScreen {
     position: fixed;
     inset: 0;
     background: radial-gradient(circle at center, #101426 0%, #05050a 100%);
@@ -97,29 +97,29 @@
     z-index: 100;
     pointer-events: auto;
   }
-  #lobby.hidden { display: none !important; }
-  .lobby-card {
+  #authScreen.hidden { display: none !important; }
+  .auth-card {
     background: linear-gradient(145deg, #1a233a 0%, #0f172b 100%);
     border: 1px solid #00d4ff;
     border-radius: 16px;
     padding: 36px 32px;
-    max-width: 460px;
+    max-width: 420px;
     width: 90vw;
     box-shadow: 0 20px 60px rgba(0,0,0,0.6);
   }
-  .lobby-card h1 {
+  .auth-card h1 {
     color: #00d4ff;
     margin-bottom: 6px;
     font-size: 1.75rem;
     letter-spacing: 3px;
     text-transform: uppercase;
   }
-  .lobby-card .subtitle {
+  .auth-card .subtitle {
     color: #8897b0;
     font-size: 0.85rem;
     margin-bottom: 24px;
   }
-  .lobby-input {
+  .auth-input {
     width: 100%;
     background: #080b14;
     border: 1px solid #2a3f5f;
@@ -131,14 +131,14 @@
     outline: none;
     transition: border 0.2s;
   }
-  .lobby-input:focus { border-color: #00d4ff; }
-  .lobby-actions {
+  .auth-input:focus { border-color: #00d4ff; }
+  .auth-actions {
     display: flex;
     flex-direction: column;
     gap: 10px;
     margin-bottom: 20px;
   }
-  .lobby-btn {
+  .auth-btn {
     width: 100%;
     padding: 13px;
     border-radius: 8px;
@@ -148,11 +148,63 @@
     cursor: pointer;
     transition: all 0.2s;
   }
-  .lobby-btn.primary { background: #00d4ff; color: #000; }
-  .lobby-btn.primary:hover { background: #33e0ff; transform: translateY(-1px); }
-  .lobby-btn.primary:disabled { background: #444; color: #888; cursor: not-allowed; transform: none; }
-  .lobby-btn.secondary { background: #1f2d44; color: #c9d1e2; border: 1px solid #2a3f5f; }
-  .lobby-btn.secondary:hover { background: #2a3f5f; }
+  .auth-btn.primary { background: #00d4ff; color: #000; }
+  .auth-btn.primary:hover { background: #33e0ff; transform: translateY(-1px); }
+  .auth-btn.secondary { background: #1f2d44; color: #c9d1e2; border: 1px solid #2a3f5f; }
+  .auth-btn.secondary:hover { background: #2a3f5f; }
+  .auth-toggle {
+    margin-top: 12px;
+    font-size: 0.85rem;
+    color: #8897b0;
+    text-align: center;
+  }
+  .auth-toggle a { color: #00d4ff; cursor: pointer; text-decoration: none; }
+
+  /* ---------- Main Menu / Lobby ---------- */
+  #mainMenu {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at center, #101426 0%, #05050a 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    pointer-events: auto;
+  }
+  #mainMenu.hidden { display: none !important; }
+  .menu-card {
+    background: linear-gradient(145deg, #1a233a 0%, #0f172b 100%);
+    border: 1px solid #00d4ff;
+    border-radius: 16px;
+    padding: 32px 28px;
+    max-width: 480px;
+    width: 90vw;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+  .menu-card h1 { color: #00d4ff; margin-bottom: 6px; font-size: 1.75rem; letter-spacing: 2px; text-transform: uppercase; }
+  .menu-card .subtitle { color: #8897b0; font-size: 0.85rem; margin-bottom: 24px; }
+  .menu-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .menu-btn {
+    width: 100%;
+    padding: 13px;
+    border-radius: 8px;
+    border: none;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .menu-btn.primary { background: #00d4ff; color: #000; }
+  .menu-btn.primary:hover { background: #33e0ff; transform: translateY(-1px); }
+  .menu-btn.secondary { background: #1f2d44; color: #c9d1e2; border: 1px solid #2a3f5f; }
+  .menu-btn.secondary:hover { background: #2a3f5f; }
+  .menu-btn:disabled { background: #444; color: #888; cursor: not-allowed; transform: none; }
 
   .game-list {
     margin-top: 16px;
@@ -193,14 +245,108 @@
     font-size: 0.75rem; font-weight: 800; color: #fff;
   }
 
-  .lobby-footer {
-    margin-top: 18px;
-    color: #6a7a98;
-    font-size: 0.78rem;
+  /* ---------- Cloud Saves ---------- */
+  #savesScreen {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at center, #101426 0%, #05050a 100%);
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+    pointer-events: auto;
+  }
+  #savesScreen.hidden { display: none !important; }
+  .saves-header {
+    background: #16213e;
+    border-bottom: 1px solid #2a3f5f;
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .saves-header h2 { color: #00d4ff; font-size: 1.25rem; }
+  .saves-content {
+    overflow-y: auto;
+    padding: 20px;
+  }
+  .save-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #2a3f5f;
+    border-radius: 10px;
+    background: #080b14;
+  }
+  .save-item {
+    background: #0c101e;
+    border: 1px solid #2a3f5f;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .save-item:hover { background: #16213e; border-color: #00d4ff; }
+  .save-item .save-info .save-name { color: #e0e0e0; font-weight: 700; margin-bottom: 4px; }
+  .save-item .save-info .save-meta { color: #8897b0; font-size: 0.8rem; }
+  .save-item .save-actions { display: flex; gap: 6px; }
+  .save-btn {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: none;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .save-btn.load { background: #00d4ff; color: #000; }
+  .save-btn.load:hover { background: #33e0ff; }
+  .save-btn.delete { background: #ff4444; color: #fff; }
+  .save-btn.delete:hover { background: #ff6666; }
+
+  /* ---------- Career ---------- */
+  #careerScreen {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at center, #101426 0%, #05050a 100%);
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+    pointer-events: auto;
+  }
+  #careerScreen.hidden { display: none !important; }
+  .career-header {
+    background: #16213e;
+    border-bottom: 1px solid #2a3f5f;
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .career-header h2 { color: #00d4ff; font-size: 1.25rem; }
+  .career-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    padding: 24px;
+  }
+  .career-stat {
+    background: #0c101e;
+    border: 1px solid #2a3f5f;
+    border-radius: 10px;
+    padding: 16px;
     text-align: center;
   }
+  .career-stat .stat-value { color: #00d4ff; font-size: 1.75rem; font-weight: 800; font-family: 'Consolas', monospace; }
+  .career-stat .stat-label { color: #8897b0; font-size: 0.8rem; margin-top: 4px; }
+  .career-content {
+    overflow-y: auto;
+    padding: 20px;
+  }
 
-  /* ---------- Controller hint ---------- */
+  /* ---------- Controls hint ---------- */
   .ctrl-hint {
     position: absolute;
     bottom: 22px;
@@ -216,8 +362,8 @@
     background: #1f2d44;
     border: 1px solid #2a3f5f;
     border-radius: 5px;
-    padding: 2px 7px;
-    margin: 0 3px;
+    padding: 2px 6px;
+    margin: 0 2px;
     font-family: 'Consolas', monospace;
     color: #00d4ff;
     font-size: 0.8rem;
@@ -255,13 +401,7 @@
     font-size: 0.8rem;
     font-family: 'Consolas', monospace;
   }
-  #chat .chat-msg {
-    margin-bottom: 6px;
-    padding: 5px 8px;
-    border-radius: 6px;
-    line-height: 1.4;
-    white-space: pre-wrap;
-  }
+  #chat .chat-msg { margin-bottom: 6px; padding: 5px 8px; border-radius: 6px; line-height: 1.4; white-space: pre-wrap; }
   #chat .chat-msg.system { color: #8a9bb3; font-style: italic; }
   #chat .chat-msg.me { background: rgba(0,212,255,0.15); color: #7fd4ff; margin-left: auto; max-width: 75%; }
   #chat .chat-msg.other { background: rgba(255,255,255,0.06); color: #e0e0e0; }
@@ -279,46 +419,10 @@
     padding: 7px 10px;
     border-radius: 6px;
     font-size: 0.8rem;
+    margin-bottom: 0;
     outline: none;
   }
   #chat input:focus { border-color: #00d4ff; }
-
-  /* ---------- Settings panel ---------- */
-  #settings {
-    position: fixed;
-    top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(5,5,10,0.9);
-    z-index: 1000;
-    pointer-events: auto;
-    display: none;
-    align-items: center;
-    justify-content: center;
-  }
-  #settings.hidden { display: none !important; }
-  .settings-card {
-    background: #16213e;
-    border: 1px solid #00d4ff;
-    border-radius: 14px;
-    padding: 32px;
-    width: 420px;
-    box-shadow: 0 24px 80px rgba(0,0,0,0.7);
-  }
-  .settings-card h2 { color: #00d4ff; margin-bottom: 20px; font-size: 1.3rem; }
-  .settings-row {
-    margin-bottom: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .settings-row label { color: #c9d1e2; font-size: 0.85rem; font-weight: 600; }
-  .settings-row input[type=range] {
-    width: 100%; accent-color: #00d4ff;
-  }
-  .settings-row .val { color: #00d4ff; font-family: 'Consolas', monospace; font-size: 0.8rem; }
-  .settings-btns { display: flex; gap: 10px; margin-top: 24px; }
-  .settings-btns button { flex: 1; padding: 11px; border-radius: 8px; border: none; font-weight: 700; cursor: pointer; }
-  .settings-btns .close { background: #00d4ff; color: #000; }
-  .settings-btns .close:hover { background: #33e0ff; }
 
   /* ---------- Notifications ---------- */
   #notif {
@@ -367,6 +471,11 @@
       <span class="hud-label">Relay</span>
       <span id="relayText" class="hud-value">connecting…</span>
     </div>
+    <div class="hud-pill game">
+      <span class="indicator" id="indAuth"></span>
+      <span class="hud-label">Account</span>
+      <span id="userText" class="hud-value">not logged in</span>
+    </div>
     <div class="hud-pill stream">
       <span class="indicator" id="indGame"></span>
       <span class="hud-label">Game</span>
@@ -395,44 +504,62 @@
   </div>
 </div>
 
-<!-- Lobby -->
-<div id="lobby">
-  <div class="lobby-card">
-    <h1>MC3</h1>
-    <div class="subtitle">Browser Multiplayer</div>
-    <input type="text" id="playerName" value="Player" placeholder="Your name">
-    <div class="lobby-actions">
-      <button class="lobby-btn primary" id="btnCreate">Create Game</button>
-      <button class="lobby-btn secondary" id="btnRefresh">Refresh List</button>
+<!-- Auth -->
+<div id="authScreen">
+  <div class="auth-card">
+    <h1 id="authTitle">Welcome to MC3</h1>
+    <div class="subtitle" id="authSubtitle">Log in to save your career progress, cars, and games</div>
+    <input type="text" id="authUsername" placeholder="Username">
+    <input type="password" id="authPassword" placeholder="Password">
+    <div class="auth-actions">
+      <button class="auth-btn primary" id="authBtn">Log In</button>
+      <button class="auth-btn secondary" id="authToggleBtn">Create Account</button>
+    </div>
+    <div class="auth-toggle" id="authToggleText">Don't have an account? <a id="authSwitchLink">Sign up</a></div>
+  </div>
+</div>
+
+<!-- Main Menu -->
+<div id="mainMenu">
+  <div class="menu-card">
+    <h1 id="menuTitle">MC3 Multiplayer</h1>
+    <div class="subtitle" id="menuSubtitle">Play online with players worldwide</div>
+    <div class="menu-actions">
+      <button class="menu-btn primary" id="btnCreateGame">Create Game</button>
+      <button class="menu-btn secondary" id="btnRefresh">Refresh List</button>
+      <button class="menu-btn secondary" id="btnViewSaves">Cloud Saves</button>
+      <button class="menu-btn secondary" id="btnViewCareer">Career</button>
+      <button class="menu-btn secondary" id="btnLogout">Log Out</button>
     </div>
     <div class="game-list" id="gameList">
       <div style="color:#6a7a98; font-size:0.8rem; padding:10px;">No games available</div>
     </div>
-    <div class="lobby-footer">
-      Stream starts when you join a game • Gamepad supported
+  </div>
+</div>
+
+<!-- Cloud Saves -->
+<div id="savesScreen">
+  <div class="saves-header">
+    <h2>Cloud Saves</h2>
+    <button class="btn" id="btnNewSave" style="background:#1f2d44; color:#c9d1e2;">New Save</button>
+  </div>
+  <div class="saves-content">
+    <div class="save-list" id="saveList">
+      <div style="color:#6a7a98; font-size:0.8rem; padding:20px; text-align:center;">No saves yet</div>
     </div>
   </div>
 </div>
 
-<!-- Settings -->
-<div id="settings" class="hidden">
-  <div class="settings-card">
-    <h2>Stream Settings</h2>
-    <div class="settings-row">
-      <label>Quality <span id="qVal" class="val">75%</span></label>
-      <input type="range" id="qRange" min="10" max="100" value="75">
-    </div>
-    <div class="settings-row">
-      <label>Resolution <span id="sVal" class="val">100%</span></label>
-      <input type="range" id="sRange" min="25" max="100" value="100">
-    </div>
-    <div class="settings-row">
-      <label>Target FPS <span id="fVal" class="val">60</span></label>
-      <input type="range" id="fRange" min="15" max="120" value="60">
-    </div>
-    <div class="settings-btns">
-      <button class="btn close" id="btnSettingsClose">Close</button>
-    </div>
+<!-- Career -->
+<div id="careerScreen">
+  <div class="career-header">
+    <h2>Career Progress</h2>
+  </div>
+  <div class="career-stats" id="careerStats">
+    <!-- populated by JS -->
+  </div>
+  <div class="career-content" id="careerContent">
+    <!-- populated by JS -->
   </div>
 </div>
 
@@ -450,22 +577,24 @@ const STREAM_URL = (() => {
   const host = window.location.hostname;
   return p.get('stream') || `ws://${host}:8766`;
 })();
+const API_URL = RELAY_URL.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
 
 /* ---------------- State ---------------- */
 let relayWs = null;
 let streamWs = null;
 let myId = null;
-let myRole = null;
+let myUsername = null;
+let myToken = null;
 let myColor = null;
 let currentGameId = null;
 let relayConnected = false;
 let streamConnected = false;
+let authChecked = false;
 
 let keys = {};
 const activeKeys = new Set();
-let gamepads = [];
 let lastGamepadPoll = 0;
-const GAMEPAD_POLL_MS = 16; // ~60 Hz
+const GAMEPAD_POLL_MS = 16;
 
 let lastInputTime = 0;
 const INPUT_COOLDOWN_MS = 30;
@@ -478,78 +607,89 @@ let fpsLastSecond = Date.now();
 const gameScreen = document.getElementById('gameScreen');
 const gameConnecting = document.getElementById('gameConnecting');
 const indRelay = document.getElementById('indRelay');
+const indAuth = document.getElementById('indAuth');
 const indGame = document.getElementById('indGame');
 const indStream = document.getElementById('indStream');
 const relayText = document.getElementById('relayText');
+const userText = document.getElementById('userText');
 const gameText = document.getElementById('gameText');
 const fpsText = document.getElementById('fpsText');
-const lobby = document.getElementById('lobby');
+
+const authScreen = document.getElementById('authScreen');
+const mainMenu = document.getElementById('mainMenu');
+const savesScreen = document.getElementById('savesScreen');
+const careerScreen = document.getElementById('careerScreen');
+
 const playerName = document.getElementById('playerName');
 const btnCreate = document.getElementById('btnCreate');
 const btnRefresh = document.getElementById('btnRefresh');
+const btnViewSaves = document.getElementById('btnViewSaves');
+const btnViewCareer = document.getElementById('btnViewCareer');
+const btnLogout = document.getElementById('btnLogout');
 const gameListEl = document.getElementById('gameList');
+
 const chatMessages = document.getElementById('chatMessages');
 const chatInput = document.getElementById('chatInput');
 
-const settingsEl = document.getElementById('settings');
-const qRange = document.getElementById('qRange');
-const qVal = document.getElementById('qVal');
-const sRange = document.getElementById('sRange');
-const sVal = document.getElementById('sVal');
-const fRange = document.getElementById('fRange');
-const fVal = document.getElementById('fVal');
-const btnSettingsClose = document.getElementById('btnSettingsClose');
+const saveList = document.getElementById('saveList');
+const careerStats = document.getElementById('careerStats');
+const careerContent = document.getElementById('careerContent');
+
 const notif = document.getElementById('notif');
 
-/* ---------------- Helpers ---------------- */
-function setRelay(ok, text) {
-  relayConnected = ok;
-  indRelay.className = `indicator ${ok ? 'online' : 'offline'}`;
-  relayText.textContent = text;
+/* ---------------- Auth helpers ---------------- */
+function setAuth(authed, username) {
+  indAuth.className = `indicator ${authed ? 'online' : 'offline'}`;
+  userText.textContent = authed ? username : 'not logged in';
 }
 
-function setGame(ok, text) {
-  indGame.className = `indicator ${ok ? 'online' : 'offline'}`;
-  gameText.textContent = text;
+function showScreen(screenId) {
+  document.querySelectorAll('[id$="Screen"], #mainMenu').forEach(el => el.classList.add('hidden'));
+  document.getElementById(screenId).classList.remove('hidden');
 }
 
-function addChat(text, type = 'other') {
-  const div = document.createElement('div');
-  div.className = `chat-msg ${type}`;
-  const ts = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-  div.textContent = `[${ts}] ${text}`;
-  chatMessages.appendChild(div);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-function showNotif(text) {
+function showNotif(text, type = 'info') {
   notif.textContent = text;
+  notif.style.borderColor = type === 'error' ? '#ff4444' : '#00d4ff';
+  notif.style.color = type === 'error' ? '#ff4444' : '#00d4ff';
   notif.classList.add('show');
-  setTimeout(() => notif.classList.remove('show'), 2200);
+  setTimeout(() => notif.classList.remove('show'), 3000);
 }
 
-function openLobby(open) {
-  if (open) lobby.classList.remove('hidden');
-  else lobby.classList.add('hidden');
+/* ---------------- API helpers ---------------- */
+async function apiRequest(endpoint, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Authorization': `Bearer ${myToken}` } };
+  if (body) opts.headers['Content-Type'] = 'application/json';
+  if (body && typeof body === 'object') opts.body = JSON.stringify(body);
+  const resp = await fetch(`${API_URL}/api/${endpoint}`, opts);
+  if (resp.status === 401) {
+    myToken = null;
+    localStorage.removeItem('mc3_token');
+    showScreen('authScreen');
+    return null;
+  }
+  return resp.json();
 }
 
-/* ---------------- Relay ---------------- */
+/* ---------------- Relay connection ---------------- */
 function connectRelay() {
   relayWs = new WebSocket(RELAY_URL);
   relayWs.binaryType = 'arraybuffer';
 
   relayWs.onopen = () => {
-    setRelay(true, 'connected');
+    relayConnected = true;
+    indRelay.className = 'indicator online';
+    relayText.textContent = 'connected';
     addChat('Connected to relay server', 'system');
-    btnCreate.disabled = false;
-    btnRefresh.disabled = false;
+    if (myToken) {
+      relayWs.send(JSON.stringify({ type: 'auth', token: myToken }));
+    }
   };
 
   relayWs.onclose = () => {
-    setRelay(false, 'disconnected');
     relayConnected = false;
-    btnCreate.disabled = true;
-    btnRefresh.disabled = true;
+    indRelay.className = 'indicator offline';
+    relayText.textContent = 'disconnected';
     setTimeout(connectRelay, 3000);
   };
 
@@ -561,19 +701,28 @@ function connectRelay() {
   };
 
   relayWs.onerror = () => {
-    setRelay(false, 'error');
+    indRelay.className = 'indicator offline';
+    relayText.textContent = 'error';
   };
 }
 
 function handleRelayMsg(msg) {
   switch (msg.type) {
+    case 'auth_ok':
+      myId = msg.user.id;
+      myUsername = msg.user.username;
+      setAuth(true, myUsername);
+      showScreen('mainMenu');
+      loadCareer();
+      loadSaves();
+      break;
     case 'joined':
       myId = msg.id || myId;
       myRole = msg.role;
       myColor = msg.color;
       currentGameId = msg.gameId;
       addChat(`Joined game #${currentGameId} (${myRole})`, 'system');
-      openLobby(false);
+      showScreen('mainMenu'); // will be replaced by stream view when stream connects
       connectStream();
       break;
     case 'created':
@@ -582,7 +731,7 @@ function handleRelayMsg(msg) {
       myColor = msg.color;
       currentGameId = msg.gameId;
       addChat(`Created game #${currentGameId} as host`, 'system');
-      openLobby(false);
+      showScreen('mainMenu');
       connectStream();
       break;
     case 'gameList':
@@ -596,6 +745,9 @@ function handleRelayMsg(msg) {
       break;
     case 'chat':
       addChat(`${msg.from}: ${msg.text}`, 'other');
+      break;
+    case 'gameStarted':
+      addChat('Game started!', 'system');
       break;
     case 'error':
       addChat(`Error: ${msg.error}`, 'system');
@@ -611,18 +763,14 @@ function renderGames(games) {
   }
   for (const g of games) {
     const item = document.createElement('div');
-    item.className = `game-item ${g.playerCount >= g.maxPlayers ? 'full' : ''}`;
-    const badges = g.players ? g.players.map(p =>
-      `<span class="player-badge" style="background:${p.color || '#888'}">${p.name ? p.name[0] : '?'}</span>`
-    ).join('') : '';
+    item.className = `game-item ${g.player_count >= g.max_players ? 'full' : ''}`;
     item.innerHTML = `
       <div class="gi-top">
         <div class="game-id">#${g.id}</div>
-        <div class="game-info">${g.playerCount}/${g.maxPlayers} players${g.started ? ' • LIVE' : ''}</div>
+        <div class="game-info">${g.player_count}/${g.max_players} players${g.status === 'playing' ? ' • LIVE' : ''}</div>
       </div>
-      <div class="players">${badges}</div>
     `;
-    if (g.playerCount < g.maxPlayers && !g.started) {
+    if (g.player_count < g.max_players && g.status !== 'playing') {
       item.onclick = () => joinGame(g.id);
     }
     gameListEl.appendChild(item);
@@ -630,22 +778,33 @@ function renderGames(games) {
 }
 
 function createGame() {
-  const name = playerName.value.trim() || 'Player';
-  if (relayWs && relayWs.readyState === WebSocket.OPEN) {
-    relayWs.send(JSON.stringify({ type: 'create', name }));
+  const name = prompt('Game name:', 'My Game') || 'My Game';
+  if (relayWs && relayWs.readyState === WebSocket.OPEN && myToken) {
+    relayWs.send(JSON.stringify({
+      type: 'create_game',
+      name,
+      token: myToken
+    }));
   }
 }
 
 function joinGame(gameId) {
-  const name = playerName.value.trim() || 'Player';
-  if (relayWs && relayWs.readyState === WebSocket.OPEN) {
-    relayWs.send(JSON.stringify({ type: 'join', game: gameId, name }));
+  if (relayWs && relayWs.readyState === WebSocket.OPEN && myToken) {
+    relayWs.send(JSON.stringify({
+      type: 'join_game',
+      gameId,
+      token: myToken
+    }));
   }
 }
 
 function requestList() {
   if (relayWs && relayWs.readyState === WebSocket.OPEN) {
     relayWs.send(JSON.stringify({ type: 'list' }));
+  } else {
+    fetch(`${API_URL}/api/games?status=waiting`, {
+      headers: { 'Authorization': `Bearer ${myToken}` }
+    }).then(r => r.json()).then(d => renderGames(d.games || []));
   }
 }
 
@@ -661,7 +820,8 @@ function connectStream() {
     addChat('Game stream connected', 'system');
     streamWs.send(JSON.stringify({
       type: 'join',
-      name: playerName.value || 'Player',
+      name: myUsername || 'Player',
+      token: myToken
     }));
   };
 
@@ -676,10 +836,7 @@ function connectStream() {
   streamWs.onmessage = (event) => {
     if (typeof event.data === 'string') {
       const msg = JSON.parse(event.data);
-      if (msg.type === 'hello') {
-        console.log('[stream] hello', msg);
-        return;
-      }
+      if (msg.type === 'hello') return;
       if (msg.type === 'frame') {
         renderFrame(msg);
         return;
@@ -706,6 +863,11 @@ function renderFrame(msg) {
   setGame(true, 'streaming');
 }
 
+function setGame(ok, text) {
+  indGame.className = `indicator ${ok ? 'online' : 'offline'}`;
+  gameText.textContent = text;
+}
+
 /* ---------------- Input ---------------- */
 function sendInput(keyCode, pressed) {
   const now = Date.now();
@@ -718,7 +880,7 @@ function sendInput(keyCode, pressed) {
 }
 
 function onKeyDown(e) {
-  if (!lobby.classList.contains('hidden')) return;
+  if (!mainMenu.classList.contains('hidden') && !authScreen.classList.contains('hidden')) return;
   if (e.repeat) return;
   activeKeys.add(e.code);
   switch (e.code) {
@@ -728,7 +890,7 @@ function onKeyDown(e) {
     case 'KeyD': sendInput(0x44, 1); break;
     case 'Space': sendInput(0x20, 1); break;
     case 'Enter': sendInput(0x0D, 1); break;
-    case 'Escape': openLobby(true); break;
+    case 'Escape': showScreen('mainMenu'); break;
     case 'F1': toggleSettings(); break;
   }
 }
@@ -745,18 +907,16 @@ function onKeyUp(e) {
   }
 }
 
-/* Gamepad support */
+/* Gamepad */
 function pollGamepads() {
   if (!streamConnected || !streamWs || streamWs.readyState !== WebSocket.OPEN) return;
   const now = Date.now();
   if (now - lastGamepadPoll < GAMEPAD_POLL_MS) return;
   lastGamepadPoll = now;
-
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   for (let i = 0; i < pads.length; i++) {
     const gp = pads[i];
     if (!gp) continue;
-    // Buttons
     for (let j = 0; j < gp.buttons.length; j++) {
       const b = gp.buttons[j];
       const pressed = b.pressed;
@@ -769,11 +929,9 @@ function pollGamepads() {
         sendGamepadButton(j, 0);
       }
     }
-    // Axes (left stick for steer)
     const lx = gp.axes[0] || 0;
     const ly = gp.axes[1] || 0;
     const deadzone = 0.15;
-    // Map axes to digital for now (simpler for the proxy)
     if (lx < -deadzone) sendGamepadAxis(0, 1);
     else if (lx > deadzone) sendGamepadAxis(1, 1);
     else { sendGamepadAxis(0, 0); sendGamepadAxis(1, 0); }
@@ -784,13 +942,11 @@ function pollGamepads() {
 }
 
 function sendGamepadButton(idx, pressed) {
-  // 0x02 = gamepad button packet: [0x02, buttonIndex, pressed, 0]
   const buf = new Uint8Array([0x02, idx & 0xFF, pressed ? 1 : 0, 0x00]);
   if (streamWs && streamWs.readyState === WebSocket.OPEN) streamWs.send(buf);
 }
 
 function sendGamepadAxis(axis, pressed) {
-  // 0x03 = gamepad axis packet: [0x03, axisIndex, pressed, 0]
   const buf = new Uint8Array([0x03, axis & 0xFF, pressed ? 1 : 0, 0x00]);
   if (streamWs && streamWs.readyState === WebSocket.OPEN) streamWs.send(buf);
 }
@@ -817,7 +973,151 @@ function sendChat() {
   chatInput.value = '';
 }
 
-/* ---------------- Settings ---------------- */
+/* ---------------- Cloud Saves ---------------- */
+async function loadSaves() {
+  const data = await apiRequest('saves');
+  if (!data) return;
+  saveList.innerHTML = '';
+  if (!data.saves || data.saves.length === 0) {
+    saveList.innerHTML = '<div style="color:#6a7a98; font-size:0.8rem; padding:20px; text-align:center;">No cloud saves yet</div>';
+    return;
+  }
+  for (const s of data.saves) {
+    const item = document.createElement('div');
+    item.className = 'save-item';
+    const updated = new Date(s.updated_at * 1000).toLocaleString();
+    item.innerHTML = `
+      <div class="save-info">
+        <div class="save-name">${escapeHtml(s.save_name || 'Untitled')}</div>
+        <div class="save-meta">Slot ${s.slot} • Money: $${s.money || 0} • Rating: ${s.rating || 0} • Updated: ${updated}</div>
+      </div>
+      <div class="save-actions">
+        <button class="save-btn load" onclick="loadSave(${s.slot})">Load</button>
+        <button class="save-btn delete" onclick="deleteSave(${s.slot})">Delete</button>
+      </div>
+    `;
+    saveList.appendChild(item);
+  }
+}
+
+window.loadSave = async function(slot) {
+  const data = await apiRequest(`saves/${slot}`);
+  if (!data) return;
+  showNotif(`Loaded save: ${data.save.save_name || 'Untitled'}`);
+  // Apply save to game via stream proxy
+  if (streamWs && streamWs.readyState === WebSocket.OPEN) {
+    streamWs.send(JSON.stringify({
+      type: 'load_save',
+      slot,
+      save_data: data.save.save_data
+    }));
+  }
+};
+
+window.deleteSave = async function(slot) {
+  if (!confirm('Delete this cloud save?')) return;
+  const resp = await fetch(`${API_URL}/api/saves/${slot}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${myToken}` }
+  });
+  if (resp.ok) {
+    showNotif('Save deleted');
+    loadSaves();
+  }
+};
+
+async function createNewSave() {
+  const name = prompt('Save name:', 'My Save') || 'My Save';
+  const slot = prompt('Save slot (0-9):', '0') || '0';
+  const saveData = {
+    timestamp: Date.now(),
+    position: { x: 0, y: 0, z: 0 },
+    money: 10000,
+    rating: 0,
+    cars_owned: [],
+    notes: 'Created from browser'
+  };
+  const data = await apiRequest('saves', 'POST', {
+    slot: parseInt(slot),
+    save_name: name,
+    save_data: saveData,
+    playtime: 0,
+    money: 10000,
+    rating: 0
+  });
+  if (data) {
+    showNotif(`Save created: ${name}`);
+    loadSaves();
+  }
+}
+
+/* ---------------- Career ---------------- */
+async function loadCareer() {
+  const data = await apiRequest('career');
+  if (!data) return;
+  const c = data.career;
+  careerStats.innerHTML = `
+    <div class="career-stat"><div class="stat-value">${c.total_races || 0}</div><div class="stat-label">Races</div></div>
+    <div class="career-stat"><div class="stat-value">${c.races_won || 0}</div><div class="stat-label">Wins</div></div>
+    <div class="career-stat"><div class="stat-value">$${c.total_money_earned || 0}</div><div class="stat-label">Earned</div></div>
+    <div class="career-stat"><div class="stat-value">$${c.current_money || 0}</div><div class="stat-label">Current</div></div>
+  `;
+  careerContent.innerHTML = `
+    <div style="margin-bottom:20px;">
+      <div style="color:#8897b0; font-size:0.8rem; margin-bottom:8px;">Cars Owned</div>
+      <div class="stat-value">${c.cars_owned || 0}</div>
+    </div>
+    <div style="margin-bottom:20px;">
+      <div style="color:#8897b0; font-size:0.8rem; margin-bottom:8px;">Cities Unlocked</div>
+      <div style="color:#e0e0e0;">${(c.cities_unlocked || []).join(', ') || 'None'}</div>
+    </div>
+    <div style="margin-bottom:20px;">
+      <div style="color:#8897b0; font-size:0.8rem; margin-bottom:8px;">Difficulty</div>
+      <div style="color:#e0e0e0;">${c.difficulty || 'medium'}</div>
+    </div>
+    <div>
+      <div style="color:#8897b0; font-size:0.8rem; margin-bottom:8px;">Last Played</div>
+      <div style="color:#e0e0e0;">${new Date((c.last_played || 0) * 1000).toLocaleString()}</div>
+    </div>
+  `;
+}
+
+/* ---------------- Settings (F1) ------------ */
+const settingsEl = document.getElementById('settings');
+if (!settingsEl) {
+  const se = document.createElement('div');
+  se.id = 'settings';
+  se.className = 'hidden';
+  se.innerHTML = `
+    <div class="settings-card">
+      <h2>Stream Settings</h2>
+      <div class="settings-row">
+        <label>Quality <span id="qVal" class="val">75%</span></label>
+        <input type="range" id="qRange" min="10" max="100" value="75">
+      </div>
+      <div class="settings-row">
+        <label>Resolution <span id="sVal" class="val">100%</span></label>
+        <input type="range" id="sRange" min="25" max="100" value="100">
+      </div>
+      <div class="settings-row">
+        <label>Target FPS <span id="fVal" class="val">60</span></label>
+        <input type="range" id="fRange" min="15" max="120" value="60">
+      </div>
+      <div class="settings-btns">
+        <button class="btn close" id="btnSettingsClose">Close</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(se);
+}
+const qRange = document.getElementById('qRange');
+const qVal = document.getElementById('qVal');
+const sRange = document.getElementById('sRange');
+const sVal = document.getElementById('sVal');
+const fRange = document.getElementById('fRange');
+const fVal = document.getElementById('fVal');
+const btnSettingsClose = document.getElementById('btnSettingsClose');
+
 function toggleSettings() {
   const hidden = settingsEl.classList.contains('hidden');
   if (hidden) settingsEl.classList.remove('hidden');
@@ -844,18 +1144,101 @@ fRange.oninput = (e) => {
 };
 btnSettingsClose.onclick = () => settingsEl.classList.add('hidden');
 
+/* ---------------- Auth ---------------- */
+function checkStoredToken() {
+  myToken = localStorage.getItem('mc3_token');
+  if (myToken) {
+    connectRelay();
+  } else {
+    showScreen('authScreen');
+  }
+}
+
+function handleLoginSignup(isSignup) {
+  const username = document.getElementById('authUsername').value.trim();
+  const password = document.getElementById('authPassword').value.trim();
+  if (!username || !password) {
+    showNotif('Username and password required', 'error');
+    return;
+  }
+  const endpoint = isSignup ? 'register' : 'login';
+  fetch(`${API_URL}/api/${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.token) {
+      myToken = data.token;
+      localStorage.setItem('mc3_token', myToken);
+      myId = data.user.id;
+      myUsername = data.user.username;
+      setAuth(true, myUsername);
+      connectRelay();
+    } else {
+      showNotif(data.error || 'Failed', 'error');
+    }
+  })
+  .catch(() => showNotif('Network error', 'error'));
+}
+
+document.getElementById('authBtn').onclick = (e) => {
+  e.preventDefault();
+  handleLoginSignup(document.getElementById('authToggleBtn').textContent.includes('Sign up'));
+};
+
+document.getElementById('authToggleBtn').onclick = (e) => {
+  e.preventDefault();
+  const isSignup = document.getElementById('authToggleBtn').textContent.includes('Sign up');
+  const title = document.getElementById('authTitle');
+  const subtitle = document.getElementById('authSubtitle');
+  const btn = document.getElementById('authBtn');
+  const toggleBtn = document.getElementById('authToggleBtn');
+  const toggleText = document.getElementById('authToggleText');
+  const switchLink = document.getElementById('authSwitchLink');
+
+  if (isSignup) {
+    title.textContent = 'Log In';
+    subtitle.textContent = 'Welcome back to MC3';
+    btn.textContent = 'Log In';
+    toggleBtn.textContent = 'Create Account';
+    toggleText.textContent = "Don't have an account?";
+    switchLink.textContent = 'Sign up';
+  } else {
+    title.textContent = 'Create Account';
+    subtitle.textContent = 'Join the MC3 multiplayer community';
+    btn.textContent = 'Sign Up';
+    toggleBtn.textContent = 'Log In';
+    toggleText.textContent = "Already have an account?";
+    switchLink.textContent = 'Log in';
+  }
+};
+
+btnLogout.onclick = () => {
+  myToken = null;
+  localStorage.removeItem('mc3_token');
+  relayWs && relayWs.close();
+  streamWs && streamWs.close();
+  showScreen('authScreen');
+  showNotif('Logged out');
+};
+
 /* ---------------- Init ---------------- */
 window.addEventListener('keydown', onKeyDown);
 window.addEventListener('keyup', onKeyUp);
 
-btnCreate.onclick = createGame;
-btnRefresh.onclick = requestList;
+document.getElementById('btnCreateGame').onclick = createGame;
+document.getElementById('btnRefresh').onclick = requestList;
+document.getElementById('btnViewSaves').onclick = () => { showScreen('savesScreen'); loadSaves(); };
+document.getElementById('btnViewCareer').onclick = () => { showScreen('careerScreen'); loadCareer(); };
+document.getElementById('btnNewSave').onclick = createNewSave;
+document.getElementById('btnLogout').onclick = btnLogout;
 
 chatInput.onkeypress = (e) => { if (e.key === 'Enter') sendChat(); };
 
-// Start everything
-connectRelay();
-requestList();
+// Check for stored token and start
+checkStoredToken();
 requestAnimationFrame(gamepadLoop);
 
 </script>

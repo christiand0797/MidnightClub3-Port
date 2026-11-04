@@ -97,6 +97,11 @@ bool DrawPbrSettings(Settings& settings) {
         ImGui::Text("Last renderer report: %s",catalog->status==pc::RuntimeStatus::Ready&&!real_ready?
             "Waiting for eligible rendered draws":pc::RuntimeStatusText(catalog->status));
         ImGui::Text("Materials with rendered PBR evidence: %u",real_ready?catalog->ready_materials:0);
+        uint32_t vehicle_mapped=0;
+        for(const auto& row:catalog->materials)
+            if(row.reason==pc::Reason::VehicleMappedLighting&&row.rendered_draws)++vehicle_mapped;
+        if(s.enabled&&catalog->status!=pc::RuntimeStatus::Disabled&&vehicle_mapped)
+            ImGui::Text("Vehicle materials with completed mapped lighting: %u (SDR)",vehicle_mapped);
         if(!catalog->message.empty())ImGui::TextWrapped("%s",catalog->message.c_str());
     } else Help("Renderer has not published PBR capabilities. Enabling the preference does not establish an active PBR path.");
     SyncPackDraft(s);

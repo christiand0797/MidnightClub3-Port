@@ -20,7 +20,8 @@ inline bool ShadingReady(const Capabilities& c) {
 enum class Reason {
     Disabled, InvalidSettings, LibraryUnavailable, UnapprovedManifest, NoAssignment, MaterialDisabled,
     UnsupportedDraw, MissingGeometry, MissingLinearLighting, AlphaMismatch, RendererBindingsUnavailable,
-    MissingHeightMap, ParallaxUnavailable, DisplacementUnavailable, Ready
+    MissingHeightMap, ParallaxUnavailable, DisplacementUnavailable, Ready,
+    VehicleMappedLighting // Original car lights/combiners in SDR; distinct from the dedicated linear renderer.
 };
 const char* ReasonText(Reason reason);
 struct Resolution {

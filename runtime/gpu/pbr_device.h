@@ -8,7 +8,7 @@
 namespace gpu::pbr::device {
 
 enum class Status {
-    Planned, Recorded, Disabled, InvalidLibrary, MaterialRejected, UnsupportedDraw, InvalidMesh, InvalidConstants,
+    Planned, Prepared, Recorded, Disabled, InvalidLibrary, MaterialRejected, UnsupportedDraw, InvalidMesh, InvalidConstants,
     InvalidSampler, BudgetExceeded, InvalidContext, OwnershipChanged, DeviceFailure, ShaderFailure,
     UploadFailure, RetentionFailure, AllocationFailure
 };
@@ -63,6 +63,22 @@ struct Plan {
 Status PlanDraw(const Input&,const Limits&,Plan& result);
 bool ValidSampler(const D3D12_SAMPLER_DESC&);
 
+// Map-only bridge for an independently proven original vehicle program. It deliberately does not
+// certify geometry, lighting, coverage or a complete PBR draw. The original albedo stays in use.
+struct VehicleMapInput {
+    bool enabled=false;
+    std::shared_ptr<const Library> library;
+    controls::ExactMaterialKey key;
+};
+struct VehicleMapPlan {
+    std::shared_ptr<const Library> owner;
+    const Material* material=nullptr;
+    std::array<MapPlan,2> maps{}; // normal, ORM; never filename companions or synthetic fallbacks
+    uint64_t texture_upload_bytes=0,resident_estimate=0;
+};
+// CPU-only validation; requires exact, non-wildcard vehicle VS/PS/stage/UV identity and game albedo.
+Status PlanVehicleMaps(const VehicleMapInput&,const Limits&,VehicleMapPlan& result);
+
 struct UploadAllocation {
     uint8_t* cpu=nullptr;
     D3D12_GPU_VIRTUAL_ADDRESS gpu=0;
@@ -92,6 +108,20 @@ struct Result {
     bool gpu_execution_observed=false;
     uint64_t resident_bytes=0;
 };
+struct VehicleMapBinding {
+    ID3D12Resource* resource=nullptr; // Borrowed; already retained through the caller's actual frame fence.
+    DXGI_FORMAT format=DXGI_FORMAT_UNKNOWN;
+    uint32_t width=0,height=0,levels=0;
+};
+struct VehicleMapResult {
+    Status status=Status::Disabled;
+    HRESULT error=S_OK;
+    bool copies_recorded=false; // CPU command issuance only, never GPU completion or rendered-draw proof.
+    VehicleMapBinding normal,orm;
+    std::shared_ptr<const Library> owner;
+    const Material* material=nullptr;
+    uint64_t resident_bytes=0;
+};
 
 // Render-thread-owned cache; no internal queue, fence, Submit, worker, file I/O or automatic reset.
 // Dedicated shader-visible descriptor heaps append only: no slot wrap/reuse while commands may be live.
@@ -105,6 +135,10 @@ public:
     // plan MUST be PlanDraw's result for this same, unmodified input and limits, made by the caller just before.
     // Planning once per draw instead of twice halves the dedicated path's CPU preflight.
     Result RecordDraw(const Context&,const Input&,const Plan& plan,Limits={}) noexcept;
+    // Uploads approved maps on the caller's existing list and retains maps/uploads before any copy.
+    // Does not bind descriptor heaps/root/PSO, issue a draw, Submit, replace the list or own a fence.
+    // The caller may create frame-local SRVs from the returned exact format/mip descriptions.
+    VehicleMapResult PrepareVehicleMaps(const Context&,const VehicleMapInput&,Limits={}) noexcept;
     // Caller MUST have independently waited for GPU idle. Never call to bypass an in-flight lifetime.
     void ResetGpuIdle() noexcept;
 private:
