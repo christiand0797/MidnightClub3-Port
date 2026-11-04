@@ -10,6 +10,21 @@ notes land in `docs/notes/*.md` (see "Work in flight").
 
 ## 0. Current continuation (supersedes the older work-in-flight descriptions below)
 
+**2026-11-04 (trams, max-detail PBR pack):**
+- **Train windows.** The trams/subways are `va_` vehicles (`vehicle/va_tram_sd`, `va_train_detroit`, `va_train_tokyo`,
+  one 128x128 DXT5 each: hashes CBD7BFB78140A4B4, C2FD2BE826DD6218, 463ED3177FE07761). The shell (`main.mesh`,
+  shader #0, a vertex program, alpha test GREATER 0) has alpha-0 window texels; through them the game shows
+  `interior.mesh` (#2, same UV layout as the shell), `florecent_ads.mesh` (#1) and `people.mesh` (#3). Every capture
+  (dozens of trams at 230+ units) drew only the shell (174 stitched strip indices = main.mesh); the other passes were
+  seen once, right beside a tram (log gate lines), with the interior pass itself alpha tested (NOTEQUAL 0), so even
+  then the windows open onto holes. Fix: `TrainWindowTexture` (d3d12.cpp) sets `DrawConstants::glass.x` on the shell
+  draw; `PixelHlsl` turns its alpha-0 texels into dark glass over the art there (the interior ads), lit by v0, before
+  `alphatest()`. Captures now print `atest <enable> <func> <ref> light <0/1>` on each draw line.
+- **Max-detail pack.** `test_pack.py --cities` now writes BC5 normal / BC7 ORM DDS (texconv, full mips, 512-1024)
+  plus 16-bit height PNGs: `pbr-cities-max`, 3,695 materials, 3.1 GB, digest `0d20eeb9…`, installed in settings.toml
+  (the previous `pbr-cities` digest `87231d8e…` is in settings.toml.bak). The release ships `upscale_tools/texconv.exe`
+  (+ DirectXTex MIT licence) in `enhance\` so Make HD step 5 builds the same pack.
+
 **2026-11-01 evening (build folder repaired after a Devin session):** between 15:53 and 18:56 a Devin agent committed
 ae0aef5, 9c23f9d, 8f431b9 (kept: arrow-driving test hooks, the TODO tracker, wider LOD/FOV ranges, tuning limited to
 player cars; ae0aef5 also carried the lead session's then-unfinished texture coverage census) and re-configured

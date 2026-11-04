@@ -102,16 +102,18 @@ if (-not $NoEnhance) {
         "$models/pbrify/1x-PBRify_Height.onnx", "$models/pbrify/LICENSE",
         "$upscaler/realesrgan-ncnn-vulkan.exe", "$upscaler/vcomp140.dll",
         'upscale_tools/models_extra/ultrasharp-4x.param', 'upscale_tools/models_extra/ultrasharp-4x.bin',
-        'upscale_tools/models_extra/remacri-4x.param', 'upscale_tools/models_extra/remacri-4x.bin')
+        'upscale_tools/models_extra/remacri-4x.param', 'upscale_tools/models_extra/remacri-4x.bin',
+        'upscale_tools/texconv.exe')  # the PBR pack's BC5 normal and BC7 ORM maps (tools/pbr/test_pack.py)
     foreach ($relative in $toolFiles) {
         $source = Join-Path $projectRoot $relative
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-            throw "Make HD needs $relative (models: tools/pbr/generate.py --download-models then --export-onnx; upscaler: upscale_tools)."
+            throw "Make HD needs $relative (models: tools/pbr/generate.py --download-models then --export-onnx; upscaler and texconv.exe from DirectXTex: upscale_tools)."
         }
         $target = Join-Path $enhance $relative
         [void][IO.Directory]::CreateDirectory((Split-Path -Parent $target))
         Copy-Item -LiteralPath $source -Destination $target
     }
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'DirectXTex-LICENSE.txt') -Destination (Join-Path $enhance 'upscale_tools/DirectXTex-LICENSE.txt')
     [void][IO.Directory]::CreateDirectory((Join-Path $enhance 'tools/pbr/overrides'))
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Make HD.cmd') -Destination (Join-Path $stage 'Make HD.cmd')
     [void][IO.Directory]::CreateDirectory((Join-Path $stage 'config'))
