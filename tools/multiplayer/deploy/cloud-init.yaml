@@ -66,6 +66,8 @@ write_files:
       Unattended-Upgrade::Automatic-Reboot-Time "05:30";
 
 runcmd:
+  # 2 GB of swap: the Always Free AMD micro has 1 GB of RAM, enough to run but tight for the first image build
+  - sh -c '[ -f /swapfile ] || { fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo "/swapfile none swap sw 0 0" >> /etc/fstab; }'
   - curl -fsSL https://get.docker.com | sh
   - systemctl enable --now docker
   # Oracle/Ubuntu images ship an iptables REJECT rule: open web ports for Caddy
