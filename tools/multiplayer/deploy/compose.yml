@@ -32,7 +32,6 @@ services:
     ports: ["80:80", "443:443", "443:443/udp"]
     environment:
       MC3_DOMAIN: ${MC3_DOMAIN}
-      MC3_EMAIL: ${MC3_EMAIL:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

@@ -10,7 +10,7 @@ datagrams, so a free-tier cloud machine is plenty. It needs no game files.
    add an `A` record for `@` pointing at the server's public IP (step 2 shows it).
 2. **Server.** Create an Ubuntu 24.04 machine at any cloud provider. Oracle Cloud's *Always Free* Ampere A1 is enough
    and costs nothing. Allow inbound TCP 80 and 443 (and UDP 443) in the provider's firewall or security list.
-   Paste [`cloud-init.yaml`](cloud-init.yaml) as its *user data*, after setting `MC3_DOMAIN` and `MC3_EMAIL` in it.
+   Paste [`cloud-init.yaml`](cloud-init.yaml) as its *user data*, after setting `MC3_DOMAIN` in it.
 3. **Publish a version.** Mark the commit the server should run:
 
    ```bash
@@ -42,5 +42,5 @@ Or set `MC3_SERVER=wss://mc3.top/ws` once and leave `-Server` off.
 
 ```bash
 cd tools/multiplayer/deploy
-MC3_DOMAIN=mc3.top MC3_EMAIL=you@example.com docker compose up -d --build
+MC3_DOMAIN=mc3.top docker compose up -d --build
 ```

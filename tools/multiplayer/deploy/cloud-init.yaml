@@ -1,6 +1,6 @@
 #cloud-config
 # MC3 online world: paste into "user data" / "cloud-init" when creating an Ubuntu 24.04 server (any cloud; Oracle
-# Cloud's Always Free tier is enough). Replace the two values in mc3.env below first. The server then installs
+# Cloud's Always Free tier is enough). Set MC3_DOMAIN in mc3.env below first (MC3_EMAIL is optional: Let's Encrypt expiry notices). The server then installs
 # Docker, fetches the relay from GitHub, gets an HTTPS certificate and starts. After that it looks after itself:
 # containers restart on crash and on reboot, the certificate renews, OS security updates install on their own,
 # accounts/clubs/rankings are backed up nightly, and it moves to a new relay version only when you move the
@@ -14,7 +14,7 @@ write_files:
     permissions: "0600"
     content: |
       MC3_DOMAIN=mc3.top
-      MC3_EMAIL=you@example.com
+      MC3_EMAIL=
       MC3_REPO=https://github.com/christiand0797/MidnightClub3-Port.git
       MC3_REF=relay-live
   - path: /usr/local/bin/mc3-update
