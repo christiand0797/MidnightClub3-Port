@@ -1,0 +1,348 @@
+[
+{
+"t": 0.0,
+"by": "host",
+"event": {
+"type": "RACE_CONFIG",
+"body": "000300010016ff04000000000a000001d1000500636972637569745c6d65645c73645f636972637569745f6d65645f62616c626f615f726163653033000100004e440200007dee800100000000000000010000000000cdcdcdcdcdcd0847020000000000",
+"dir": "out"
+}
+},
+{
+"t": 0.057,
+"by": "guest",
+"event": {
+"type": "RACE_CONFIG",
+"body": "000300010016ff04000000000a000001d1000500636972637569745c6d65645c73645f636972637569745f6d65645f62616c626f615f726163653033000100004e440200007dee800100000000000000010000000000cdcdcdcdcdcd0847020000000000",
+"dir": "in"
+}
+},
+{
+"t": 25.395,
+"by": "host",
+"event": {
+"type": "PHASE",
+"body": "05ff803f",
+"dir": "out"
+}
+},
+{
+"t": 25.442,
+"by": "guest",
+"event": {
+"type": "PHASE",
+"body": "05ff803f",
+"dir": "in"
+}
+},
+{
+"t": 29.051,
+"by": "host",
+"event": {
+"type": "PHASE",
+"body": "07fff280",
+"dir": "out"
+}
+},
+{
+"t": 29.095,
+"by": "guest",
+"event": {
+"type": "PHASE",
+"body": "07fff280",
+"dir": "in"
+}
+},
+{
+"t": 30.548,
+"by": "host",
+"event": {
+"type": "RACE_STATE",
+"body": "04000000",
+"state": 4,
+"dir": "out"
+}
+},
+{
+"t": 30.596,
+"by": "guest",
+"event": {
+"type": "RACE_STATE",
+"body": "04000000",
+"state": 4,
+"dir": "in"
+}
+},
+{
+"t": 33.563,
+"by": "host",
+"event": {
+"type": "RACE_STATE",
+"body": "05000000",
+"state": 5,
+"dir": "out"
+}
+},
+{
+"t": 33.61,
+"by": "guest",
+"event": {
+"type": "RACE_STATE",
+"body": "05000000",
+"state": 5,
+"dir": "in"
+}
+},
+{
+"t": 56.455,
+"by": "guest",
+"event": {
+"type": "CHECKPOINT",
+"body": "01000000be9fb64107320700",
+"dir": "out"
+}
+},
+{
+"t": 56.499,
+"by": "host",
+"event": {
+"type": "CHECKPOINT",
+"body": "01000000be9fb64107320700",
+"dir": "in"
+}
+},
+{
+"t": 56.519,
+"by": "host",
+"event": {
+"type": "CHECKPOINT",
+"body": "010007d0be9fb641b7410700",
+"dir": "out"
+}
+},
+{
+"t": 56.584,
+"by": "host",
+"event": {
+"type": "CHECKPOINT",
+"body": "00001d00ce20b841f7410700",
+"dir": "out"
+}
+},
+{
+"t": 56.607,
+"by": "guest",
+"event": {
+"type": "CHECKPOINT",
+"body": "010007d0be9fb641b7410700",
+"dir": "in"
+}
+},
+{
+"t": 56.639,
+"by": "guest",
+"event": {
+"type": "CHECKPOINT",
+"body": "00001d00ce20b841f7410700",
+"dir": "in"
+}
+},
+{
+"t": 64.691,
+"by": "guest",
+"event": {
+"type": "CHECKPOINT",
+"body": "01010000917df84130520700",
+"dir": "out"
+}
+},
+{
+"t": 64.744,
+"by": "host",
+"event": {
+"type": "CHECKPOINT",
+"body": "01010000917df84130520700",
+"dir": "in"
+}
+},
+{
+"t": 64.759,
+"by": "host",
+"event": {
+"type": "CHECKPOINT",
+"body": "010107d0917df841f0610700",
+"dir": "out"
+}
+},
+{
+"t": 64.863,
+"by": "guest",
+"event": {
+"type": "CHECKPOINT",
+"body": "010107d0917df841f0610700",
+"dir": "in"
+}
+},
+{
+"t": 65.367,
+"by": "host",
+"event": {
+"type": "CHECKPOINT",
+"body": "00011d00b767fe4148640700",
+"dir": "out"
+}
+},
+{
+"t": 65.445,
+"by": "guest",
+"event": {
+"type": "CHECKPOINT",
+"body": "00011d00b767fe4148640700",
+"dir": "in"
+}
+},
+{
+"t": 77.489,
+"by": "guest",
+"event": {
+"type": "CHECKPOINT",
+"body": "0102000041732f4231840700",
+"dir": "out"
+}
+},
+{
+"t": 77.531,
+"by": "host",
+"event": {
+"type": "CHECKPOINT",
+"body": "0102000041732f4231840700",
+"dir": "in"
+}
+},
+{
+"t": 77.546,
+"by": "host",
+"event": {
+"type": "CHECKPOINT",
+"body": "010207d041732f42df930700",
+"dir": "out"
+}
+},
+{
+"t": 77.648,
+"by": "guest",
+"event": {
+"type": "CHECKPOINT",
+"body": "010207d041732f42df930700",
+"dir": "in"
+}
+},
+{
+"t": 78.542,
+"by": "host",
+"event": {
+"type": "CHECKPOINT",
+"body": "00021d0083ef3342c7970700",
+"dir": "out"
+}
+},
+{
+"t": 78.611,
+"by": "guest",
+"event": {
+"type": "CHECKPOINT",
+"body": "00021d0083ef3342c7970700",
+"dir": "in"
+}
+},
+{
+"t": 82.185,
+"by": "guest",
+"event": {
+"type": "CHECKPOINT",
+"body": "01030000e30c3d4279910700",
+"dir": "out"
+}
+},
+{
+"t": 82.187,
+"by": "guest",
+"event": {
+"type": "CHECKPOINT",
+"body": "01030000e30c3d4279910700",
+"dir": "out"
+}
+},
+{
+"t": 82.255,
+"by": "host",
+"event": {
+"type": "CHECKPOINT",
+"body": "01030000e30c3d4279910700",
+"dir": "in"
+}
+},
+{
+"t": 82.256,
+"by": "host",
+"event": {
+"type": "CHECKPOINT",
+"body": "01030000e30c3d4279910700",
+"dir": "in"
+}
+},
+{
+"t": 82.274,
+"by": "host",
+"event": {
+"type": "CHECKPOINT",
+"body": "010307d0e30c3d425ba60700",
+"dir": "out"
+}
+},
+{
+"t": 82.345,
+"by": "guest",
+"event": {
+"type": "CHECKPOINT",
+"body": "010307d0e30c3d425ba60700",
+"dir": "in"
+}
+},
+{
+"t": 227.546,
+"by": "host",
+"event": {
+"type": "PHASE",
+"body": "09ff2183",
+"dir": "out"
+}
+},
+{
+"t": 227.596,
+"by": "guest",
+"event": {
+"type": "PHASE",
+"body": "09ff2183",
+"dir": "in"
+}
+},
+{
+"t": 232.282,
+"by": "host",
+"event": {
+"type": "PHASE",
+"body": "03fff280",
+"dir": "out"
+}
+},
+{
+"t": 232.326,
+"by": "guest",
+"event": {
+"type": "PHASE",
+"body": "03fff280",
+"dir": "in"
+}
+}
+]

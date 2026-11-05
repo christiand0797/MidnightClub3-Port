@@ -25,8 +25,9 @@ NAMES = {
     0x67: "MIGRATE_HOST_INDEX", 0x68: "HOST_DONE_WAITING_FOR_PEERS",
 }
 RACE_CONFIG, GAME_STATE, RACE_STATE, CHECKPOINT, PLAYER_SCORE = 0x43, 0x49, 0x4A, 0x4C, 0x66
+PHASE = 0x09  # unnamed host -> guests session phase, byte 0: 05 loading, 07 ready, 09 leaving race, 03 lobby
 RACE_COUNTDOWN, RACE_STARTED = 4, 5    # RACE_STATE body (u32): countdown, then racing
-EVENT_TYPES = {RACE_CONFIG, GAME_STATE, RACE_STATE, CHECKPOINT, PLAYER_SCORE}  # reported to the relay
+EVENT_TYPES = {RACE_CONFIG, GAME_STATE, RACE_STATE, CHECKPOINT, PLAYER_SCORE, PHASE}  # reported to the relay
 
 
 def messages(datagram):
@@ -48,7 +49,7 @@ def race_events(datagram):
     """The messages worth reporting: race setup, race state, checkpoints and scores."""
     for typ, mid, body in messages(datagram):
         if typ in EVENT_TYPES:
-            event = {"type": NAMES[typ], "body": body.hex()}
+            event = {"type": NAMES.get(typ, "PHASE"), "body": body.hex()}
             if typ == RACE_STATE and len(body) >= 4:
                 event["state"] = struct.unpack_from("<I", body)[0]
             yield event

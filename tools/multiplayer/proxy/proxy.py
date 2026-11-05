@@ -265,6 +265,13 @@ class Proxy:
                         peer = self.peers.pop(msg.get('id'), None)
                         if peer:
                             self.peer_names.pop(peer, None)
+                    elif kind == 'points':
+                        print(f"[proxy] race counted: +{msg.get('earned')} points ({msg.get('points')} total)", flush=True)
+                    elif kind == 'race_result':
+                        place = msg.get('place')
+                        suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(place, 'th')
+                        print(f"[proxy] finished {place}{suffix} of {msg.get('of')}: +{msg.get('earned')} points "
+                              f"({msg.get('points')} total)", flush=True)
                     elif kind == 'error':
                         print(f"[proxy] relay error: {msg.get('error')}", flush=True)
             finally:
@@ -344,7 +351,7 @@ def main():
     parser.add_argument('--relay', default='ws://localhost:8080', help='relay WebSocket URL')
     parser.add_argument('--instance', type=int, default=0, help='game instance (mc3.exe --instance N)')
     parser.add_argument('--proxy-udp', type=int, help='UDP port to receive from the game (default 30741 + instance)')
-    parser.add_argument('--game-udp', type=int, default=3074, help='fallback game UDP port')
+    parser.add_argument('--game-udp', type=int, default=1000, help="the game's System Link UDP port (MC3 uses 1000); used until the game's first datagram names it")
     room = parser.add_mutually_exclusive_group()
     room.add_argument('--room', default='', help='room name; empty = the Main Lobby (everyone online)')
     room.add_argument('--join', help='join this relay game id')

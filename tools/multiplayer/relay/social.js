@@ -12,6 +12,7 @@
 // positions are not scored yet: the game's CHECKPOINT/PLAYER_SCORE bodies have not been decoded, so the raw messages
 // players' tunnels report are kept (research log) to decode them from real races.
 const crypto = require('crypto');
+const { RaceResults } = require('./race_results');
 // fs/path only for the Node relay's file storage; the Cloudflare worker passes load/store instead
 const nodeFs = () => ({ fs: require('fs'), path: require('path') });
 
@@ -67,6 +68,7 @@ class Social {
       catch (e) { if (e.code !== 'ENOENT') throw e; }
     }
     this.races = new Map();   // room -> { at, reporters: Set, confirmed }
+    this.results = new RaceResults(now);  // finishing places from checkpoints (race_results.js)
     this.timer = null;
   }
 
@@ -220,6 +222,13 @@ class Social {
     this.state.research.push({ t: now, room: client.gameId, by: this.key(client), ...e });
     if (this.state.research.length > RESEARCH_KEEP) this.state.research.splice(0, this.state.research.length - RESEARCH_KEEP);
     this.save();
+    this.results.event(client.gameId, this.key(client), client, e, (key, c, place, of, earned) => {
+      const p = c && this.player(c);
+      if (!p) return;
+      p.points += earned; p.wins = (p.wins || 0) + (place === 1 ? 1 : 0);
+      ctx.sendTo(c, { type: 'race_result', place, of, earned, points: p.points, provisional: true });
+      this.save();
+    });
     if (e.type !== 'RACE_STATE' || e.state !== 5) return;
     let race = this.races.get(client.gameId);
     if (!race || now - race.at > (race.confirmed ? RACE_COOLDOWN_MS : RACE_WINDOW_MS)) {
