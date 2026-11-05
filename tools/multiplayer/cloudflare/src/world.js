@@ -7,6 +7,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { validateMessage } from '../../relay/transport_security.js';
 import { Social } from '../../relay/social.js';
+import { Accounts } from './accounts.js';
 
 const MAIN_ID = 'main';
 const MAX_PER_ADDRESS = 16;          // connections from one address (as the Node relay)
@@ -29,6 +30,9 @@ export class World extends DurableObject {
     this.rooms = new Map();          // id -> { id, name, listed, open, maxPlayers, hostId, status }
     this.roomsDirty = false;
     this.social = null;
+    // Accounts and cloud saves live in this object's SQLite (absent in the unit-test stub).
+    this.accounts = ctx.storage.sql ? new Accounts(ctx.storage.sql) : null;
+    if (this.accounts) this.accounts.transactionSync = fn => ctx.storage.transactionSync(fn);
     ctx.blockConcurrencyWhile(async () => {
       const rooms = await ctx.storage.get('rooms');
       if (rooms) for (const r of rooms) this.rooms.set(r.id, r);
@@ -68,6 +72,10 @@ export class World extends DurableObject {
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === '/api/games') return Response.json({ games: this.listing() });
+    if (url.pathname.startsWith('/api/')) {
+      const answer = this.accounts && await this.accounts.handle(request);
+      return answer || Response.json({ error: 'Not found.' }, { status: 404 });
+    }
     if (url.pathname !== '/ws' || request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('WebSocket expected', { status: 426 });
     const origin = request.headers.get('Origin');
     if (origin !== null && origin !== url.origin) return new Response('Origin refused', { status: 403 });
@@ -146,10 +154,16 @@ export class World extends DurableObject {
         this.send(ws, { type: 'auth_ok', user: { id: me.userId, username: me.username } });
         break;
       }
-      case 'auth':
-        this.send(ws, { type: 'error', error: 'Accounts are not available on this server yet; play as a guest.' });
-        ws.close(1008, 'Accounts unavailable');
+      case 'auth': {
+        if (me.id) return this.send(ws, { type: 'error', error: 'Already authenticated' });
+        const v = this.accounts && await this.accounts.verifyToken(data.token);
+        if (!v) { this.send(ws, { type: 'error', error: 'Invalid token' }); return ws.close(1008, 'Invalid token'); }
+        me = { ...this.info(ws), id: crypto.randomUUID(), userId: v.id, username: v.username, sid: v.sid,
+          type: data.clientType || 'browser', gameId: null };
+        this.setInfo(ws, me);
+        this.send(ws, { type: 'auth_ok', user: { id: v.id, username: v.username } });
         break;
+      }
       case 'list':
         if (me.id) this.gameList(ws);
         break;

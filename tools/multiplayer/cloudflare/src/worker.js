@@ -12,10 +12,8 @@ export default {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('WebSocket expected', { status: 426 });
       return world().fetch(request);
     }
-    if (url.pathname === '/api/games' && request.method === 'GET') return world().fetch(request);
-    if (url.pathname.startsWith('/api/')) {
-      return Response.json({ error: 'Accounts and cloud saves are not available on this server yet.' }, { status: 501 });
-    }
+    // Lobby listing, accounts (register/login/session/logout/profile) and cloud saves all live in the World.
+    if (url.pathname.startsWith('/api/')) return world().fetch(request);
     return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Not found', { status: 404 });
   }
 };
