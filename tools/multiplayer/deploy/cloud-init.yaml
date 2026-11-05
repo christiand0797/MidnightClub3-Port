@@ -1,0 +1,78 @@
+#cloud-config
+# MC3 online world: paste into "user data" / "cloud-init" when creating an Ubuntu 24.04 server (any cloud; Oracle
+# Cloud's Always Free tier is enough). Replace the two values in mc3.env below first. The server then installs
+# Docker, fetches the relay from GitHub, gets an HTTPS certificate and starts. After that it looks after itself:
+# containers restart on crash and on reboot, the certificate renews, OS security updates install on their own,
+# accounts/clubs/rankings are backed up nightly, and it moves to a new relay version only when you move the
+# `relay-live` git tag (checked every hour).
+package_update: true
+package_upgrade: true
+packages: [ca-certificates, curl, git, unattended-upgrades]
+
+write_files:
+  - path: /etc/mc3/mc3.env
+    permissions: "0600"
+    content: |
+      MC3_DOMAIN=mc3.top
+      MC3_EMAIL=you@example.com
+      MC3_REPO=https://github.com/christiand0797/MidnightClub3-Port.git
+      MC3_REF=relay-live
+  - path: /usr/local/bin/mc3-update
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      # fetch only the multiplayer folder at MC3_REF; rebuild and restart when it moved
+      set -eu
+      . /etc/mc3/mc3.env
+      export MC3_DOMAIN MC3_EMAIL
+      cd /opt/mc3
+      if [ ! -d .git ]; then
+        git init -q && git remote add origin "$MC3_REPO"
+        git sparse-checkout set tools/multiplayer
+      fi
+      before=$(git rev-parse -q --verify HEAD || echo none)
+      git fetch -q --depth 1 origin "refs/tags/$MC3_REF:refs/tags/$MC3_REF" 2>/dev/null \
+        || git fetch -q --depth 1 origin "$MC3_REF"
+      git checkout -q --force FETCH_HEAD 2>/dev/null || git checkout -q --force "$MC3_REF"
+      after=$(git rev-parse HEAD)
+      cd tools/multiplayer/deploy
+      if [ "$before" != "$after" ] || [ -z "$(docker compose ps -q relay 2>/dev/null)" ]; then
+        docker compose up -d --build --remove-orphans
+        docker image prune -f >/dev/null
+        echo "mc3: running $after"
+      fi
+  - path: /etc/systemd/system/mc3-update.service
+    content: |
+      [Unit]
+      Description=MC3 relay update check
+      After=docker.service network-online.target
+      Wants=network-online.target
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/mc3-update
+  - path: /etc/systemd/system/mc3-update.timer
+    content: |
+      [Unit]
+      Description=MC3 relay update check, hourly and at boot
+      [Timer]
+      OnBootSec=2min
+      OnUnitActiveSec=1h
+      Persistent=true
+      [Install]
+      WantedBy=timers.target
+  - path: /etc/apt/apt.conf.d/52mc3-reboot
+    content: |
+      Unattended-Upgrade::Automatic-Reboot "true";
+      Unattended-Upgrade::Automatic-Reboot-Time "05:30";
+
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - systemctl enable --now docker
+  # Oracle/Ubuntu images ship an iptables REJECT rule: open web ports for Caddy
+  - iptables -I INPUT -p tcp -m multiport --dports 80,443 -j ACCEPT || true
+  - iptables -I INPUT -p udp --dport 443 -j ACCEPT || true
+  - sh -c 'command -v netfilter-persistent >/dev/null && netfilter-persistent save || true'
+  - mkdir -p /opt/mc3
+  - /usr/local/bin/mc3-update
+  - systemctl daemon-reload
+  - systemctl enable --now mc3-update.timer

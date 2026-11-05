@@ -1,0 +1,53 @@
+# MC3 online world on one small cloud server. Everything restarts on its own, survives reboots, renews its
+# HTTPS certificate, rotates its logs and backs itself up. Run from tools/multiplayer/deploy:
+#   MC3_DOMAIN=mc3.top docker compose up -d --build
+name: mc3
+
+services:
+  relay:
+    build: { context: .., dockerfile: deploy/Dockerfile }
+    restart: always
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 768m
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    environment:
+      PUBLIC_ORIGIN: https://${MC3_DOMAIN:?set MC3_DOMAIN}
+      MAIN_LOBBY: ${MC3_MAIN_LOBBY:-Main Lobby}
+      MAX_PLAYERS: "0"          # rooms have no player cap
+      RELAY_TRUST_PROXY: "1"    # each player is limited by their own address, not Caddy's
+      GAME_TIMEOUT: "3600"
+    volumes: ["data:/data"]
+    expose: ["8080"]
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "5" } }
+
+  # HTTPS on the domain (Let's Encrypt, renewed automatically) in front of the relay, WebSockets included
+  caddy:
+    image: caddy:2.8-alpine
+    restart: always
+    depends_on: [relay]
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      MC3_DOMAIN: ${MC3_DOMAIN}
+      MC3_EMAIL: ${MC3_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+
+  # a snapshot of accounts, clubs and rankings every night at 04:00 UTC; the last 14 are kept
+  backup:
+    image: alpine:3.20
+    restart: always
+    volumes: ["data:/data:ro", "./backups:/backups"]
+    command: >
+      sh -c 'echo "0 4 * * * tar czf /backups/mc3-$$(date +\%Y\%m\%d).tgz -C /data . && ls -1t /backups/mc3-*.tgz | tail -n +15 | xargs -r rm -f" > /etc/crontabs/root && crond -f -l 8'
+
+volumes:
+  data:
+  caddy-data:
+  caddy-config:

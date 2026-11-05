@@ -32,11 +32,27 @@ class TokenBucket {
     return true;
   }
 }
-function ipFromRequest(request) {
-  let ip = request && request.socket && request.socket.remoteAddress;
-  if (typeof ip !== 'string') return 'unknown';
+// RELAY_TRUST_PROXY=1 (deploy/compose.yml, behind Caddy): a request from a private/loopback peer (the proxy) is
+// keyed by the last X-Forwarded-For entry, the address the proxy itself saw. Without it, or from a public peer,
+// the forwarded header is ignored, so nobody can pick their own address.
+function privateAddress(ip) {
+  return /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(ip) || ip === '::1' || /^f[cd]/i.test(ip);
+}
+function normalIp(ip) {
+  if (typeof ip !== 'string') return null;
+  ip = ip.trim();
   if (ip.startsWith('::ffff:') && isIP(ip.slice(7)) === 4) ip = ip.slice(7);
-  return isIP(ip) ? ip.toLowerCase() : 'unknown';
+  return isIP(ip) ? ip.toLowerCase() : null;
+}
+function ipFromRequest(request, trustProxy = process.env.RELAY_TRUST_PROXY === '1') {
+  const peer = normalIp(request && request.socket && request.socket.remoteAddress);
+  if (!peer) return 'unknown';
+  if (trustProxy && privateAddress(peer)) {
+    const fwd = request.headers && request.headers['x-forwarded-for'];
+    const last = typeof fwd === 'string' ? normalIp(fwd.split(',').pop()) : null;
+    if (last) return last;
+  }
+  return peer;
 }
 function plain(value) { return value !== null && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype; }
 function text(value, max, min = 1) { return typeof value === 'string' && value.length >= min && value.length <= max && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value); }

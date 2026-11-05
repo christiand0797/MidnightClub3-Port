@@ -142,7 +142,8 @@ function verifyToken(token) {
 // ---------- Express App ----------
 const app = express();
 app.disable('x-powered-by');
-app.set('trust proxy', false); // Rate limits use the direct peer, never an untrusted forwarded address.
+// Rate limits use the direct peer, or behind deploy/compose.yml's Caddy (RELAY_TRUST_PROXY=1) the address it saw.
+app.set('trust proxy', process.env.RELAY_TRUST_PROXY === '1' ? 'loopback, linklocal, uniquelocal' : false);
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');

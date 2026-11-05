@@ -151,3 +151,12 @@ test('outbound backpressure, send/ping failures and chat flood are contained', (
   const third = f.socket('third'); third.ping = () => { throw Error('ping'); };
   f.advance(30000); f.security.tick(); assert.equal(third.terminated, 1);
 });
+test('behind a trusted proxy each player keeps their own address, and nobody else can choose one', () => {
+  const { ipFromRequest } = require('./transport_security');
+  const r = (peer, fwd) => ({ socket: { remoteAddress: peer }, headers: fwd ? { 'x-forwarded-for': fwd } : {} });
+  assert.equal(ipFromRequest(r('172.18.0.3', '203.0.113.9'), true), '203.0.113.9');
+  assert.equal(ipFromRequest(r('172.18.0.3', '1.1.1.1, 203.0.113.9'), true), '203.0.113.9');  // the proxy's own entry
+  assert.equal(ipFromRequest(r('198.51.100.7', '203.0.113.9'), true), '198.51.100.7');        // a public peer can't forge
+  assert.equal(ipFromRequest(r('172.18.0.3', '203.0.113.9'), false), '172.18.0.3');           // off unless configured
+  assert.equal(ipFromRequest(r('172.18.0.3', 'garbage'), true), '172.18.0.3');
+});
