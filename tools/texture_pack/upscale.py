@@ -325,6 +325,8 @@ def main():
     sys.path.insert(0, str(Path(__file__).parent))  # -I leaves this folder off the path
     import train_windows  # the trains' windows: passengers behind glass instead of holes (train_windows.py)
     train_windows.main(["--textures", str(args.textures)])
+    import crisp_fonts  # menu/HUD font sheets: smooth glyph edges instead of upscaled pixel stairs (crisp_fonts.py)
+    crisp_fonts.main(["--textures", str(args.textures)])
     return 1 if failed else 0
 
 

@@ -288,6 +288,9 @@ void Quality(Settings& s) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Full: textures always reach their sharpest level, with 16x anisotropic filtering.\n"
                           "Max: only the sharpest level at any distance; distant textures may shimmer.");
+    Slider("Menu panel detail", &s.graphics.offscreen_scale, 1, 3, "%.1fx",
+           "Resolution of what the game draws offscreen and shows on 3D boards (the Networking and garage menu\n"
+           "panels, reflections), times the render scale. 1x as before; 2x sharpens the menus. Higher costs GPU memory.");
     const char* aa[] = {"Off", "FXAA"};
     int m = int(std::min<uint32_t>(s.graphics.aa, 1));
     if (ImGui::Combo("Anti-aliasing", &m, aa, 2)) {

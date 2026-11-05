@@ -58,6 +58,9 @@ struct Settings {
         // anisotropic; 2 max: only the sharpest mip, whatever the distance (may shimmer)
         uint32_t texture_detail = 1;
         bool hd_movies = true;      // video_hd/<path>.mp4 shown in place of a Bink movie the title plays
+        // extra resolution, times the render scale, for render targets not shaped like the frame: the menu panels
+        // the game draws offscreen and maps onto 3D boards (Networking, garage), reflections; 1 as before .. 3
+        float offscreen_scale = 2.0f;
         float lod = 1.0f;           // model LOD switch, prop cull and far clip distances, times (lod.cpp)
         float fov_scale = 1.0f;     // the driving camera's vertical field of view, times (fov.cpp)
         // enhanced car paint (gpu/car_paint.h): per-pixel lighting and clearcoat highlights for cars, off as the console

@@ -1129,6 +1129,7 @@ private:
     uint32_t bb_w_ = 0;
     uint32_t bb_h_ = 0;
     float scale_ = 1.0f;
+    float offscreen_ = 1.0f;  // graphics.offscreen_scale: targets not shaped like the frame, times scale_
     app::Mode scene_{640, 480};
     bool allocation_failed_ = false;  // one allocation failure per selection; UI continues on the swap chain
     bool post_failed_ = false;
@@ -1455,6 +1456,7 @@ void D3D12Backend::CreateGammaLut() {
 void D3D12Backend::LoadSettings() {
     scene_ = app::RenderResolution();
     scale_ = app::RenderScale(guest_h_);
+    offscreen_ = std::clamp(app::Get().graphics.offscreen_scale, 1.0f, 3.0f);
     texturedumper::Update();
     ext_ = g_extension.get();
     if (ext_) {
@@ -1626,9 +1628,10 @@ bool D3D12Backend::CreateTargetResource(Target& t, const Surface& s) {
     if (ext_) ext_->MakeTarget(s, t.depth, t.gw, t.gh, sc, t.fmt);
     app::Mode size = std::fabs(sc - scale_) > 1e-4f
                          ? app::resolution::Scale({t.gw, t.gh}, sc)
-                         : app::resolution::Target({t.gw, t.gh}, {guest_w_, guest_h_}, scene_, sc);
+                         : app::resolution::Target({t.gw, t.gh}, {guest_w_, guest_h_}, scene_, sc * offscreen_);
     t.w = size.width;
     t.h = size.height;
+    LOG_FIRST(64, "d3d12: target %08X %ux%u -> %ux%u%s", s.data, t.gw, t.gh, t.w, t.h, t.depth ? " depth" : "");
     D3D12_HEAP_PROPERTIES hp{D3D12_HEAP_TYPE_DEFAULT};
     D3D12_RESOURCE_DESC td = Texture2DDesc(DXGI_FORMAT_UNKNOWN, t.w, t.h);
     D3D12_CLEAR_VALUE cv{};
@@ -5739,12 +5742,14 @@ void D3D12Backend::ApplySettings() {
     std::lock_guard lock(app::UiLock());
     app::Mode scene = app::RenderResolution();
     float want = app::RenderScale(guest_h_);
+    float off = std::clamp(app::Get().graphics.offscreen_scale, 1.0f, 3.0f);
     bool remake = ext_ && ext_->Settings();
-    if (scene != scene_ || std::fabs(want - scale_) > 1e-4f || remake) {
+    if (scene != scene_ || std::fabs(want - scale_) > 1e-4f || std::fabs(off - offscreen_) > 1e-4f || remake) {
         Flush();
         for (auto& [key, tg] : targets_) (tg.depth ? free_dsv_ : free_rtv_).push_back(tg.view);
         targets_.clear();
         scale_ = want;
+        offscreen_ = off;
         scene_ = scene;
         allocation_failed_ = false;
         post_failed_ = false;

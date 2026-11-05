@@ -88,6 +88,7 @@ std::vector<GraphicsField> GraphicsFields(Settings::Graphics& g) {
         {"texture_dump", nullptr, &g.texture_dump, nullptr, 0, 1},
         {"texture_detail", nullptr, nullptr, &g.texture_detail, 0, 2},
         {"hd_movies", nullptr, &g.hd_movies, nullptr, 0, 1},
+        {"offscreen_scale", &g.offscreen_scale, nullptr, nullptr, 1, 3},
         {"lod", &g.lod, nullptr, nullptr, 0.25f, 4},
         {"fov_scale", &g.fov_scale, nullptr, nullptr, 0.5f, 2},
         {"car_paint", nullptr, &g.car_paint, nullptr, 0, 1},
