@@ -29,6 +29,8 @@ import time
 
 import websockets
 
+import mcnet
+
 MAGIC = b'MC3P'           # legacy 8-byte header, game -> proxy only
 RELAY_MAGIC = b'MC3R'     # 12-byte header, both directions
 HEADER_SIZE = 8
@@ -39,13 +41,15 @@ MAX_PEER = 254
 
 class Proxy:
     def __init__(self, relay_url, proxy_udp_port, game_udp_port, room=None, join_id=None, name=None,
-                 verbose=False, game_ip='127.0.0.1'):
+                 verbose=False, game_ip='127.0.0.1', record=None):
         self.relay_url = relay_url
         self.proxy_udp_port = proxy_udp_port
         self.game_udp_port = game_udp_port  # fallback target port when a datagram names none
         self.room = room
         self.join_id = join_id
         self.verbose = verbose
+        self.event_window, self.event_budget = 0.0, 20
+        self.record = open(record, 'a', encoding='ascii') if record else None  # --record: every datagram, hex
         self.ws = None
         self.udp_sock = None
         self.game_port = None   # the game's socket port, learned from its datagrams
@@ -121,6 +125,8 @@ class Proxy:
             self.game_port, self.game_ip = src_port, addr[0]
             if not payload or not self.ws:
                 continue
+            self.note('out', peer, src_port, dst_port, payload)
+            self.report_events('out', payload)
             envelope = {'type': 'input', 'data': json.dumps({
                 'payload': base64.b64encode(payload).decode('ascii'),
                 'src_port': src_port, 'dst_port': dst_port, 't': time.time() * 1000})}
@@ -135,6 +141,26 @@ class Proxy:
                          f"{src_port}->{dst_port}")
             except Exception as e:
                 print(f"[proxy] relay send error: {e}", flush=True)
+
+    def report_events(self, direction, payload):
+        """The game's race setup/state/checkpoint/score messages, to the relay (rankings, see mcnet.py)."""
+        if not self.ws or not self.game_id:
+            return
+        now = time.time()
+        if now - self.event_window > 1:
+            self.event_window, self.event_budget = now, 20
+        for event in mcnet.race_events(payload):
+            if self.event_budget <= 0:
+                return
+            self.event_budget -= 1
+            event['dir'] = direction
+            asyncio.ensure_future(self.ws.send(json.dumps({'type': 'race_event', 'event': event})))
+
+    def note(self, direction, peer, src_port, dst_port, payload):
+        if self.record:
+            self.record.write(json.dumps({'t': round(time.time(), 3), 'dir': direction, 'peer': peer,
+                                          'src': src_port, 'dst': dst_port, 'hex': payload.hex()}) + chr(10))
+            self.record.flush()
 
     # ---- relay -> game ----
     def deliver(self, name, payload, src_port, dst_port):
@@ -166,6 +192,8 @@ class Proxy:
             return
         self.incoming.put_nowait({'from': src, 'payload': payload, 'src_port': src_port, 'dst_port': dst_port,
                                   'send_ts': send_ts, 'recv_ts': time.time() * 1000})
+        self.note('in', self.peers.get(peer_id, 0), src_port, dst_port, payload)
+        self.report_events('in', payload)
         self.deliver(peer_id, payload, src_port, dst_port)
 
     async def enter_room(self, ws):
@@ -265,10 +293,11 @@ def main():
     room.add_argument('--join', help='join this relay game id')
     parser.add_argument('--name', help='name shown to the other players')
     parser.add_argument('--verbose', action='store_true', help='log every datagram')
+    parser.add_argument('--record', help='append every datagram (hex, JSON lines) to this file, for protocol work')
     args = parser.parse_args()
     port = args.proxy_udp or BASE_PORT + args.instance
     proxy = Proxy(args.relay, port, args.game_udp, room=None if args.join else args.room, join_id=args.join,
-                  name=args.name, verbose=args.verbose,
+                  name=args.name, verbose=args.verbose, record=args.record,
                   game_ip=f'127.0.0.{args.instance}' if args.instance else '127.0.0.1')
     try:
         asyncio.run(proxy.run())

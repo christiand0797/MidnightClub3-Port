@@ -16,6 +16,7 @@ const DEFAULTS = Object.freeze({
   authTimeoutMs: 15000, heartbeatMs: 30000, pongTimeoutMs: 30000, closeGraceMs: 5000,
   maxRooms: 128, maxRoomsPerUser: 2, maxPlayers: 8, maxSpectators: 16, maxRoomConnections: 48,
 });
+const { validateSocial } = require('./social');
 const ok = value => ({ ok: true, ...value });
 const no = (reason, code = 1008) => ({ ok: false, reason, code });
 
@@ -69,11 +70,13 @@ function safeTree(value) {
   }
   return true;
 }
-function validateRoomRequest(value, maxPlayers = DEFAULTS.maxPlayers) {
+// maxPlayers 0 (the default) is a room with no player cap; a host may still choose a cap for their own room.
+// The server-wide connection limits are the only ceiling on how many people can be online together.
+function validateRoomRequest(value, maxPlayers = 0) {
   if (!plain(value) || !text(value.name, 50) || !value.name.trim()) return no('Invalid room name');
   const count = value.maxPlayers === undefined ? maxPlayers : value.maxPlayers;
   const region = value.region === undefined ? 'global' : value.region;
-  if (!Number.isInteger(count) || count < 1 || count > maxPlayers || !text(region, 32)) return no('Invalid room capacity or region');
+  if (!Number.isInteger(count) || count < 0 || count > 100000 || !text(region, 32)) return no('Invalid room capacity or region');
   return ok({ room: { name: value.name.trim(), maxPlayers: count, region } });
 }
 function validateMessage(value, maxPlayers) {
@@ -91,7 +94,7 @@ function validateMessage(value, maxPlayers) {
           (value.clientType !== undefined && !['browser', 'game'].includes(value.clientType))) return no('Invalid join message');
       return ok({ message: { type: 'join', name: value.name.trim(), clientType: value.clientType || 'browser' } });
     case 'create_game': {
-      const checked = validateRoomRequest(value, maxPlayers);
+      const checked = validateRoomRequest(value, 0);
       return checked.ok ? ok({ message: { type: value.type, ...checked.room } }) : checked;
     }
     case 'join_game':
@@ -116,7 +119,10 @@ function validateMessage(value, maxPlayers) {
     case 'ping':
       if (value.ts !== undefined && (!Number.isSafeInteger(value.ts) || value.ts < 0)) return no('Invalid ping timestamp');
       return ok({ message: { type: value.type, ts: value.ts } });
-    default: return no('Unsupported message type');
+    default: {
+      const social = validateSocial(value);  // presence, car clubs, club chat, leaderboards, race events (social.js)
+      return social ? ok({ message: social }) : no('Unsupported message type');
+    }
   }
 }
 
@@ -198,7 +204,7 @@ class TransportSecurity {
     return ok();
   }
   createRoom(ws, roomId, request) {
-    const state = this.sockets.get(ws), checked = validateRoomRequest(request, this.limits.maxPlayers);
+    const state = this.sockets.get(ws), checked = validateRoomRequest(request, 0);
     if (!state || !state.userId || state.closingAt !== null || state.roomId || !identifier(roomId) || !checked.ok) return no('Invalid room creation');
     if (this.rooms.has(roomId) || this.rooms.size >= this.limits.maxRooms) return no('Room quota exceeded');
     let owned = 0; for (const room of this.rooms.values()) if (room.createdBy === state.userId) owned++;
@@ -220,7 +226,7 @@ class TransportSecurity {
     const state = this.sockets.get(ws), room = this.rooms.get(roomId);
     if (!state || !state.userId || state.closingAt !== null || !room || typeof spectator !== 'boolean') return no('Room unavailable');
     if (state.roomId) return state.roomId === roomId && state.spectator === spectator ? ok() : no('Leave the current room first');
-    if (room.open) { room.members.set(ws, { userId: state.userId, spectator }); state.roomId = roomId; state.spectator = spectator; return ok(); }
+    if (!spectator && (room.open || !room.maxPlayers)) { room.members.set(ws, { userId: state.userId, spectator }); state.roomId = roomId; state.spectator = spectator; return ok(); }
     if (room.members.size >= this.limits.maxRoomConnections) return no('Room connection quota exceeded');
     const users = new Set(), watchers = new Set();
     for (const row of room.members.values()) (row.spectator ? watchers : users).add(row.userId);

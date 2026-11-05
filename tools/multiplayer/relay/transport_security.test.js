@@ -85,9 +85,10 @@ test('message schemas reject unknown types, prototype keys, infinities, excessiv
     JSON.parse('{"type":"input","data":{"__proto__":{}}}')]) assert.equal(validateMessage(data, 8).ok, false);
   let deep = {}; for (let i = 0; i < 12; ++i) deep = { child: deep };
   assert.equal(validateMessage({ type: 'input', data: deep }, 8).ok, false);
-  assert.equal(validateRoomRequest({ name: 'room', maxPlayers: 9 }, 8).ok, false);
-  assert.equal(validateRoomRequest({ name: 1, maxPlayers: 1 }, 8).ok, false);
-  assert.deepEqual(validateRoomRequest({ name: ' room ' }, 8).room, { name: 'room', maxPlayers: 8, region: 'global' });
+  assert.equal(validateRoomRequest({ name: 'room', maxPlayers: 64 }).ok, true);    // no ceiling on a host's own cap
+  assert.equal(validateRoomRequest({ name: 'room', maxPlayers: -1 }).ok, false);
+  assert.equal(validateRoomRequest({ name: 1, maxPlayers: 1 }).ok, false);
+  assert.deepEqual(validateRoomRequest({ name: ' room ' }).room, { name: 'room', maxPlayers: 0, region: 'global' });  // 0: no player cap
 });
 test('authentication deadline and repeated auth cannot be bypassed between heartbeat ticks', () => {
   const f = fixture(); const ws = f.socket(null);

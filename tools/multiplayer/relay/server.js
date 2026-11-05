@@ -13,7 +13,7 @@
 //   JWT_SECRET        Secret for signing JWT tokens
 //   DATA_DIR          Path to data directory (default ./data)
 //   CORS_ORIGIN       Allowed CORS origin (default * for dev)
-//   MAX_PLAYERS       Max players per game (default 8)
+//   MAX_PLAYERS       Default player cap for a new room (default 0: no cap)
 //   GAME_TIMEOUT      Seconds before idle game is removed (default 3600)
 //   MAIN_LOBBY        Name of the always-open lobby every game joins by default (default "Main Lobby")
 
@@ -30,6 +30,7 @@ const path = require('path');
 const fs = require('fs');
 const { installAccountRoutes, atomicJson } = require('./account_service');
 const { TransportSecurity, validateRoomRequest, originAllowed } = require('./transport_security');
+const { Social } = require('./social');
 
 // ---------- Configuration ----------
 const PORT = parseInt(process.env.RELAY_PORT, 10) || 8080;
@@ -41,11 +42,12 @@ if (!process.env.JWT_SECRET && !fs.existsSync(secretFile))
 const JWT_SECRET = process.env.JWT_SECRET || fs.readFileSync(secretFile, 'utf8').trim();
 if (JWT_SECRET.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters.');
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '';
-const MAX_PLAYERS = parseInt(process.env.MAX_PLAYERS, 10) || 8;
+const MAX_PLAYERS = parseInt(process.env.MAX_PLAYERS, 10) || 0;
 const GAME_TIMEOUT = parseInt(process.env.GAME_TIMEOUT, 10) || 3600;
 const MAX_SAVE_BYTES = 16 * 1024 * 1024;  // matches account_service.js cloud file cap
-if (!Number.isInteger(MAX_PLAYERS) || MAX_PLAYERS < 1 || MAX_PLAYERS > 32) throw new Error('MAX_PLAYERS must be between 1 and 32.');
-const security = new TransportSecurity({ maxPlayers: MAX_PLAYERS });
+if (!Number.isInteger(MAX_PLAYERS) || MAX_PLAYERS < 0) throw new Error('MAX_PLAYERS must be 0 (no cap) or more.');
+const security = new TransportSecurity();
+const social = new Social({ file: path.join(DATA_DIR, 'social-v1.json') });
 const MAIN_LOBBY_ID = 'main';
 const MAIN_LOBBY_NAME = (process.env.MAIN_LOBBY || 'Main Lobby').trim().slice(0, 50) || 'Main Lobby';
 // The online world: no room name means the Main Lobby; any other name is its own room (case-insensitive), made on
@@ -240,7 +242,7 @@ app.post('/api/games/:gameId/join', authMiddleware, (req, res) => {
   }
 
   const players = filterBy('game_players', 'game_id', gameId);
-  if (!Number.isInteger(game.max_players) || game.max_players < 1 || game.max_players > MAX_PLAYERS || players.length >= game.max_players) {
+  if (!Number.isInteger(game.max_players) || game.max_players < 0 || (game.max_players > 0 && players.length >= game.max_players)) {
     return res.status(400).json({ error: 'Game is full' });
   }
 
@@ -734,7 +736,7 @@ wss.on('connection', (ws, req) => {
           const reserved = security.createRoom(ws, id, data);
           if (!reserved.ok) { security.send(ws, { type: 'error', error: reserved.reason }); return; }
           const color = assignColor();
-          const game = createGame(id, data.name, client.userId, client.username, data.maxPlayers || MAX_PLAYERS, data.region || 'global');
+          const game = createGame(id, data.name, client.userId, client.username, data.maxPlayers ?? MAX_PLAYERS, data.region || 'global');
           client.gameId = id;
           client.role = 'host';
           client.color = color;
@@ -758,7 +760,7 @@ wss.on('connection', (ws, req) => {
             return;
           }
           const alreadyPresent = [...game.players.values()].some(player => player.id === client.userId);
-          if (!alreadyPresent && !game.open && playerCount(game) >= game.maxPlayers) {
+          if (!alreadyPresent && !game.open && game.maxPlayers > 0 && playerCount(game) >= game.maxPlayers) {
             security.send(ws, { type: 'error', error: 'Game is full' });
             return;
           }
@@ -905,6 +907,19 @@ wss.on('connection', (ws, req) => {
         case 'ping':
           security.send(ws, { type: 'pong', ts: data.ts });
           break;
+        default: {
+          // presence, car clubs, club chat, leaderboards and race events (social.js); validated by transport_security
+          if (!client) return;
+          const wsOf = new Map([...clients].map(([s, c]) => [c, s]));
+          social.handle(client, data, {
+            send: obj => security.send(ws, obj),
+            sendTo: (c, obj) => { const s = wsOf.get(c); if (s) security.send(s, obj); },
+            clients: () => [...clients.values()],
+            rooms: () => [...activeGames.values()].map(g => ({ id: g.id, name: g.name, listed: g.listed !== false,
+              players: [...g.players.keys()].map(s => clients.get(s)).filter(Boolean) }))
+          });
+          break;
+        }
         case 'list':
           sendGameListUpdate();
           break;
