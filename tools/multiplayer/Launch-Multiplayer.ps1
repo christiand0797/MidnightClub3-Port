@@ -6,6 +6,9 @@ With no -Room the game joins the Main Lobby, where everyone on the server is (no
 the System Link matches hosted there show up in the game's Join Game list. -Room NAME joins
 that room instead (made on first use, not listed), so friends sharing a name play privately.
 -Server wss://host/ws (default wss://mc3.top/ws) uses a hosted relay; -Local starts or reuses a local relay.
+Race points and rankings go to the account signed in on this PC for that server: -SignIn (or
+-Register for a new account) asks for name and password once and keeps a 30-day device sign-in,
+never the password; -SignOut forgets it; -Guest races as a guest anyway.
 -StartStream shares only the game window after host pairing; -AllowControl separately
 enables additional controller ports. Ctrl+C stops only children created by this launcher.
 #>
@@ -19,11 +22,13 @@ param(
     [switch]$Local,
     [string]$Python='C:\Users\purpl\AppData\Local\Programs\Python\Python312\python.exe',
     [string]$GameExecutable=(Join-Path $PSScriptRoot '../../templates/game/out/native/mc3.exe'),
-    [switch]$StartStream, [switch]$AllowControl, [switch]$NoBrowser, [switch]$PlanOnly
+    [switch]$StartStream, [switch]$AllowControl, [switch]$NoBrowser, [switch]$PlanOnly,
+    [switch]$SignIn, [switch]$Register, [switch]$SignOut, [switch]$Guest
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 if($AllowControl -and -not $StartStream){throw '-AllowControl requires -StartStream.'}
+if(@($SignIn,$Register,$SignOut,$Guest|Where-Object {$_}).Count -gt 1){throw 'Use only one of -SignIn, -Register, -SignOut or -Guest.'}
 if($Room -match '[\x00-\x1f\x7f]'){throw 'Invalid room name.'}
 if($Local -or ($PSBoundParameters.ContainsKey('RelayPort') -and -not $PSBoundParameters.ContainsKey('Server'))){$Server=''}
 $base='http://127.0.0.1:'+ $RelayPort
@@ -40,7 +45,7 @@ $udpPort=30741+$Instance
 if($StartStream -and ([uri]$relay).IsLoopback -and ($StreamPort+1) -eq ([uri]$relay).Port){throw 'Stream and relay cannot own the same TCP port.'}
 $plan=[ordered]@{Browser=$base+'/';Relay=$relay;Room=$roomLabel;Instance=$Instance;TunnelPort=$udpPort;
     Stream=$(if($StartStream){'ws://127.0.0.1:'+($StreamPort+1)}else{$null});
-    ControllerSharing=[bool]$AllowControl;Capture=$(if($StartStream){'game-window-only'}else{'off'});
+    Account=$(if($Guest){'guest'}else{'signed-in account if any'});ControllerSharing=[bool]$AllowControl;Capture=$(if($StartStream){'game-window-only'}else{'off'});
     GameLaunched=$false;AdministratorRequired=$false;StopsOnlyOwnedChildren=$true}
 if($PlanOnly){$plan|ConvertTo-Json;return}
 if(-not (Test-Path -LiteralPath $Python -PathType Leaf)){throw 'Set -Python to an installed Python 3.12 executable.'}
@@ -53,6 +58,12 @@ if(-not $Server){
 }
 & $Python -c 'import websockets; assert 14 <= int(websockets.__version__.split(chr(46))[0]) < 18'
 if($LASTEXITCODE){throw 'Install websockets >=14,<18 with the selected Python.'}
+$proxyScript=Join-Path $PSScriptRoot 'proxy/proxy.py'
+if($SignOut){& $Python $proxyScript --relay $relay --sign-out;return}
+if($SignIn -or $Register){
+    & $Python $proxyScript --relay $relay $(if($Register){'--register'}else{'--sign-in'})
+    if($LASTEXITCODE){throw 'Sign-in did not complete; nothing was started.'}
+}elseif(-not $Guest){& $Python $proxyScript --relay $relay --whoami}
 if($StartStream){
     & $Python -c 'import PIL'
     if($LASTEXITCODE){throw 'Install stream/requirements.txt with the selected Python.'}
@@ -96,7 +107,8 @@ try {
         for($i=0;$i -lt 40;$i++){if(Relay-Healthy){$ready=$true;break};Start-Sleep -Milliseconds 100}
         if(-not $ready){throw "Owned relay did not start; inspect $sessionDirectory."}
     }
-    $argsTunnel=@('-u',(Join-Path $PSScriptRoot 'proxy/proxy.py'),'--relay',$relay,'--instance',[string]$Instance)
+    $argsTunnel=@('-u',$proxyScript,'--relay',$relay,'--instance',[string]$Instance)
+    if(-not $Guest){$argsTunnel+='--account'}
     if($Room.Trim()){$argsTunnel+=@('--room',$Room.Trim())}
     $null=Start-Owned $Python $argsTunnel 'tunnel' @{}
     $browser=$base+'/?relay='+[uri]::EscapeDataString($relay)

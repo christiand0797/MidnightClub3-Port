@@ -32,7 +32,10 @@ export class World extends DurableObject {
     this.social = null;
     // Accounts and cloud saves live in this object's SQLite (absent in the unit-test stub).
     this.accounts = ctx.storage.sql ? new Accounts(ctx.storage.sql) : null;
-    if (this.accounts) this.accounts.transactionSync = fn => ctx.storage.transactionSync(fn);
+    if (this.accounts) {
+      this.accounts.transactionSync = fn => ctx.storage.transactionSync(fn);
+      this.accounts.onDelete = id => this.forgetAccount(id);
+    }
     ctx.blockConcurrencyWhile(async () => {
       const rooms = await ctx.storage.get('rooms');
       if (rooms) for (const r of rooms) this.rooms.set(r.id, r);
@@ -242,6 +245,21 @@ export class World extends DurableObject {
         });
       }
     }
+    await this.persist();
+  }
+
+  // A deleted account leaves the rankings and its club (ownership passes on; an empty club goes) and is disconnected.
+  async forgetAccount(id) {
+    const st = this.social.state, k = 'u:' + id, me = st.players[k];
+    const club = me && me.club && st.clubs[me.club];
+    if (club) {
+      club.members = club.members.filter(x => x !== k);
+      if (!club.members.length) delete st.clubs[club.id];
+      else if (club.owner === k) club.owner = club.members[0];
+    }
+    delete st.players[k];
+    this.social.save();
+    for (const ws of this.sockets()) if (this.info(ws).userId === id) { try { ws.close(1008, 'Account deleted'); } catch (_) {} }
     await this.persist();
   }
 

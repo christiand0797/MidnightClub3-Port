@@ -109,3 +109,16 @@ test('signing out revokes the device and its access tokens', async () => {
   const got = await ws(s => s.send(JSON.stringify({ type: 'auth', token, clientType: 'browser' })));
   assert.ok(got.some(m => m.type === '_closed' && m.code === 1008), JSON.stringify(got));
 });
+
+test('deleting the account needs its password and removes it', async () => {
+  let r = await api('login', { body: { username: name, password }, withCookie: false });
+  assert.equal(r.status, 200); const t = r.json.token;
+  r = await api('account', { method: 'DELETE', auth: t, withCookie: false, body: { password: password + 'x' } });
+  assert.equal(r.status, 401);
+  r = await api('account', { method: 'DELETE', auth: t, withCookie: false, body: { password } });
+  assert.equal(r.status, 200); assert.equal(r.json.deleted, true);
+  r = await api('login', { body: { username: name, password }, withCookie: false });
+  assert.equal(r.status, 401);
+  r = await api('cloud', { auth: t, withCookie: false });
+  assert.equal(r.status, 401);
+});

@@ -29,6 +29,7 @@ import time
 
 import websockets
 
+import account
 import mcnet
 
 MAGIC = b'MC3P'           # legacy 8-byte header, game -> proxy only
@@ -41,7 +42,7 @@ MAX_PEER = 254
 
 class Proxy:
     def __init__(self, relay_url, proxy_udp_port, game_udp_port, room=None, join_id=None, name=None,
-                 verbose=False, game_ip='127.0.0.1', record=None):
+                 verbose=False, game_ip='127.0.0.1', record=None, use_account=False):
         self.relay_url = relay_url
         self.proxy_udp_port = proxy_udp_port
         self.game_udp_port = game_udp_port  # fallback target port when a datagram names none
@@ -55,6 +56,7 @@ class Proxy:
         self.game_port = None   # the game's socket port, learned from its datagrams
         self.game_ip = game_ip  # instance N binds 127.0.0.N; updated from the address the game sends from
         self.client_name = name
+        self.use_account = use_account   # sign in with the saved device credential (account.py)
         self.running = False
         self.peers = {}          # relay client id -> peer number
         self.peer_names = {}     # peer number -> relay client id
@@ -208,8 +210,26 @@ class Proxy:
             self.ws = ws
             if not self.client_name:
                 self.client_name = f'game-{socket.gethostname()}-{self.proxy_udp_port}'
-            # Guest attach: a proxy has no account; the relay grants room transport only, no saves/cloud.
-            await ws.send(json.dumps({'type': 'join', 'clientType': 'game', 'name': self.client_name}))
+            token = None
+            if self.use_account:
+                try:
+                    base = account.http_base(self.relay_url)
+                    if account.saved(base) is None:
+                        print(f"[proxy] not signed in to {base}; racing as a guest (launcher -SignIn to race as "
+                              "your account)", flush=True)
+                    else:
+                        token = await asyncio.to_thread(account.access_token, base)
+                        if not token:
+                            print("[proxy] account sign-in expired or was signed out; racing as a guest "
+                                  "(run the launcher with -SignIn to sign in again)", flush=True)
+                except (account.AccountError, OSError) as e:
+                    print(f"[proxy] account server unreachable ({e}); racing as a guest", flush=True)
+            if token:
+                # Signed in: race points and rankings go to the account.
+                await ws.send(json.dumps({'type': 'auth', 'clientType': 'game', 'token': token}))
+            else:
+                # Guest attach: room transport only; points count for this connection only.
+                await ws.send(json.dumps({'type': 'join', 'clientType': 'game', 'name': self.client_name}))
             self.ws_connected.set()
             try:
                 async for message in ws:
@@ -224,6 +244,8 @@ class Proxy:
                         continue
                     kind = msg.get('type')
                     if kind == 'auth_ok':
+                        if token:
+                            self.client_name = msg.get('user', {}).get('username') or self.client_name
                         self.auth_ok.set()
                         print(f"[proxy] attached to relay as {self.client_name}", flush=True)
                         await self.enter_room(ws)
@@ -282,6 +304,41 @@ class Proxy:
             self.udp_sock.close()
 
 
+def account_command(args):
+    import getpass
+    try:
+        base = account.http_base(args.relay)
+        if args.whoami:
+            entry = account.saved(base)
+            print(f"Signed in to {base} as {entry['username']}" if entry else f"Not signed in to {base}.")
+            return 0
+        if args.sign_out:
+            name = account.sign_out(base)
+            print(f"Signed {name} out of {base}." if name else f"Not signed in to {base}.")
+            return 0
+        if args.delete_account:
+            entry = account.saved(base)
+            if not entry:
+                print(f"Not signed in to {base}.")
+                return 1
+            print(f"This permanently deletes {entry['username']} on {base}: rankings, club membership and cloud saves.")
+            name = account.delete_account(base, getpass.getpass('Password to confirm: '))
+            print(f"Deleted {name}.")
+            return 0
+        print(f"{'Create an account on' if args.register else 'Sign in to'} {base}")
+        name = (args.name or input('Player name: ')).strip()
+        password = getpass.getpass('Password (8+ characters): ' if args.register else 'Password: ')
+        if args.register and getpass.getpass('Repeat password: ') != password:
+            print('Passwords did not match.')
+            return 1
+        name = account.sign_in(base, name, password, register=args.register)
+        print(f"Signed in as {name}. Race points from this PC now count for {name} (kept 30 days; --sign-out to forget).")
+        return 0
+    except (account.AccountError, OSError) as e:
+        print(f"Account: {e}")
+        return 1
+
+
 def main():
     parser = argparse.ArgumentParser(description='MC3 UDP <-> WebSocket relay proxy')
     parser.add_argument('--relay', default='ws://localhost:8080', help='relay WebSocket URL')
@@ -294,10 +351,19 @@ def main():
     parser.add_argument('--name', help='name shown to the other players')
     parser.add_argument('--verbose', action='store_true', help='log every datagram')
     parser.add_argument('--record', help='append every datagram (hex, JSON lines) to this file, for protocol work')
+    who = parser.add_mutually_exclusive_group()
+    who.add_argument('--account', action='store_true', help='race as the account signed in on this PC (see --sign-in)')
+    who.add_argument('--sign-in', action='store_true', help='sign in to this server (asks for name and password), then exit')
+    who.add_argument('--register', action='store_true', help='create an account on this server, then exit')
+    who.add_argument('--sign-out', action='store_true', help='sign this PC out of this server, then exit')
+    who.add_argument('--delete-account', action='store_true', help='permanently delete the signed-in account, then exit')
+    who.add_argument('--whoami', action='store_true', help='print the account signed in for this server, then exit')
     args = parser.parse_args()
+    if args.sign_in or args.register or args.sign_out or args.whoami or args.delete_account:
+        raise SystemExit(account_command(args))
     port = args.proxy_udp or BASE_PORT + args.instance
     proxy = Proxy(args.relay, port, args.game_udp, room=None if args.join else args.room, join_id=args.join,
-                  name=args.name, verbose=args.verbose, record=args.record,
+                  name=args.name, verbose=args.verbose, record=args.record, use_account=args.account,
                   game_ip=f'127.0.0.{args.instance}' if args.instance else '127.0.0.1')
     try:
         asyncio.run(proxy.run())

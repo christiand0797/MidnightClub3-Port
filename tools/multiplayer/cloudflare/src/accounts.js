@@ -145,7 +145,7 @@ export class Accounts {
   async handle(request) {
     const url = new URL(request.url);
     const route = url.pathname.replace(/^\/api\//, '');
-    if (!['register', 'login', 'session', 'logout', 'cloud', 'profile'].includes(route)) return null;
+    if (!['register', 'login', 'session', 'logout', 'cloud', 'profile', 'account'].includes(route)) return null;
     // Workers fault if a response goes out while the request body is unread; drain whatever a route didn't read.
     const drain = async () => { if (request.body && !request.bodyUsed) await request.arrayBuffer().catch(() => {}); };
     try {
@@ -277,6 +277,24 @@ export class Accounts {
       if (token) this.sql.exec(`UPDATE sessions SET revoked = 1 WHERE sid = ?`, await sha256(token));
       headers['Set-Cookie'] = `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${url.protocol === 'https:' ? '; Secure' : ''}`;
       return { body: { success: true } };
+    }
+    if (route === 'account' && method === 'DELETE') {
+      // Deleting an account needs its password again, not just a signed-in device.
+      const auth = await this.authenticate(request);
+      if (auth.method !== 'bearer') this.sameOrigin(request, url);
+      const b = await this.body(request);
+      const row = this.one(`SELECT id, name, hash FROM users WHERE id = ?`, auth.user.id);
+      this.throttle(request, row ? row.name : '');
+      if (!row || !plain(b) || typeof b.password !== 'string' || b.password.length > 256 || !await passwordMatches(b.password, row.hash))
+        fail(401, 'Password is incorrect.');
+      const drop = () => {
+        for (const t of ['cloud_part', 'cloud_head', 'sessions']) this.sql.exec(`DELETE FROM ${t} WHERE user_id = ?`, row.id);
+        this.sql.exec(`DELETE FROM users WHERE id = ?`, row.id);
+      };
+      if (this.transactionSync) this.transactionSync(drop); else drop();
+      if (this.onDelete) await this.onDelete(row.id);
+      headers['Set-Cookie'] = `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${url.protocol === 'https:' ? '; Secure' : ''}`;
+      return { body: { deleted: true, username: row.name } };
     }
     if (route === 'profile' && method === 'GET') {
       const { user } = await this.authenticate(request);
