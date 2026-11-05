@@ -83,6 +83,8 @@ grown (0x74, count field at +0x28 moved), every `8` bound above changed, the ses
 too. Per the brief, nothing was resized; this list is the report. A smaller alternative would be keeping the game at
 8 per System Link session and having the relay run several 8-player sessions in one Cruise room.
 
+Resize plan: [cruise_player_cap_resize_plan.md](cruise_player_cap_resize_plan.md).
+
 ## Next steps (original)
 
 
