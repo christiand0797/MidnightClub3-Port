@@ -10,7 +10,11 @@ import { Social } from '../../relay/social.js';
 
 const MAIN_ID = 'main';
 const MAX_PER_ADDRESS = 16;          // connections from one address (as the Node relay)
+const MAX_CONNECTIONS = 128, MAX_ROOMS = 128, MAX_PAYLOAD = 16 * 1024;
+const AUTH_TIMEOUT = 15000, MAX_OUTGOING = 128 * 1024, MAX_BUFFERED = 1024 * 1024;
 const MSG_RATE = 120, MSG_BURST = 240;
+const BYTE_RATE = 256 * 1024, BYTE_BURST = 512 * 1024;
+const utf8 = new TextEncoder();
 const COLORS = ['#ff4444', '#44ff44', '#4444ff', '#ffff44', '#ff44ff', '#44ffff', '#ffaa44', '#aa44ff'];
 
 async function sha256hex(text) {
@@ -23,7 +27,7 @@ export class World extends DurableObject {
     super(ctx, env);
     this.mainName = (env.MAIN_LOBBY || 'Main Lobby').trim().slice(0, 50) || 'Main Lobby';
     this.rooms = new Map();          // id -> { id, name, listed, open, maxPlayers, hostId, status }
-    this.rate = new Map();           // ws -> { tokens, at }
+    this.roomsDirty = false;
     this.social = null;
     ctx.blockConcurrencyWhile(async () => {
       const rooms = await ctx.storage.get('rooms');
@@ -41,13 +45,22 @@ export class World extends DurableObject {
   clients() { return this.sockets().map(ws => this.info(ws)).filter(c => c.id && c.username); }
   inRoom(id) { return this.sockets().filter(ws => this.info(ws).gameId === id); }
   playerCount(id) { return new Set(this.inRoom(id).map(ws => this.info(ws).userId)).size; }
-  send(ws, obj) { try { ws.send(JSON.stringify(obj)); } catch (_) { /* closed */ } }
+  send(ws, obj) {
+    try {
+      const raw = JSON.stringify(obj);
+      if (utf8.encode(raw).length > MAX_OUTGOING || (Number.isFinite(ws.bufferedAmount) && ws.bufferedAmount > MAX_BUFFERED)) {
+        ws.close(1009, 'Outgoing queue budget'); return;
+      }
+      ws.send(raw);
+    } catch (_) { try { ws.close(1011, 'Send failed'); } catch (_) { /* closed */ } }
+  }
   wsOf(client) { return this.sockets().find(ws => this.info(ws).id === client.id); }
 
   async persist() {
-    const rooms = [...this.rooms.values()].filter(r => r.id !== MAIN_ID);
-    const writes = { rooms };
+    const writes = {};
+    if (this.roomsDirty) { writes.rooms = [...this.rooms.values()].filter(r => r.id !== MAIN_ID); this.roomsDirty = false; }
     if (this.pendingSocial) { writes.social = this.pendingSocial; this.pendingSocial = null; }
+    if (!Object.keys(writes).length) return;
     await this.ctx.storage.put(writes);
   }
 
@@ -55,6 +68,10 @@ export class World extends DurableObject {
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === '/api/games') return Response.json({ games: this.listing() });
+    if (url.pathname !== '/ws' || request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('WebSocket expected', { status: 426 });
+    const origin = request.headers.get('Origin');
+    if (origin !== null && origin !== url.origin) return new Response('Origin refused', { status: 403 });
+    if (this.sockets().length >= MAX_CONNECTIONS) return new Response('Server connection quota', { status: 429 });
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
     if (this.sockets().filter(ws => this.info(ws).ip === ip).length >= MAX_PER_ADDRESS) {
       return new Response('Address connection quota', { status: 429 });
@@ -63,6 +80,8 @@ export class World extends DurableObject {
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
     this.setInfo(server, { ip, at: Date.now() });
+    // One alarm drains unauthenticated connections, including ones that never send a message.
+    if (await this.ctx.storage.getAlarm() === null) await this.ctx.storage.setAlarm(Date.now() + AUTH_TIMEOUT);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -79,12 +98,28 @@ export class World extends DurableObject {
   }
   broadcast(roomId, obj, except) { for (const ws of this.inRoom(roomId)) if (ws !== except) this.send(ws, obj); }
 
-  allowed(ws) {
-    const now = Date.now(), b = this.rate.get(ws) || { tokens: MSG_BURST, at: now };
-    b.tokens = Math.min(MSG_BURST, b.tokens + (now - b.at) * MSG_RATE / 1000); b.at = now;
-    this.rate.set(ws, b);
-    if (b.tokens < 1) return false;
-    b.tokens -= 1; return true;
+  allowed(ws, size) {
+    const now = Date.now(), info = this.info(ws);
+    if (!info.id && now - info.at >= AUTH_TIMEOUT) return false;
+    const b = info.budget || { tokens: MSG_BURST, bytes: BYTE_BURST, at: now };
+    const elapsed = Math.max(0, now - b.at);
+    b.tokens = Math.min(MSG_BURST, b.tokens + elapsed * MSG_RATE / 1000);
+    b.bytes = Math.min(BYTE_BURST, b.bytes + elapsed * BYTE_RATE / 1000); b.at = now;
+    if (b.tokens < 1 || b.bytes < size) return false;
+    b.tokens -= 1; b.bytes -= size;
+    info.budget = b; this.setInfo(ws, info); // Survives Durable Object hibernation.
+    return true;
+  }
+
+  async alarm() {
+    let next = Infinity;
+    for (const ws of this.sockets()) {
+      const info = this.info(ws);
+      if (info.id) continue;
+      if (Date.now() - info.at >= AUTH_TIMEOUT) { try { ws.close(1008, 'Authentication timed out'); } catch (_) {} }
+      else next = Math.min(next, info.at + AUTH_TIMEOUT);
+    }
+    if (Number.isFinite(next)) await this.ctx.storage.setAlarm(next);
   }
 
   async roomIdFor(name) {
@@ -95,8 +130,8 @@ export class World extends DurableObject {
 
   // ---------- WebSocket ----------
   async webSocketMessage(ws, raw) {
-    if (typeof raw !== 'string' || raw.length > 16 * 1024) return ws.close(1009, 'Message too large');
-    if (!this.allowed(ws)) return ws.close(1008, 'Message rate limit');
+    if (typeof raw !== 'string' || utf8.encode(raw).length > MAX_PAYLOAD) return ws.close(1009, 'Message too large');
+    if (!this.allowed(ws, utf8.encode(raw).length)) return ws.close(1008, 'Message rate or authentication limit');
     let parsed;
     try { parsed = validateMessage(JSON.parse(raw), 0); } catch (_) { return ws.close(1007, 'Invalid JSON'); }
     if (!parsed.ok) return ws.close(parsed.code || 1008, parsed.reason);
@@ -124,11 +159,14 @@ export class World extends DurableObject {
         if (data.type === 'enter_room') id = await this.roomIdFor(data.name);
         else if (data.type === 'join_game') id = data.gameId;
         else id = 'g-' + crypto.randomUUID().slice(0, 8);
+        if (!this.rooms.has(id) && this.rooms.size >= MAX_ROOMS) return this.send(ws, { type: 'error', error: 'Room quota reached.' });
         if (data.type === 'create_game') {
           this.rooms.set(id, { id, name: data.name, listed: true, open: false, maxPlayers: data.maxPlayers || 0,
             hostId: me.userId, hostName: me.username, status: 'waiting' });
+          this.roomsDirty = true;
         } else if (data.type === 'enter_room' && !this.rooms.has(id)) {
           this.rooms.set(id, { id, name: data.name, listed: false, open: true, maxPlayers: 0, status: 'waiting' });
+          this.roomsDirty = true;
         }
         const room = this.rooms.get(id);
         if (!room) return this.send(ws, { type: 'error', error: 'Game not found or not waiting' });
@@ -153,6 +191,7 @@ export class World extends DurableObject {
         const room = me.gameId && this.rooms.get(me.gameId);
         if (!room || room.hostId !== me.userId) return;
         room.status = 'playing';
+        this.roomsDirty = true;
         this.broadcast(room.id, { type: 'game_started', seed: data.seed || Date.now() });
         this.gameList();
         break;
@@ -200,14 +239,15 @@ export class World extends DurableObject {
     const room = this.rooms.get(id);
     const left = this.playerCount(id);
     this.broadcast(id, { type: 'player_left', username: me.username, id: me.id, playerCount: left });
-    if (room && id !== MAIN_ID && left === 0) this.rooms.delete(id);
+    if (room && id !== MAIN_ID && left === 0) { this.rooms.delete(id); this.roomsDirty = true; }
     else if (room && room.hostId === me.userId) {
       const next = this.inRoom(id)[0];
       if (next) { const n = this.info(next); room.hostId = n.userId; room.hostName = n.username;
+        this.roomsDirty = true;
         this.broadcast(id, { type: 'host_transferred', newHost: n.username }); }
     }
   }
 
-  async webSocketClose(ws) { this.rate.delete(ws); if (this.info(ws).gameId) { this.leave(ws); this.gameList(); } await this.persist(); }
+  async webSocketClose(ws) { if (this.info(ws).gameId) { this.leave(ws); this.gameList(); } await this.persist(); }
   async webSocketError(ws) { await this.webSocketClose(ws); }
 }

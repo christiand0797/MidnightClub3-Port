@@ -5,6 +5,8 @@ name = "mc3-online"
 main = "src/worker.js"
 compatibility_date = "2025-09-01"
 compatibility_flags = ["nodejs_compat"]
+# mc3.top (a Cloudflare zone, nameservers set at Porkbun) serves this Worker
+routes = [{ pattern = "mc3.top", custom_domain = true }]
 
 # the account page the Node relay also serves (tools/multiplayer/browser)
 [assets]
@@ -24,4 +26,3 @@ new_sqlite_classes = ["World"]
 [vars]
 MAIN_LOBBY = "Main Lobby"
 
-# the custom domain is attached by deploy (routes = [{ pattern = "mc3.top", custom_domain = true }])
