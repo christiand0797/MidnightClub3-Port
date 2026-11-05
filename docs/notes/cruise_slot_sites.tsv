@@ -1,0 +1,329 @@
+va	function	kind	struct	array	offset	operand	new	origin	instruction
+0002035C	00020260	add	cfg	players	0x13A	0x13A	0x406	global	add ebp, 0x13A
+0002053D	00020260	add	cfg	players	0x120	0x120	0x3ec	global	add ebp, 0x120
+00021947	000217B0	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [ebp+0x120]
+00021965	000217B0	disp	cfg	players	0x13A	0x13A	0x406	global	mov byte ptr [ebx+0x13A], 0x00
+00021976	000217B0	disp	cfg	players	0x124	0x124	0x3f0	global	mov [ebx+0x124], edi
+0002197C	000217B0	disp	cfg	players	0x12C	0x12C	0x3f8	global	mov [ebx+0x12C], edi
+00024440	00024420	disp	cfg	players	0x120	0x120	0x3ec	global	mov eax, [eax+esi*1+0x120]
+00024504	000244C0	disp	cfg	players	0x128	0x128	0x3f4	global	mov [eax+ebx*1+0x128], ecx
+00024511	000244C0	disp	cfg	players	0x12C	0x12C	0x3f8	global	mov [eax+ebx*1+0x12C], ecx
+00024520	000244C0	disp	cfg	players	0x124	0x124	0x3f0	global	mov dword ptr [eax+ecx*1+0x124], 0xFFFFFFFF
+0002454A	00024539	disp	cfg	players	0x124	0x124	0x3f0	global	mov [eax+ecx*1+0x124], ebx
+000246EC	000244C0	disp	cfg	players	0x13A	0x13A	0x406	global	mov byte ptr [edx+eax*1+0x13A], 0x00
+0002580D	000257E0	disp	cfg	players	0x13A	0x13A	0x406	global	mov [edx+edi*1+0x13A], al
+00025860	000257E0	disp	cfg	players	0x13A	0x13A	0x406	global	mov [eax+ecx*1+0x13A], dl
+000259DD	000259D5	disp	cfg	players	0x114	0x114	0x3e0	global	lea eax, [eax+ebp*1+0x114]
+00025A2A	000259D5	disp	cfg	players	0x160	0x160	0x42c	global	lea edx, [ebp+0x160]
+00025B5E	000259B0	disp	cfg	players	0x114	0x114	0x3e0	global	lea esi, [esi+edi*1+0x114]
+00025ED8	00025E48	disp	cfg	players	0x13A	0x13A	0x406	global	mov [eax+ecx*1+0x13A], dl
+0002642B	00026370	disp	cfg	players	0x120	0x120	0x3ec	global	mov edx, [edi+ecx*1+0x120]
+00026517	00026370	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [eax+ecx*1+0x120]
+0002685B	000267EB	disp	cfg	players	0x128	0x128	0x3f4	global	mov [eax+ecx*1+0x128], ebx
+00026868	000267EB	disp	cfg	players	0x12C	0x12C	0x3f8	global	mov [eax+ecx*1+0x12C], ebx
+00026891	000267EB	disp	cfg	players	0x128	0x128	0x3f4	global	mov [eax+ecx*1+0x128], ebp
+0002689E	000267EB	disp	cfg	players	0x12C	0x12C	0x3f8	global	mov [eax+ecx*1+0x12C], ebp
+000268AB	000267EB	disp	cfg	players	0x124	0x124	0x3f0	global	mov [eax+ecx*1+0x124], ebp
+00026EB3	00026E70	disp	cfg	players	0x13A	0x13A	0x406	global	mov [eax+ecx*1+0x13A], bl
+0002D781	0002D6F6	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [edi+eax*1+0x120]
+0002DF92	0002DF80	disp	cfg	players	0x114	0x114	0x3e0	global	lea ebx, [eax+edx*1+0x114]
+0002E904	0002E8E0	disp	cfg	players	0x138	0x138	0x404	global	mov [ecx+edx*1+0x138], al
+0002EE80	0002EC80	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [eax+edi*1+0x120]
+0002F06B	0002EFF0	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [eax+0x120]
+0004797B	00047920	disp	cfg	players	0x120	0x120	0x3ec	global	mov edi, [esi+ecx*1+0x120]
+00047ABF	00047920	disp	cfg	players	0x120	0x120	0x3ec	global	mov edi, [esi+ecx*1+0x120]
+00049D11	00049CF0	disp	cfg	players	0x124	0x124	0x3f0	global	mov [ecx+0x124], eax
+00049E97	00049E70	disp	cfg	players	0x124	0x124	0x3f0	global	mov [ecx+0x124], eax
+000B09DB	000B09A0	disp	cfg	players	0x120	0x120	0x3ec	global	mov eax, [edx+0x120]
+000B2F0F	000B2E30	disp	cfg	players	0x120	0x120	0x3ec	global	mov eax, [eax+0x120]
+000B64F6	000B64E0	disp	cfg	players	0x120	0x120	0x3ec	global	mov eax, [eax+ecx*1+0x120]
+000B6AAB	000B6A90	disp	cfg	players	0x128	0x128	0x3f4	global	mov edx, [ecx+eax*1+0x128]
+000B709F	000B7080	disp	cfg	players	0x128	0x128	0x3f4	global	mov esi, [ecx+eax*1+0x128]
+000D11D1	000D11A0	disp	cfg	players	0x128	0x128	0x3f4	global	mov edx, [edx+ecx*1+0x128]
+000DBF9D	000DBF70	disp	cfg	players	0x128	0x128	0x3f4	global	mov ecx, [edx+ecx*1+0x128]
+00115B96	00115AB0	disp	cfg	players	0x114	0x114	0x3e0	global	lea ecx, [eax+ecx*1+0x114]
+00117964	00117880	disp	cfg	players	0x114	0x114	0x3e0	global	lea ecx, [ecx+edx*1+0x114]
+00132CC9	00132B90	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [esi+0x120]
+00132CF1	00132B90	disp	cfg	players	0x128	0x128	0x3f4	global	mov [esi+0x128], edi
+00132CFD	00132B90	disp	cfg	players	0x12C	0x12C	0x3f8	global	mov [esi+0x12C], edi
+00132D04	00132B90	disp	cfg	players	0x124	0x124	0x3f0	global	mov [esi+0x124], edx
+0013A3DB	0013A250	add	cfg	players	0x124	0x124	0x3f0	global	add ecx, 0x124
+0013AB70	0013AB20	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [edx+ebp*1+0x120]
+0013AB88	0013AB20	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [ecx+ebp*1+0x120]
+0013B230	0013B110	disp	cfg	players	0x120	0x120	0x3ec	global	lea edi, [esi+0x120]
+0013B346	0013B2E0	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [esi+edx*1+0x120]
+0013B36B	0013B2E0	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [esi+ecx*1+0x120]
+0013BF93	0013BA60	disp	cfg	players	0x120	0x120	0x3ec	global	mov edx, [ecx+eax*1+0x120]
+0013C431	0013C310	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [esi+ecx*1+0x120]
+00142E38	00142E20	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [edx+0x120]
+00142EB4	00142E20	disp	cfg	players	0x128	0x128	0x3f4	global	mov [edi+0x128], ebx
+00142EBF	00142E20	disp	cfg	players	0x124	0x124	0x3f0	global	mov [edi+0x124], eax
+001431C3	00143160	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [edx+0x120]
+00144FAC	00144F30	disp	cfg	players	0x12C	0x12C	0x3f8	global	mov [esi+0x12C], ebx
+00144FB2	00144F30	disp	cfg	players	0x13A	0x13A	0x406	global	mov [esi+0x13A], bl
+00144FC5	00144F30	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [esi+0x120]
+00144FEA	00144F30	disp	cfg	players	0x128	0x128	0x3f4	global	mov [esi+0x128], ebx
+00144FF5	00144F30	disp	cfg	players	0x124	0x124	0x3f0	global	mov [esi+0x124], eax
+0015131A	00150DE0	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [eax+0x120]
+001559C2	00155920	disp	cfg	players	0x120	0x120	0x3ec	global	mov edi, [eax+ecx*1+0x120]
+00155B21	00155AF0	disp	cfg	players	0x114	0x114	0x3e0	global	lea edi, [ebx+0x114]
+001587C6	001587B0	disp	cfg	players	0x12C	0x12C	0x3f8	global	mov [eax+0x12C], esi
+001587CC	001587B0	disp	cfg	players	0x13A	0x13A	0x406	global	mov [eax+0x13A], cl
+001587D2	001587B0	disp	cfg	players	0x128	0x128	0x3f4	global	mov [eax+0x128], esi
+001587E3	001587B0	disp	cfg	players	0x124	0x124	0x3f0	global	mov [eax+0x124], ecx
+00158D1F	00158CC0	disp	cfg	players	0x124	0x124	0x3f0	global	mov ecx, [edi+0x124]
+00158D25	00158CC0	disp	cfg	players	0x13A	0x13A	0x406	global	mov dl, [edi+0x13A]
+00158D2B	00158CC0	disp	cfg	players	0x12C	0x12C	0x3f8	global	mov eax, [edi+0x12C]
+00158D36	00158CC0	disp	cfg	players	0x128	0x128	0x3f4	global	mov ebp, [edi+0x128]
+00158D68	00158CC0	disp	cfg	players	0x13A	0x13A	0x406	global	mov [edi+0x13A], cl
+00158D6E	00158CC0	disp	cfg	players	0x12C	0x12C	0x3f8	global	mov [edi+0x12C], edx
+00158D74	00158CC0	disp	cfg	players	0x128	0x128	0x3f4	global	mov [edi+0x128], ebp
+00158D7A	00158CC0	disp	cfg	players	0x124	0x124	0x3f0	global	mov [edi+0x124], eax
+00159313	001592B0	disp	cfg	players	0x13A	0x13A	0x406	global	mov byte ptr [eax+0x13A], 0x00
+0015B603	0015B5E0	disp	cfg	players	0x120	0x120	0x3ec	global	mov edx, [eax+ecx*1+0x120]
+0015BB61	0015BA10	disp	cfg	players	0x120	0x120	0x3ec	global	mov edi, [edi+eax*1+0x120]
+0015E703	0015E660	disp	cfg	players	0x120	0x120	0x3ec	global	mov edx, [eax+ecx*1+0x120]
+001843DB	001843A0	disp	cfg	players	0x12C	0x12C	0x3f8	global	mov [esi+0x12C], ebx
+001843E1	001843A0	disp	cfg	players	0x128	0x128	0x3f4	global	mov [esi+0x128], ebx
+001843ED	001843A0	disp	cfg	players	0x124	0x124	0x3f0	global	mov [esi+0x124], ecx
+00184422	001843A0	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [eax+0x120]
+00184870	00184770	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [ecx+0x120]
+00184B55	001848E0	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [ecx+0x120]
+00185016	00184FD0	disp	cfg	players	0x12C	0x12C	0x3f8	global	lea ecx, [esi+0x12C]
+00185086	00184FD0	disp	cfg	players	0x128	0x128	0x3f4	global	mov [esi+0x128], eax
+0018508C	00184FD0	disp	cfg	players	0x154	0x154	0x420	global	mov [esi+0x154], ecx
+00185092	00184FD0	disp	cfg	players	0x124	0x124	0x3f0	global	mov [esi+0x124], eax
+00185098	00184FD0	disp	cfg	players	0x150	0x150	0x41c	global	mov [esi+0x150], ecx
+0018509E	00184FD0	disp	cfg	players	0x180	0x180	0x44c	global	mov dword ptr [esi+0x180], 0x02
+001850A8	00184FD0	disp	cfg	players	0x1AC	0x1AC	0x478	global	mov [esi+0x1AC], ebp
+001850AE	00184FD0	disp	cfg	players	0x17C	0x17C	0x448	global	mov dword ptr [esi+0x17C], 0x02
+001850B8	00184FD0	disp	cfg	players	0x1A8	0x1A8	0x474	global	mov [esi+0x1A8], ebp
+001850C5	00184FD0	disp	cfg	players	0x124	0x124	0x3f0	global	mov [esi+0x124], eax
+0018B874	0018B840	add	cfg	players	0x120	0x120	0x3ec	global	add ebx, 0x120
+0018BCC5	0018BA50	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [edx+ecx*1+0x120]
+0018F648	0018F640	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [eax+0x120]
+0018F686	0018F640	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [eax+0x120]
+0018F6C5	0018F6C0	disp	cfg	players	0x120	0x120	0x3ec	global	mov edx, [eax+0x120]
+0018F756	0018F6C0	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [ecx+0x120]
+0018F795	0018F790	disp	cfg	players	0x120	0x120	0x3ec	global	mov eax, [eax+0x120]
+0018F7E1	0018F790	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [eax+0x120]
+0018F899	0018F840	disp	cfg	players	0x120	0x120	0x3ec	global	mov eax, [edx+0x120]
+0018FC17	0018FBF0	disp	cfg	players	0x120	0x120	0x3ec	global	mov edi, [edx+0x120]
+0018FC35	0018FBF0	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [eax+0x120]
+0018FC95	0018FC70	disp	cfg	players	0x120	0x120	0x3ec	global	mov eax, [eax+0x120]
+0019A586	0019A550	disp	cfg	players	0x128	0x128	0x3f4	global	cmp dword ptr [ebx+edx*1+0x128], 0xFFFFFFFF
+001AE28E	001AE040	disp	cfg	players	0x134	0x134	0x400	global	mov al, [esi+0x134]
+001AE298	001AE040	disp	cfg	players	0x13A	0x13A	0x406	global	mov cl, [esi+0x13A]
+001AE2B3	001AE040	disp	cfg	players	0x160	0x160	0x42c	global	mov al, [esi+0x160]
+001AE2C0	001AE040	disp	cfg	players	0x166	0x166	0x432	global	mov bl, [esi+0x166]
+001AE2D9	001AE040	disp	cfg	players	0x18C	0x18C	0x458	global	mov al, [esi+0x18C]
+001AE2E6	001AE040	disp	cfg	players	0x192	0x192	0x45e	global	mov dl, [esi+0x192]
+001AE2FF	001AE040	disp	cfg	players	0x1B8	0x1B8	0x484	global	mov al, [esi+0x1B8]
+001AE30C	001AE040	disp	cfg	players	0x1BE	0x1BE	0x48a	global	mov cl, [esi+0x1BE]
+001AE325	001AE040	disp	cfg	players	0x1E4	0x1E4	0x4b0	global	mov al, [esi+0x1E4]
+001AE332	001AE040	disp	cfg	players	0x1EA	0x1EA	0x4b6	global	mov cl, [esi+0x1EA]
+001AE34B	001AE040	disp	cfg	players	0x210	0x210	0x4dc	global	mov al, [esi+0x210]
+001AE358	001AE040	disp	cfg	players	0x216	0x216	0x4e2	global	mov bl, [esi+0x216]
+001AE371	001AE040	disp	cfg	players	0x23C	0x23C	0x508	global	mov al, [esi+0x23C]
+001AE37E	001AE040	disp	cfg	players	0x242	0x242	0x50e	global	mov dl, [esi+0x242]
+001AE397	001AE040	disp	cfg	players	0x268	0x268	0x534	global	mov al, [esi+0x268]
+001AE3A4	001AE040	disp	cfg	players	0x26E	0x26E	0x53a	global	mov cl, [esi+0x26E]
+001CDA61	001CD380	disp	cfg	players	0x120	0x120	0x3ec	global	mov ebx, [eax+ebx*1+0x120]
+001DC47A	001DC3E0	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [edx+0x120]
+001DE52F	001DE4B0	disp	cfg	players	0x128	0x128	0x3f4	global	mov edx, [esi+eax*1+0x128]
+001E3431	001E3410	disp	cfg	players	0x120	0x120	0x3ec	global	mov edx, [ecx+0x120]
+001E3708	001DF040	disp	cfg	players	0x120	0x120	0x3ec	global	mov edx, [ecx+0x120]
+001E398B	001DBFE0	disp	cfg	players	0x120	0x120	0x3ec	global	mov edx, [ecx+0x120]
+00263409	002633A0	disp	cfg	players	0x120	0x120	0x3ec	global	mov eax, [eax+0x120]
+00267D96	00267D90	disp	cfg	players	0x120	0x120	0x3ec	global	mov esi, [eax+0x120]
+00268086	00268080	disp	cfg	players	0x120	0x120	0x3ec	global	mov esi, [eax+0x120]
+00268176	00268170	disp	cfg	players	0x120	0x120	0x3ec	global	mov esi, [eax+0x120]
+00268DF5	00268D80	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [eax+0x120]
+00268E26	00268D80	disp	cfg	players	0x14C	0x14C	0x418	global	mov ecx, [eax+0x14C]
+00268E72	00268E50	disp	cfg	players	0x120	0x120	0x3ec	param	lea ebp, [edi+0x120]
+00268F53	00268F10	disp	cfg	players	0x12C	0x12C	0x3f8	global	mov [ecx+0x12C], ebx
+00268F5F	00268F10	disp	cfg	players	0x13A	0x13A	0x406	global	mov [edx+0x13A], al
+00268F6A	00268F10	disp	cfg	players	0x128	0x128	0x3f4	global	mov [eax+0x128], ebx
+00268F7C	00268F10	disp	cfg	players	0x124	0x124	0x3f0	global	mov [ecx+0x124], edx
+00268FE7	00268F10	disp	cfg	players	0x13A	0x13A	0x406	global	mov [ecx+0x13A], bl
+00269116	00269080	disp	cfg	players	0x120	0x120	0x3ec	global	mov eax, [esi+edx*1+0x120]
+00269123	00269080	disp	cfg	players	0x120	0x120	0x3ec	global	mov ecx, [esi+ecx*1+0x120]
+00269136	00269080	disp	cfg	players	0x134	0x134	0x400	global	mov eax, [esi+edx*1+0x134]
+00269143	00269080	disp	cfg	players	0x134	0x134	0x400	global	mov [esi+ecx*1+0x134], eax
+002693DD	002693D0	disp	cfg	players	0x114	0x114	0x3e0	global	lea eax, [eax+ecx*1+0x114]
+0026941D	00269410	disp	cfg	players	0x120	0x120	0x3ec	global	mov eax, [eax+ecx*1+0x120]
+0026943D	00269430	disp	cfg	players	0x13A	0x13A	0x406	global	mov al, [eax+ecx*1+0x13A]
+0026945D	00269450	disp	cfg	players	0x124	0x124	0x3f0	global	mov eax, [eax+ecx*1+0x124]
+0026947E	00269470	disp	cfg	players	0x124	0x124	0x3f0	global	mov esi, [eax+edx*1+0x124]
+00269501	002694F0	disp	cfg	players	0x124	0x124	0x3f0	global	mov [eax+edx*1+0x124], ecx
+0026B0FB	0026B0F0	disp	cfg	players2	0x274	0x274	0x6a0	this	mov [eax+ecx*1+0x274], edx
+0026B114	0026B110	disp	cfg	players2	0x274	0x274	0x6a0	this	mov [ecx+0x274], eax
+0026B11A	0026B110	disp	cfg	players2	0x2A0	0x2A0	0x6cc	this	mov [ecx+0x2A0], eax
+0026B120	0026B110	disp	cfg	players2	0x2CC	0x2CC	0x6f8	this	mov [ecx+0x2CC], eax
+0026B126	0026B110	disp	cfg	players2	0x2F8	0x2F8	0x724	this	mov [ecx+0x2F8], eax
+0026B12C	0026B110	disp	cfg	players2	0x324	0x324	0x750	this	mov [ecx+0x324], eax
+0026B132	0026B110	disp	cfg	players2	0x350	0x350	0x77c	this	mov [ecx+0x350], eax
+0026B138	0026B110	disp	cfg	players2	0x37C	0x37C	0x7a8	this	mov [ecx+0x37C], eax
+0026B13E	0026B110	disp	cfg	players2	0x3A8	0x3A8	0x7d4	this	mov [ecx+0x3A8], eax
+0026B157	0026B150	disp	cfg	players2	0x274	0x274	0x6a0	this	mov eax, [eax+ecx*1+0x274]
+0026B17B	0026B170	disp	cfg	players2	0x29C	0x29C	0x6c8	this	mov [eax+ecx*1+0x29C], dl
+0026B197	0026B190	disp	cfg	players2	0x29C	0x29C	0x6c8	this	mov al, [eax+ecx*1+0x29C]
+0026B1BF	0026B1B0	disp	cfg	players2	0x279	0x279	0x6a5	this	lea edx, [edx+ecx*1+0x279]
+0026B1DC	0026B1B0	disp	cfg	players2	0x279	0x279	0x6a5	this	mov byte ptr [eax+ecx*1+0x279], 0x00
+0026B1F7	0026B1F0	disp	cfg	players2	0x279	0x279	0x6a5	this	lea eax, [eax+ecx*1+0x279]
+0026B21B	0026B210	disp	cfg	players2	0x278	0x278	0x6a4	this	mov [eax+ecx*1+0x278], dl
+0026B237	0026B230	disp	cfg	players2	0x278	0x278	0x6a4	this	mov al, [eax+ecx*1+0x278]
+0026B297	0026B270	disp	cfg	players	0x128	0x128	0x3f4	this	lea eax, [ecx+0x128]
+0026B3B5	0026B2E0	copy	cfg	-	0x68	0x0		param	rep movsd
+0026B457	0026B2E0	disp	cfg	players	0x114	0x114	0x3e0	this	lea esi, [ebx+0x114]
+0026B489	0026B2E0	disp	cfg	players2	0x279	0x279	0x6a5	param	lea edx, [ebp+0x279]
+0026B48F	0026B2E0	disp	cfg	players2	0x278	0x278	0x6a4	this	lea esi, [ebx+0x278]
+0026B4F8	0026B2E0	copy	cfg	-	0xE8	0x0		param	rep movsd
+0026B617	0026B510	disp	cfg	players	0x120	0x120	0x3ec	this	lea edi, [esi+0x120]
+0026B647	0026B510	disp	cfg	players2	0x279	0x279	0x6a5	this	mov [esi+0x279], bl
+0026B64D	0026B510	disp	cfg	players2	0x274	0x274	0x6a0	this	mov [esi+0x274], ebp
+0026B653	0026B510	disp	cfg	players2	0x278	0x278	0x6a4	this	mov [esi+0x278], bl
+0026B659	0026B510	disp	cfg	players2	0x29C	0x29C	0x6c8	this	mov [esi+0x29C], bl
+0026B65F	0026B510	disp	cfg	players2	0x2A5	0x2A5	0x6d1	this	mov [esi+0x2A5], bl
+0026B665	0026B510	disp	cfg	players2	0x2A0	0x2A0	0x6cc	this	mov [esi+0x2A0], ebp
+0026B66B	0026B510	disp	cfg	players2	0x2A4	0x2A4	0x6d0	this	mov [esi+0x2A4], bl
+0026B671	0026B510	disp	cfg	players2	0x2C8	0x2C8	0x6f4	this	mov [esi+0x2C8], bl
+0026B677	0026B510	disp	cfg	players2	0x2D1	0x2D1	0x6fd	this	mov [esi+0x2D1], bl
+0026B67D	0026B510	disp	cfg	players2	0x2CC	0x2CC	0x6f8	this	mov [esi+0x2CC], ebp
+0026B683	0026B510	disp	cfg	players2	0x2D0	0x2D0	0x6fc	this	mov [esi+0x2D0], bl
+0026B689	0026B510	disp	cfg	players2	0x2F4	0x2F4	0x720	this	mov [esi+0x2F4], bl
+0026B68F	0026B510	disp	cfg	players2	0x2FD	0x2FD	0x729	this	mov [esi+0x2FD], bl
+0026B695	0026B510	disp	cfg	players2	0x2F8	0x2F8	0x724	this	mov [esi+0x2F8], ebp
+0026B69B	0026B510	disp	cfg	players2	0x2FC	0x2FC	0x728	this	mov [esi+0x2FC], bl
+0026B6A1	0026B510	disp	cfg	players2	0x320	0x320	0x74c	this	mov [esi+0x320], bl
+0026B6A7	0026B510	disp	cfg	players2	0x329	0x329	0x755	this	mov [esi+0x329], bl
+0026B6AD	0026B510	disp	cfg	players2	0x324	0x324	0x750	this	mov [esi+0x324], ebp
+0026B6B3	0026B510	disp	cfg	players2	0x328	0x328	0x754	this	mov [esi+0x328], bl
+0026B6B9	0026B510	disp	cfg	players2	0x34C	0x34C	0x778	this	mov [esi+0x34C], bl
+0026B6BF	0026B510	disp	cfg	players2	0x355	0x355	0x781	this	mov [esi+0x355], bl
+0026B6C5	0026B510	disp	cfg	players2	0x350	0x350	0x77c	this	mov [esi+0x350], ebp
+0026B6CB	0026B510	disp	cfg	players2	0x354	0x354	0x780	this	mov [esi+0x354], bl
+0026B6D1	0026B510	disp	cfg	players2	0x378	0x378	0x7a4	this	mov [esi+0x378], bl
+0026B6D7	0026B510	disp	cfg	players2	0x381	0x381	0x7ad	this	mov [esi+0x381], bl
+0026B6DD	0026B510	disp	cfg	players2	0x37C	0x37C	0x7a8	this	mov [esi+0x37C], ebp
+0026B6E3	0026B510	disp	cfg	players2	0x380	0x380	0x7ac	this	mov [esi+0x380], bl
+0026B6E9	0026B510	disp	cfg	players2	0x3A4	0x3A4	0x7d0	this	mov [esi+0x3A4], bl
+0026B6EF	0026B510	disp	cfg	players2	0x3AD	0x3AD	0x7d9	this	mov [esi+0x3AD], bl
+0026B6F5	0026B510	disp	cfg	players2	0x3A8	0x3A8	0x7d4	this	mov [esi+0x3A8], ebp
+0026B6FB	0026B510	disp	cfg	players2	0x3AC	0x3AC	0x7d8	this	mov [esi+0x3AC], bl
+0026B701	0026B510	disp	cfg	players2	0x3D0	0x3D0	0x7fc	this	mov [esi+0x3D0], bl
+0026B707	0026B510	add	cfg	players	0x12C	0x12C	0x3f8	this	add esi, 0x12C
+0026B9E5	0026B9E0	disp	cfg	players	0x114	0x114	0x3e0	this	lea edi, [esi+0x114]
+0026B9FF	0026B9E0	disp	cfg	players2	0x279	0x279	0x6a5	this	mov [esi+0x279], cl
+0026BA05	0026B9E0	disp	cfg	players2	0x278	0x278	0x6a4	this	mov [esi+0x278], cl
+0026BA0B	0026B9E0	disp	cfg	players2	0x29C	0x29C	0x6c8	this	mov [esi+0x29C], cl
+0026BA11	0026B9E0	disp	cfg	players2	0x274	0x274	0x6a0	this	mov dword ptr [esi+0x274], 0xFFFFFFFF
+0026BA1B	0026B9E0	disp	cfg	players2	0x274	0x274	0x6a0	this	lea eax, [esi+0x274]
+0028CCFF	0028CCA0	disp	cfg	players	0x120	0x120	0x3ec	global	mov edi, [eax+0x120]
+0028DEFB	0028DEB0	disp	cfg	players	0x120	0x120	0x3ec	param	mov eax, [edi+0x120]
+002BD8CB	002BD8A0	disp	cfg	players	0x128	0x128	0x3f4	global	cmp dword ptr [eax+ebp*1+0x128], 0xFFFFFFFF
+002BDC0F	002BDC00	const	cfg	players	0x134	0x134	0x400	global	mov ecx, [edi+ecx*1]
+002BE1A7	002BE100	disp	cfg	players	0x124	0x124	0x3f0	global	mov ebx, [edi+ecx*1+0x124]
+0001DDBC	0001DD90	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [ecx+eax*1], 0x00
+0001E0E0	0001DD90	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [eax+ecx*1], 0x00
+0001E84A	0001DD90	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [edx+ecx*1], 0x00
+0001E8EF	0001DD90	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [ecx+ebp*1], 0x00
+0001EAC7	0001DD90	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [edx+ecx*1], 0x00
+0001EAE4	0001DD90	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [eax+ebp*1], 0x00
+0001EBC2	0001DD90	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [eax+ebp*1], 0x00
+00020357	00020260	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [edi+ecx*1], 0x00
+00023CB5	00023C80	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [ebx+ecx*1], 0x00
+00023CE8	00023C80	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [ebx+ecx*1], 0x00
+00023D71	00023D50	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [ecx+ebp*1], 0x00
+00023DA5	00023D50	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [ecx+ebp*1], 0x00
+00024C7E	00024C70	disp	mgr	racers	0x8	0x8	0x74	global	mov ecx, [eax+esi*4+0x08]
+00024CCE	00024CC0	disp	mgr	racers	0x8	0x8	0x74	global	mov ecx, [eax+esi*4+0x08]
+00024F64	00024F50	disp	mgr	racers	0x8	0x8	0x74	global	mov ecx, [eax+ebx*4+0x08]
+00025246	00025220	disp	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [edx+ebp*4+0x08], 0x00
+00025471	000253D0	disp	mgr	racers	0x8	0x8	0x74	global	mov ebp, [ecx+ebx*4+0x08]
+000255A7	00025580	disp	mgr	racers	0x8	0x8	0x74	global	mov edx, [eax+ecx*4+0x08]
+000255B3	00025580	disp	mgr	racers	0x8	0x8	0x74	global	mov ecx, [eax+edx*4+0x08]
+000256F9	000256E0	disp	mgr	racers	0x8	0x8	0x74	global	mov edi, [ecx+edx*4+0x08]
+00025705	000256E0	disp	mgr	racers	0x8	0x8	0x74	global	mov edi, [ecx+edx*4+0x08]
+000269DB	000269B0	disp	mgr	racers	0x8	0x8	0x74	global	mov edi, [ecx+edx*4+0x08]
+000269E7	000269B0	disp	mgr	racers	0x8	0x8	0x74	global	mov edi, [ecx+edx*4+0x08]
+00026BC0	00026AD0	disp	mgr	racers	0x8	0x8	0x74	global	mov ebp, [eax+edx*4+0x08]
+00026C99	00026C20	disp	mgr	racers	0x8	0x8	0x74	global	mov ebp, [eax+edx*4+0x08]
+0002B147	0002B0E0	disp	mgr	racers	0x8	0x8	0x74	global	mov edx, [eax+edi*4+0x08]
+0012908C	00129070	disp	mgr	racers	0x8	0x8	0x74	global	mov edx, [ecx+eax*4+0x08]
+00164CBB	00164CA0	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [ebx+eax*1], 0x00
+0016CB70	0016CA50	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [eax+ecx*1], 0x00
+001C1E7A	001C1DC0	disp	mgr	racers	0x8	0x8	0x74	global	mov eax, [edx+esi*4+0x08]
+001C2174	001C20E0	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [ebx+edx*1], 0x00
+001C28E9	001C2800	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [eax+ebp*1], 0x00
+001C2E67	001C2CC0	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [edi+ecx*1], 0x00
+001C2FE9	001C2EF0	const	mgr	racers	0x8	0x8	0x74	global	cmp [edi+edx*1], ebx
+001C3025	001C2EF0	const	mgr	racers	0xC	0xC	0x78	global	cmp [edi+edx*1], ebx
+001C3340	001C3290	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [edi+ecx*1], 0x00
+001C5EDE	001C5E90	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [ecx+eax*1], 0x00
+001C5FBC	001C5E90	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [ecx+eax*1], 0x00
+001C606C	001C5E90	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [ecx+eax*1], 0x00
+001CB7E2	001CB7D0	disp	mgr	racers	0x8	0x8	0x74	global	mov edx, [ecx+eax*4+0x08]
+001CBA5D	001CBA50	disp	mgr	racers	0x8	0x8	0x74	global	mov edx, [ecx+eax*4+0x08]
+001CC609	001C1FC0	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [ecx+ebp*1], 0x00
+001CC691	001C1FC0	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [ecx+ebp*1], 0x00
+001CC7CD	001CC7B0	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [edi+ecx*1], 0x00
+001CC938	001CC910	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [eax+ebp*1], 0x00
+001CC981	001CC910	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [eax+ebp*1], 0x00
+001CF4EA	001CF440	disp	mgr	racers	0x8	0x8	0x74	global	mov eax, [esi+ecx*1+0x08]
+001CF5B1	001CF440	disp	mgr	racers	0x8	0x8	0x74	global	mov edx, [eax+ecx*4+0x08]
+001D047F	001D01E0	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [edi+ecx*1], 0x00
+001D072A	001D0710	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [edi+eax*1], 0x00
+001D0758	001D0710	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [edi+eax*1], 0x00
+001D081A	001D0800	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [edi+eax*1], 0x00
+001D0848	001D0800	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [edi+eax*1], 0x00
+001D69F6	001D69D0	disp	mgr	racers	0x8	0x8	0x74	global	mov eax, [ecx+esi*4+0x08]
+001D7C07	001D7BF0	disp	mgr	racers	0x8	0x8	0x74	global	mov edx, [ecx+eax*4+0x08]
+001DA143	001DA0F0	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [ecx+eax*1], 0x00
+001DA204	001DA0F0	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [ecx+eax*1], 0x00
+001DA289	001DA0F0	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [ecx+eax*1], 0x00
+001DCE5A	001DCE50	disp	mgr	racers	0x8	0x8	0x74	global	mov edx, [ecx+eax*4+0x08]
+001DCFB6	001DCFA0	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [ebx+eax*1], 0x00
+001DCFE3	001DCFA0	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [ebx+eax*1], 0x00
+001DD03E	001DD000	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [ecx+eax*1], 0x00
+001DE4E1	001DE4B0	disp	mgr	racers	0x8	0x8	0x74	global	mov eax, [ecx+esi*4+0x08]
+001DFD7C	001DFC00	disp	mgr	racers	0x8	0x8	0x74	global	mov eax, [edx+ebx*4+0x08]
+001E5857	001E5570	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [edx+ecx*1], 0x00
+001EA528	001EA3B0	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [eax+ebp*1], 0x00
+001EA5C0	001EA3B0	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [eax+ebp*1], 0x00
+001EA6E8	001EA680	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [edx+ebp*1], 0x00
+001EA768	001EA680	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [edx+ebp*1], 0x00
+001EBB28	001F7640	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [eax+edx*1], 0x00
+001ECB78	001ECAC0	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [edi+eax*1], 0x00
+001ECB9D	001ECAC0	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [edi+eax*1], 0x00
+001EFEC7	001EFCC0	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [eax+edx*1], 0x00
+001F4809	001F4790	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [edx+ecx*1], 0x00
+002BD8BA	002BD8A0	disp	mgr	racers	0x8	0x8	0x74	this	lea ebx, [esi+0x08]
+002BD914	002BD910	disp	mgr	racers	0x8	0x8	0x74	this	mov eax, [ecx+eax*4+0x08]
+002BD924	002BD920	disp	mgr	racers	0x8	0x8	0x74	this	mov edx, [ecx+eax*4+0x08]
+002BD957	002BD950	disp	mgr	racers	0x8	0x8	0x74	this	lea edi, [ecx+0x08]
+002BD9CC	002BD990	disp	mgr	racers	0x8	0x8	0x74	this	mov edx, [edi+esi*4+0x08]
+002BD9F2	002BD990	disp	mgr	racers	0x8	0x8	0x74	this	mov ecx, [edi+esi*4+0x08]
+002BDA42	002BD990	disp	mgr	racers	0x8	0x8	0x74	this	lea ebx, [edi+esi*4+0x08]
+002BDA9E	002BDA90	disp	mgr	racers	0x8	0x8	0x74	this	lea esi, [edi+0x08]
+002BDAE3	002BDAD0	disp	mgr	racers	0x8	0x8	0x74	this	lea esi, [ebx+0x08]
+002BDB23	002BDB10	disp	mgr	racers	0x8	0x8	0x74	this	lea esi, [ebx+0x08]
+002BDB54	002BDB50	disp	mgr	racers	0x8	0x8	0x74	this	mov ecx, [ecx+eax*4+0x08]
+002BDB73	002BDB60	disp	mgr	racers	0x8	0x8	0x74	this	lea esi, [ebx+0x08]
+002BDBC8	002BDBC0	disp	mgr	racers	0x8	0x8	0x74	this	mov eax, [esi+edi*4+0x08]
+002BDBDC	002BDBC0	disp	mgr	racers	0x8	0x8	0x74	this	mov ecx, [esi+edi*4+0x08]
+002BDBF1	002BDBC0	disp	mgr	racers	0x8	0x8	0x74	this	mov dword ptr [esi+edi*4+0x08], 0x00
+002BDEEF	002BDEC0	disp	mgr	racers	0x8	0x8	0x74	this	mov ecx, [edi+eax*4+0x08]
+002BDF62	002BDEC0	disp	mgr	racers	0x8	0x8	0x74	this	lea esi, [edi+0x08]
+002BDF89	002BDEC0	disp	mgr	racers	0x8	0x8	0x74	this	mov eax, [edi+eax*4+0x08]
+002BDFA9	002BDEC0	disp	mgr	racers	0x8	0x8	0x74	this	mov ecx, [edi+0x08]
+002BDFBB	002BDEC0	disp	mgr	racers	0x8	0x8	0x74	this	mov ecx, [edi+0x08]
+002BDFD8	002BDEC0	disp	mgr	racers	0x8	0x8	0x74	this	lea esi, [edi+0x08]
+002BE011	002BDEC0	disp	mgr	racers	0x8	0x8	0x74	this	lea ebp, [edi+0x08]
+002BE0A2	002BDEC0	disp	mgr	racers	0x8	0x8	0x74	this	mov eax, [edi+esi*4+0x08]
+002BE0BA	002BDEC0	disp	mgr	racers	0x8	0x8	0x74	this	mov eax, [edi+esi*4+0x08]
+002BE15B	002BE100	disp	mgr	racers	0x8	0x8	0x74	this	lea eax, [ebx+0x08]
+002C8759	002C8710	const	mgr	racers	0x8	0x8	0x74	global	cmp dword ptr [ebx+ecx*1], 0x00
+002C87E3	002C8710	const	mgr	racers	0xC	0xC	0x78	global	cmp dword ptr [ebx+ecx*1], 0x00
+003641E2	003641B0	disp	mgr	racers	0x8	0x8	0x74	global	mov edx, [ecx+eax*4+0x08]
+00364E64	00364E40	disp	mgr	racers	0x8	0x8	0x74	global	mov ecx, [eax+0x08]

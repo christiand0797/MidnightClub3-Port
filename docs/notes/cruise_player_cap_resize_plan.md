@@ -57,6 +57,55 @@ heuristic numbers above have false positives (other structs with a 0x2C stride) 
 Constant slot accesses also count: `[cfg+0x140]` is slot 1, field 0x00, and must move too. The scanner reports any
 displacement in 0x114..0x3D3 on a config pointer, not only indexed ones.
 
+**Status 2026-11-05: the scanner is done; no patches applied yet.** `tools/diagnostics/slot_scan.py` (tests:
+`python -m unittest tools/diagnostics/test_slot_scan.py`, 13 tests) reads the disassembly in `generated/game`, runs a
+forward data flow per function over registers and stack slots (esp/ebp frames, push/pop, callee `ret n`), and carries
+struct pointers between functions through stack arguments, `this` (ecx), return values, and constructors (a function
+whose result is stored into a struct global gets `this` = that struct: sub_0026B9E0, sub_002BE100). Jump tables follow
+the generated `switch` case targets. It converges in 7 rounds (~50 s, 822 functions looked at, 142 take a struct
+pointer, 40 return one).
+
+Result: **328 sites**, all listed in [cruise_slot_sites.tsv](cruise_slot_sites.tsv) (va, function, kind, struct, array,
+struct offset, current operand, operand for 16 slots, how the pointer was found, instruction):
+
+| | disp | add | const | copy |
+|---|---|---|---|---|
+| race config | 217 | 5 | 1 | 2 |
+| player manager | 52 | 0 | 51 | 0 |
+
+- `disp`/`add` (274): a displacement or `add reg, imm` that steps from the struct base into an array. These map 1:1 to
+  `[[patch]]` entries; `slot_scan.py --toml` writes them, with the new operand for `--slots N` (array 1 -> +0x3E0,
+  array 2 -> +0x3E0 + N*0x2C, manager -> +0x74).
+- `const` (52): a register set to a constant (`mov edi, 0x08`, `mov edi, 0x134`) and then used as the offset. The patch
+  is the `mov`'s immediate, but each one needs a look: the loop that steps the register may also compare it against a
+  bound. Most manager loops end on the count at `+0x28` instead (`cmp esi, [ecx+0x28]`), which doesn't move. 82
+  "loop register" notes in 31 functions (`--notes`) list where a stepped register meets a struct pointer.
+- `copy` (2): the config copy sub_0026B2E0 `rep movsd` at 0x26B3B5 (0x80 bytes from +0x68, the name area, not an
+  array) and 0x26B4F8 (8 dwords from **+0xE8..+0x107**). That second one is a **third 8-entry table** in the config
+  (outside both arrays); find its users before raising N.
+
+Checked by hand: every accessor (0x2693DD, 0x26941D, 0x26943D, 0x26945D, 0x26947E, 0x269501), the manager getter
+0x2BD914, the constructor (0x26B9E5 and the unrolled +0x274.. inits), the copy (0x26B457, 0x26B489, 0x26B48F), the
+Players handler's `add ecx, 0x124` (0x13A3DB), and the `edi = 8` manager loops (0x1C2174, 0x1C28E9, 0x1C2E67, 0x1C2FE9,
+0x1C3340, 0x1CC7CD, 0x1D047F, 0x20357, 0x1E8EF, 0x1EAE4). Against the heuristic appendix lists: of its 46 config
+functions, the misses were 0x26E70 (a `cmovnz` load, now handled) and five that don't address the arrays (UI rows at
+`[esi+edi*4+0x22C]`, other structs). Its manager list was mostly calls to the getter sub_002BD910, which need no patch.
+The first run, which treated every instruction as a possible jump-table target, also reported the menu list widget
+sub_00348BE0 and others as config users; those were false positives and are gone.
+
+Known gaps (each needs a manual pass before the patches go in):
+- Pointer differences: sub_00155AF0 computes `[0x53F2E4] - [0x53F2E8]` and adds it to an entry pointer (0x155B1F) to
+  reach the same slot in the other config. It still works after the move (same layout in both), but nothing like it is
+  checked automatically.
+- Indirect calls (vtables, callbacks) don't carry struct arguments; neither do pointers stored into heap objects and
+  read back elsewhere.
+- Struct pointers kept in globals other than the four known ones, and any copy of the config embedded in another
+  object or a network message (Phase 4).
+- Constant registers that reach the struct through arithmetic the scanner doesn't model (`imul`, `shl`) appear as
+  unknown index, which is fine for `disp` sites but would hide a `const` one.
+- Struct offsets the move doesn't touch but which follow an array the code steps past (a loop over all 8 entries that
+  ends by comparing a pointer to `base+0x274`): look for `cmp reg, imm` near the `const`/`add` sites.
+
 ## Phase 3: raise the bounds
 
 - Session size: `push 0x08` at 0x0001DD17 -> N.
