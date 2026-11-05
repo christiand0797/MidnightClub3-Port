@@ -1,0 +1,27 @@
+# MC3 online world on Cloudflare's free plan: a Worker in front, one Durable Object ("World") holding every
+# connection, room and the social state (clubs, chat, rankings) in its own storage. Players run the game on their
+# own PCs; this carries lobby and race traffic only. Deploy: npx wrangler deploy (from this folder).
+name = "mc3-online"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# the account page the Node relay also serves (tools/multiplayer/browser)
+[assets]
+directory = "../browser"
+not_found_handling = "none"
+run_worker_first = ["/ws", "/healthz", "/api/*"]
+
+[[durable_objects.bindings]]
+name = "WORLD"
+class_name = "World"
+
+# SQLite-backed Durable Objects are on the free plan
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["World"]
+
+[vars]
+MAIN_LOBBY = "Main Lobby"
+
+# the custom domain is attached by deploy (routes = [{ pattern = "mc3.top", custom_domain = true }])

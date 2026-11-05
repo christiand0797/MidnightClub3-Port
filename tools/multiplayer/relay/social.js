@@ -11,9 +11,9 @@
 // RACE_WINDOW_MS; each of them earns RACE_POINTS. One tunnel alone cannot award itself anything. Finishing
 // positions are not scored yet: the game's CHECKPOINT/PLAYER_SCORE bodies have not been decoded, so the raw messages
 // players' tunnels report are kept (research log) to decode them from real races.
-const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
+// fs/path only for the Node relay's file storage; the Cloudflare worker passes load/store instead
+const nodeFs = () => ({ fs: require('fs'), path: require('path') });
 
 const RACE_POINTS = 10;
 const RACE_WINDOW_MS = 30 * 1000;
@@ -54,11 +54,15 @@ function validateSocial(m) {
 }
 
 class Social {
-  constructor({ file, now = Date.now } = {}) {
+  // file: a JSON file (Node relay); or store(state) to persist elsewhere and state to start from (Cloudflare)
+  constructor({ file, now = Date.now, state = null, store = null } = {}) {
     this.file = file;
     this.now = now;
+    this.store = store;
     this.state = { version: 1, players: {}, clubs: {}, research: [] };
+    if (state) Object.assign(this.state, state);
     if (file) {
+      const { fs } = nodeFs();
       try { Object.assign(this.state, JSON.parse(fs.readFileSync(file, 'utf8'))); }
       catch (e) { if (e.code !== 'ENOENT') throw e; }
     }
@@ -80,10 +84,12 @@ class Social {
     return p;
   }
   save() {
+    if (this.store) { this.store(this.state); return; }
     if (!this.file || this.timer) return;
     this.timer = setTimeout(() => {
       this.timer = null;
       const tmp = this.file + '.tmp';
+      const { fs, path } = nodeFs();
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       fs.writeFileSync(tmp, JSON.stringify(this.state));
       fs.renameSync(tmp, this.file);
@@ -94,6 +100,7 @@ class Social {
     if (!this.timer) return;
     clearTimeout(this.timer); this.timer = null;
     if (!this.file) return;
+    const { fs } = nodeFs();
     fs.writeFileSync(this.file + '.tmp', JSON.stringify(this.state));
     fs.renameSync(this.file + '.tmp', this.file);
   }
