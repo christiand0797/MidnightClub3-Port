@@ -96,6 +96,10 @@ function validateMessage(value, maxPlayers) {
     }
     case 'join_game':
       return identifier(value.gameId) ? ok({ message: { type: value.type, gameId: value.gameId } }) : no('Invalid room identifier');
+    case 'enter_room':
+      // the online world: no name (or the main lobby's) = the Main Lobby; any other name = that room, made on demand
+      if (value.name !== undefined && (typeof value.name !== 'string' || (value.name.trim() && !text(value.name.trim(), 50)))) return no('Invalid room name');
+      return ok({ message: { type: value.type, name: (value.name || '').trim() } });
     case 'leave_game': case 'list': return ok({ message: { type: value.type } });
     case 'set_ready':
       return typeof value.ready === 'boolean' ? ok({ message: { type: value.type, ready: value.ready } }) : no('Invalid ready flag');
@@ -202,10 +206,21 @@ class TransportSecurity {
     this.rooms.set(roomId, { ...checked.room, createdBy: state.userId, members: new Map([[ws, { userId: state.userId, spectator: false }]]) });
     state.roomId = roomId; return ok({ room: checked.room });
   }
+  // An open room (the Main Lobby, or a room entered by name) has no player cap: it is a shared LAN where the game's
+  // own System Link matches are listed; the server-wide connection limits still apply. A persistent room stays
+  // when empty.
+  openRoom(roomId, { name, persistent = false }) {
+    if (!identifier(roomId) || !text(name, 50)) return no('Invalid room');
+    if (this.rooms.has(roomId)) return ok({ room: this.rooms.get(roomId) });
+    if (!persistent && this.rooms.size >= this.limits.maxRooms) return no('Room quota exceeded');
+    const room = { name, maxPlayers: 0, region: 'global', open: true, persistent, createdBy: null, members: new Map() };
+    this.rooms.set(roomId, room); return ok({ room });
+  }
   joinRoom(ws, roomId, { spectator = false } = {}) {
     const state = this.sockets.get(ws), room = this.rooms.get(roomId);
     if (!state || !state.userId || state.closingAt !== null || !room || typeof spectator !== 'boolean') return no('Room unavailable');
     if (state.roomId) return state.roomId === roomId && state.spectator === spectator ? ok() : no('Leave the current room first');
+    if (room.open) { room.members.set(ws, { userId: state.userId, spectator }); state.roomId = roomId; state.spectator = spectator; return ok(); }
     if (room.members.size >= this.limits.maxRoomConnections) return no('Room connection quota exceeded');
     const users = new Set(), watchers = new Set();
     for (const row of room.members.values()) (row.spectator ? watchers : users).add(row.userId);
@@ -215,7 +230,7 @@ class TransportSecurity {
   leaveRoom(ws) {
     const state = this.sockets.get(ws); if (!state || !state.roomId) return;
     const room = this.rooms.get(state.roomId);
-    if (room) { room.members.delete(ws); if (!room.members.size) this.rooms.delete(state.roomId); }
+    if (room) { room.members.delete(ws); if (!room.members.size && !room.persistent) this.rooms.delete(state.roomId); }
     state.roomId = null; state.spectator = false;
   }
   removeRoom(roomId) {

@@ -15,6 +15,7 @@
 //   CORS_ORIGIN       Allowed CORS origin (default * for dev)
 //   MAX_PLAYERS       Max players per game (default 8)
 //   GAME_TIMEOUT      Seconds before idle game is removed (default 3600)
+//   MAIN_LOBBY        Name of the always-open lobby every game joins by default (default "Main Lobby")
 
 require('dotenv').config();
 const express = require('express');
@@ -45,6 +46,15 @@ const GAME_TIMEOUT = parseInt(process.env.GAME_TIMEOUT, 10) || 3600;
 const MAX_SAVE_BYTES = 16 * 1024 * 1024;  // matches account_service.js cloud file cap
 if (!Number.isInteger(MAX_PLAYERS) || MAX_PLAYERS < 1 || MAX_PLAYERS > 32) throw new Error('MAX_PLAYERS must be between 1 and 32.');
 const security = new TransportSecurity({ maxPlayers: MAX_PLAYERS });
+const MAIN_LOBBY_ID = 'main';
+const MAIN_LOBBY_NAME = (process.env.MAIN_LOBBY || 'Main Lobby').trim().slice(0, 50) || 'Main Lobby';
+// The online world: no room name means the Main Lobby; any other name is its own room (case-insensitive), made on
+// first use, unlisted, so friends who share the name get a private session.
+function roomIdFor(name) {
+  const key = (name || '').trim().toLowerCase();
+  if (!key || key === MAIN_LOBBY_NAME.toLowerCase()) return MAIN_LOBBY_ID;
+  return 'r-' + crypto.createHash('sha256').update(key).digest('hex').slice(0, 20);
+}
 const allowedOrigin = req => originAllowed(req.headers.origin, req.headers.host, CORS_ORIGIN, process.env.NODE_ENV !== 'production');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -537,6 +547,7 @@ function broadcastToGame(gameId, message, excludeWs = null) {
 function sendGameListUpdate() {
   const games = [];
   for (const [id, game] of activeGames) {
+    if (game.listed === false) continue; // rooms entered by name stay private
     games.push({
       id: game.id,
       name: game.name,
@@ -544,7 +555,8 @@ function sendGameListUpdate() {
       status: game.status,
       max_players: game.maxPlayers,
       player_count: playerCount(game),
-      region: game.region
+      region: game.region,
+      open: !!game.open // max_players 0: no player cap
     });
   }
   const msg = { type: 'gameList', games };
@@ -569,6 +581,16 @@ function createGame(id, name, hostId, hostUsername, maxPlayers, region) {
   activeGames.set(id, game);
   return game;
 }
+
+// An open room: no host, no player cap (the game's own System Link matches inside it keep their limits).
+function openGame(id, name, { persistent = false, listed = false } = {}) {
+  const opened = security.openRoom(id, { name, persistent });
+  if (!opened.ok) return null;
+  const game = createGame(id, name, 'system', name, 0, 'global');
+  Object.assign(game, { open: true, persistent, listed });
+  return game;
+}
+openGame(MAIN_LOBBY_ID, MAIN_LOBBY_NAME, { persistent: true, listed: true });
 
 function removeGame(gameId) {
   security.removeRoom(gameId);
@@ -603,7 +625,9 @@ function leaveGame(client, ws) {
   if (!userStillPresent) db['game_players'] = db['game_players'].filter(p => !(p.game_id === client.gameId && p.user_id === client.userId));
   saveDB(db);
 
-  if (game.players.size === 0 && game.spectators.size === 0) {
+  if (game.players.size === 0 && game.spectators.size === 0 && game.persistent) {
+    // the Main Lobby stays open with nobody in it
+  } else if (game.players.size === 0 && game.spectators.size === 0) {
     removeGame(client.gameId);
     db['games'] = db['games'].filter(g => g.id !== client.gameId);
     db['game_players'] = db['game_players'].filter(p => p.game_id !== client.gameId);
@@ -729,12 +753,12 @@ wss.on('connection', (ws, req) => {
           if (!client) return;
           if (client.gameId) { security.send(ws, { type: 'error', error: 'Leave the current room first.' }); return; }
           const game = activeGames.get(data.gameId);
-          if (!game || game.status !== 'waiting') {
+          if (!game || (!game.open && game.status !== 'waiting')) {
             security.send(ws, { type: 'error', error: 'Game not found or not waiting' });
             return;
           }
           const alreadyPresent = [...game.players.values()].some(player => player.id === client.userId);
-          if (!alreadyPresent && playerCount(game) >= game.maxPlayers) {
+          if (!alreadyPresent && !game.open && playerCount(game) >= game.maxPlayers) {
             security.send(ws, { type: 'error', error: 'Game is full' });
             return;
           }
@@ -777,6 +801,32 @@ wss.on('connection', (ws, req) => {
             color,
             playerCount: playerCount(game)
           });
+          sendGameListUpdate();
+          break;
+        }
+
+        case 'enter_room': {
+          if (!client) return;
+          const id = roomIdFor(data.name);
+          if (client.gameId === id) { security.send(ws, { type: 'error', error: 'Already in that room.' }); return; }
+          if (client.gameId) leaveGame(client, ws); // switching rooms
+          const game = activeGames.get(id) || openGame(id, id === MAIN_LOBBY_ID ? MAIN_LOBBY_NAME : data.name);
+          if (!game) { security.send(ws, { type: 'error', error: 'The server has no room for another room right now.' }); return; }
+          const joined = security.joinRoom(ws, id);
+          if (!joined.ok) { security.send(ws, { type: 'error', error: joined.reason }); return; }
+          const color = assignColor();
+          client.gameId = id;
+          client.role = 'player';
+          client.color = color;
+          game.players.set(ws, { id: client.userId, username: client.username, role: 'player', color, ready: false });
+          security.send(ws, {
+            type: 'game_joined',
+            game: { id, name: game.name, maxPlayers: 0, playerCount: playerCount(game), region: game.region,
+                    open: true, main: id === MAIN_LOBBY_ID, listed: game.listed },
+            role: 'player',
+            color
+          });
+          broadcastToGame(id, { type: 'player_joined', username: client.username, color, playerCount: playerCount(game) }, ws);
           sendGameListUpdate();
           break;
         }

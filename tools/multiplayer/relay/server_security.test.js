@@ -80,7 +80,7 @@ test('actual HTTP/WS server contains malformed inputs, preserves room ownership 
   player.ws.send(JSON.stringify({ type: 'chat', text: 'fixture chat' }));
   assert.equal((await player.next(message => message.type === 'chat')).text, 'fixture chat');
   player.ws.send(JSON.stringify({ type: 'leave_game' }));
-  assert.deepEqual((await player.next(message => message.type === 'gameList' && message.games.length === 0)).games, []);
+  assert.deepEqual((await player.next(message => message.type === 'gameList' && message.games.length === 1)).games.map(game => [game.id, game.max_players, game.open]), [['main', 0, true]]); // only the Main Lobby remains
   const malformed = await open(); const badClosed = once(malformed.ws, 'close'); malformed.ws.send('{');
   assert.equal((await badClosed)[0], 1007);
   const binary = await open(); const binaryClosed = once(binary.ws, 'close'); binary.ws.send(Buffer.from([1, 2, 3]));

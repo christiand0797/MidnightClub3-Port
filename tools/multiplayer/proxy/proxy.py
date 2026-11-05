@@ -13,8 +13,10 @@ The older 8-byte "MC3P" header (magic | src | dst) from the game is still accept
 
 Usage:
     py -3.12 proxy.py --relay ws://relay:8080 [--instance N] [--room NAME | --join GAME_ID]
-Instance N listens on 30741 + N (xnet.cpp kProxyPort + instance). Without --join the proxy joins the first open
-relay game named --room, or creates it.
+Instance N listens on 30741 + N (xnet.cpp kProxyPort + instance). With no --room the game joins the relay's Main
+Lobby, where everyone online is (no player cap; the game's own System Link matches show up in Join Game). Any
+other --room name is a room of its own, made on first use and not listed, so friends sharing the name play
+privately. The proxy reconnects and rejoins the same room if the relay connection drops.
 """
 
 import argparse
@@ -169,8 +171,8 @@ class Proxy:
     async def enter_room(self, ws):
         if self.join_id:
             await ws.send(json.dumps({'type': 'join_game', 'gameId': self.join_id}))
-        elif self.room:
-            await ws.send(json.dumps({'type': 'list'}))
+        else:  # no name = the Main Lobby
+            await ws.send(json.dumps({'type': 'enter_room', 'name': self.room or ''}))
 
     async def ws_handler(self):
         print(f"[proxy] connecting to relay: {self.relay_url}", flush=True)
@@ -197,18 +199,16 @@ class Proxy:
                         self.auth_ok.set()
                         print(f"[proxy] attached to relay as {self.client_name}", flush=True)
                         await self.enter_room(ws)
-                    elif kind == 'gameList' and self.room and not self.game_id:
-                        games = [g for g in msg.get('games', []) if g.get('name') == self.room
-                                 and (g.get('player_count') or 0) < (g.get('max_players') or 8)]
-                        if games:
-                            await ws.send(json.dumps({'type': 'join_game', 'gameId': games[0]['id']}))
-                        else:
-                            await ws.send(json.dumps({'type': 'create_game', 'name': self.room, 'maxPlayers': 8}))
-                        self.room = None  # decide once; later lists are only informational
                     elif kind in ('game_created', 'game_joined'):
-                        self.game_id = msg.get('game', {}).get('id')
+                        game = msg.get('game', {})
+                        self.game_id = game.get('id')
+                        self.room_name = game.get('name')
                         self.game_id_event.set()
-                        print(f"[proxy] in relay game {self.game_id}", flush=True)
+                        count = game.get('playerCount')
+                        where = 'Main Lobby' if game.get('main') else f"room \"{self.room_name}\""
+                        print(f"[proxy] in {where} ({self.game_id}), {count} player(s) online here", flush=True)
+                    elif kind == 'player_joined':
+                        print(f"[proxy] {msg.get('username')} joined ({msg.get('playerCount')} here)", flush=True)
                     elif kind == 'input':
                         await self.handle_relay_input(msg)
                     elif kind == 'player_left':
@@ -219,6 +219,26 @@ class Proxy:
                         print(f"[proxy] relay error: {msg.get('error')}", flush=True)
             finally:
                 print(f"[proxy] {self.client_name} websocket connection ended", flush=True)
+                self.ws = None
+                self.game_id = None
+                self.peers.clear()
+                self.peer_names.clear()
+                self.auth_ok.clear()
+                self.game_id_event.clear()
+
+    async def relay_loop(self):
+        # keep the game online: reconnect with backoff and rejoin the same room
+        delay = 1
+        while self.running:
+            try:
+                await self.ws_handler()
+                delay = 1
+            except (OSError, websockets.exceptions.WebSocketException) as e:
+                print(f"[proxy] relay unreachable ({e.__class__.__name__}); retrying in {delay}s", flush=True)
+            if not self.running:
+                break
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30)
 
     async def run(self):
         self.running = True
@@ -226,7 +246,7 @@ class Proxy:
         self.udp_sock.setblocking(False)
         # Loopback only: nothing on the LAN may inject datagrams into the game's tunnel.
         self.udp_sock.bind(('127.0.0.1', self.proxy_udp_port))
-        await asyncio.gather(self.udp_reader(), self.ws_handler())
+        await asyncio.gather(self.udp_reader(), self.relay_loop())
 
     def stop(self):
         self.running = False
@@ -241,7 +261,7 @@ def main():
     parser.add_argument('--proxy-udp', type=int, help='UDP port to receive from the game (default 30741 + instance)')
     parser.add_argument('--game-udp', type=int, default=3074, help='fallback game UDP port')
     room = parser.add_mutually_exclusive_group()
-    room.add_argument('--room', default='MC3 Free Roam', help='join or create the relay game with this name')
+    room.add_argument('--room', default='', help='room name; empty = the Main Lobby (everyone online)')
     room.add_argument('--join', help='join this relay game id')
     parser.add_argument('--name', help='name shown to the other players')
     parser.add_argument('--verbose', action='store_true', help='log every datagram')
