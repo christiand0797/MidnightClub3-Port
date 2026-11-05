@@ -182,3 +182,21 @@ if(WIN32 AND IS_DIRECTORY "${MC3_HD_TEST_ROOT}/textures/replace")
     add_test(NAME texture_pack COMMAND texture_pack_test "${MC3_HD_TEST_ROOT}")
     set_tests_properties(texture_pack PROPERTIES TIMEOUT 45)
 endif()
+
+# Recompiler [[patch]] operand overrides (tools/recomp/patch.cpp), with the Zydis the game build fetched.
+find_path(MC3_ZYDIS_SRC CMakeLists.txt HINTS
+    ${CMAKE_CURRENT_SOURCE_DIR}/../templates/game/out/native/_deps/zydis-src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../templates/game/out/build/release/_deps/zydis-src NO_DEFAULT_PATH)
+if(MC3_ZYDIS_SRC)
+    enable_language(C)
+    set(ZYDIS_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+    set(ZYDIS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(ZYDIS_BUILD_DOXYGEN OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${MC3_ZYDIS_SRC} zydis EXCLUDE_FROM_ALL)
+    add_executable(recomp_patch_test recomp_patch_test.cpp ../tools/recomp/patch.cpp)
+    target_include_directories(recomp_patch_test PRIVATE ../tools/recomp)
+    target_compile_features(recomp_patch_test PRIVATE cxx_std_20)
+    target_compile_options(recomp_patch_test PRIVATE -UNDEBUG)
+    target_link_libraries(recomp_patch_test PRIVATE Zydis)
+    add_test(NAME recomp_patch COMMAND recomp_patch_test)
+endif()

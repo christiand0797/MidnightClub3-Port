@@ -80,6 +80,8 @@ std::string CodeGen::EmitFunction(uint32_t entry) {
             continue;
         }
         Line("\t// " + F("%08X ", va) + Text(va, in, ops));
+        if (auto p = an_.cfg.patches.find(va); p != an_.cfg.patches.end())
+            Line("\t// patched, was: " + p->second.expect + (p->second.why.empty() ? "" : " (" + p->second.why + ")"));
         uint32_t next_body = i + 1 < body.size() ? body[i + 1] : 0;
         EmitInsn(va, in, ops, next_body);
         if (!an_.cfg.hooks.empty()) EmitHooks(va, true);

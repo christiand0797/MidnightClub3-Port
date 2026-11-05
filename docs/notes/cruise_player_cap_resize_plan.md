@@ -26,6 +26,14 @@ already gets the Zydis operands, so the override is a few lines: look up the VA 
 decode to the expected instruction must fail the build. Unit test in `tests/`.
 Cost: changing game.toml regenerates all the recompiled code (slow, but only once per batch).
 
+**Status 2026-11-05: Phase 1 done.** `tools/recomp/patch.{h,cpp}` + `[[patch]]` parsing in `main.cpp`, applied in
+`Analysis::Decode` (so analysis and codegen see the same instruction), checked in `CheckOverrides` against the raw
+instruction (`Analysis::DecodeRaw`). Each patched line in the generated code gets a `// patched, was: ... (why)`
+comment. Control-flow instructions are refused; an immediate must fit the operand size. Unit test
+`tests/recomp_patch_test.cpp` (ctest `recomp_patch`). End to end: an unpatched run is byte-identical to the current
+`generated/game`; a run with `0x1DD17 push 0x08 -> 16` and `0x2693DD disp 0x114 -> 0x3E0` changed exactly those two
+lines; a wrong `expect` stops the recompiler with exit 1. No patch is in `game.toml` yet.
+
 Small functions whose logic changes, not just a constant (the Players handler, the accessors), are C++ hooks.
 
 ## Phase 2: move the arrays instead of growing structs in place

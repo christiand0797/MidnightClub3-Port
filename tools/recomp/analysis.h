@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "patch.h"
 #include "xbe/xbe.h"
 
 struct Hook {
@@ -43,6 +44,7 @@ struct Config {
     std::multimap<uint32_t, Hook> hooks;
     std::map<uint32_t, uint32_t> function_ends;          // declared entries, exclusive decode limit or 0
     std::map<uint32_t, std::vector<uint32_t>> switches;  // indirect jmp to its targets
+    std::map<uint32_t, Patch> patches;                   // operand overrides, applied by Decode
 };
 
 enum class Flow : uint8_t { Normal, Jcc, Jmp, JmpIndirect, Call, CallIndirect, Ret, Stop, Invalid };
@@ -71,7 +73,8 @@ public:
         const xbe::Section* s = img.SectionAt(va);
         return s && va >= s->va + s->rsize;
     }
-    bool Decode(uint32_t va, ZydisDecodedInstruction& insn, ZydisDecodedOperand* ops) const;
+    bool Decode(uint32_t va, ZydisDecodedInstruction& insn, ZydisDecodedOperand* ops) const;  // with [[patch]]es
+    bool DecodeRaw(uint32_t va, ZydisDecodedInstruction& insn, ZydisDecodedOperand* ops) const;  // as in the image
     const Insn* InsnAt(uint32_t va) const {
         auto it = insns_.find(va);
         return it == insns_.end() ? nullptr : &it->second;

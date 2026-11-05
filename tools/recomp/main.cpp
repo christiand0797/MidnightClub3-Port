@@ -48,6 +48,8 @@ static bool ParseExit(const toml::node* n, Hook::Exit& e) {
 //   [[function]] at, end  an entry decoded no further than end (exclusive); it also stops other walks
 //   [[switch]] at, targets  the targets of an indirect jmp, replacing table detection
 //   [xbe] xdk = build  includes <--xdk folder>/<build>/layout.toml
+//   [[patch]] at, expect, imm | disp, operand, why  replace one immediate or memory displacement of an instruction
+//     (see patch.h); expect is the original instruction text, checked so a patch never lands on the wrong code
 //   [abi] name = ["esi", "stack", ...]  where a [symbols] function takes each API argument when the image does not
 //     use the convention the host declares: a register, or "stack" for the next stack slot, which the callee pops
 static bool LoadConfig(const fs::path& path, Config& cfg, const fs::path& xdk_dir) {
@@ -164,6 +166,28 @@ static bool LoadConfig(const fs::path& path, Config& cfg, const fs::path& xdk_di
                 v.push_back(uint32_t(*i));
             }
         }
+    if (auto a = t["patch"].as_array())
+        for (auto& e : *a) {
+            auto h = e.as_table();
+            auto at = Num(h, "at");
+            if (!at) return bad("patch");
+            Patch p;
+            p.at = uint32_t(*at);
+            p.expect = (*h)["expect"].value_or(std::string());
+            p.imm = Num(h, "imm");
+            p.disp = Num(h, "disp");
+            p.operand = int(Num(h, "operand").value_or(-1));
+            p.why = (*h)["why"].value_or(std::string());
+            if (p.expect.empty() || p.imm.has_value() == p.disp.has_value()) {
+                std::fprintf(stderr, "%s: [[patch]] %08X needs expect and exactly one of imm or disp\n",
+                             path.string().c_str(), p.at);
+                return false;
+            }
+            if (!cfg.patches.emplace(p.at, p).second) {
+                std::fprintf(stderr, "%s: [[patch]] %08X is patched twice\n", path.string().c_str(), p.at);
+                return false;
+            }
+        }
     for (auto& [name, va] : cfg.symbols)
         if (va) cfg.functions.emplace(va, name);
     return true;
@@ -189,6 +213,18 @@ static bool CheckOverrides(const Analysis& an) {
                 ok = false;
             }
     }
+    for (auto& [at, p] : an.cfg.patches) {
+        ZydisDecodedInstruction in;
+        ZydisDecodedOperand ops[ZYDIS_MAX_OPERAND_COUNT];
+        std::string err;
+        if (!an.InsnAt(at) || !an.DecodeRaw(at, in, ops)) err = "not a decoded instruction";
+        else ApplyPatch(p, in, ops, FormatAsm(in, ops, at), err);
+        if (!err.empty()) {
+            std::fprintf(stderr, "[[patch]] %08X: %s\n", at, err.c_str());
+            ok = false;
+        }
+    }
+    if (ok && !an.cfg.patches.empty()) std::fprintf(stderr, "%zu instruction patches applied\n", an.cfg.patches.size());
     return ok;
 }
 

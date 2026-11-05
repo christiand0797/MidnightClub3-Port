@@ -39,6 +39,19 @@ const uint8_t* Analysis::Bytes(uint32_t va, uint32_t& avail) const {
 }
 
 bool Analysis::Decode(uint32_t va, ZydisDecodedInstruction& insn, ZydisDecodedOperand* ops) const {
+    if (!DecodeRaw(va, insn, ops)) return false;
+    if (!cfg.patches.empty())
+        if (auto p = cfg.patches.find(va); p != cfg.patches.end()) {
+            std::string err;  // a patch that does not fit leaves the instruction as is; main's check fails the build
+            ZydisDecodedOperand patched[ZYDIS_MAX_OPERAND_COUNT];
+            std::copy_n(ops, ZYDIS_MAX_OPERAND_COUNT, patched);
+            if (ApplyPatch(p->second, insn, patched, FormatAsm(insn, ops, va), err))
+                std::copy_n(patched, ZYDIS_MAX_OPERAND_COUNT, ops);
+        }
+    return true;
+}
+
+bool Analysis::DecodeRaw(uint32_t va, ZydisDecodedInstruction& insn, ZydisDecodedOperand* ops) const {
     uint32_t avail = 0;
     const uint8_t* p = Bytes(va, avail);
     if (!p || !avail) return false;
