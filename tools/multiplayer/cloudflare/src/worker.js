@@ -4,7 +4,7 @@ export { World } from './world.js';
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const world = () => env.WORLD.get(env.WORLD.idFromName('mc3-world-1'));
+    const world = () => env.WORLD.get(env.WORLD.idFromName('mc3-world-2'));
     if (url.pathname === '/healthz') {
       return Response.json({ service: 'mc3-relay', protocol: 1, status: 'ok', host: 'cloudflare' });
     }
