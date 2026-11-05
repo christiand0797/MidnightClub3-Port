@@ -94,8 +94,11 @@ export async function validateSnapshot(body) {
 
 export class Accounts {
   // sql: a DurableObjectStorage.sql (or a compatible stub). now: clock for tests.
-  constructor(sql, { now = () => Date.now() } = {}) {
+  // creators: player names shown with the creator badge (the CREATOR_NAMES var). Each name is pinned to the first
+  // account that holds it, so a later account re-registering a deleted creator's name gets no badge.
+  constructor(sql, { now = () => Date.now(), creators = [] } = {}) {
     this.sql = sql; this.now = now; this.attempts = new Map();
+    this.creators = new Set(creators.map(n => String(n).trim().toLowerCase()).filter(Boolean));
     sql.exec(`CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT NOT NULL)`);
     sql.exec(`CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT NOT NULL, name_lc TEXT NOT NULL UNIQUE,
       hash TEXT NOT NULL, created INTEGER NOT NULL, last_seen INTEGER)`);
@@ -107,6 +110,19 @@ export class Accounts {
     sql.exec(`CREATE TABLE IF NOT EXISTS cloud_part(user_id TEXT NOT NULL, revision INTEGER NOT NULL, part INTEGER NOT NULL,
       data TEXT NOT NULL, PRIMARY KEY(user_id, revision, part))`);
   }
+  // 'creator' for a creator's own account, otherwise null
+  badgeFor(id, name) {
+    const key = typeof name === 'string' ? name.trim().toLowerCase() : '';
+    if (!id || !this.creators.has(key)) return null;
+    this.sql.exec(`INSERT OR IGNORE INTO meta(k, v) VALUES (?, ?)`, 'creator:' + key, id);
+    const pin = this.one(`SELECT v FROM meta WHERE k = ?`, 'creator:' + key);
+    return pin && pin.v === id ? 'creator' : null;
+  }
+  // a registered account's name (any case): guests may not take it
+  isRegisteredName(name) {
+    return typeof name === 'string' && !!this.one(`SELECT id FROM users WHERE name_lc = ?`, name.trim().toLowerCase());
+  }
+  publicUser(user) { return { id: user.id, username: user.name, rating: 1000, badge: this.badgeFor(user.id, user.name) }; }
   one(query, ...args) { return this.sql.exec(query, ...args).toArray()[0] || null; }
   all(query, ...args) { return this.sql.exec(query, ...args).toArray(); }
 
@@ -132,7 +148,7 @@ export class Accounts {
       if (!plain(p) || typeof p.id !== 'string' || typeof p.sid !== 'string' || !(p.exp > this.now())) return null;
       if (!this.activeSession(p.sid, p.id)) return null;
       const user = this.one(`SELECT id, name FROM users WHERE id = ?`, p.id);
-      return user ? { id: user.id, username: user.name, sid: p.sid } : null;
+      return user ? { id: user.id, username: user.name, sid: p.sid, badge: this.badgeFor(user.id, user.name) } : null;
     } catch (_) { return null; }
   }
   activeSession(sid, userId) {
@@ -226,7 +242,7 @@ export class Accounts {
       sid, user.id, now, now + (remember ? REMEMBER_MS : SHORT_MS), remember ? 1 : 0);
     const secure = url.protocol === 'https:' ? '; Secure' : '';
     headers['Set-Cookie'] = `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax${secure}${remember ? '; Max-Age=2592000' : ''}`;
-    return { token: await this.makeToken(user, sid), user: { id: user.id, username: user.name, rating: 1000 }, remembered: remember };
+    return { token: await this.makeToken(user, sid), user: this.publicUser(user), remembered: remember };
   }
 
   async route(route, request, url, headers) {
@@ -268,7 +284,7 @@ export class Accounts {
       if (request.headers.get('Authorization') !== null) await this.authenticate(request);
       const saved = await this.fromCookie(request);
       if (!saved) fail(401, 'Sign in to continue.');
-      return { body: { token: await this.makeToken(saved.user, saved.sid), user: { id: saved.user.id, username: saved.user.name, rating: 1000 }, remembered: saved.remember } };
+      return { body: { token: await this.makeToken(saved.user, saved.sid), user: this.publicUser(saved.user), remembered: saved.remember } };
     }
     if (route === 'logout' && method === 'POST') {
       this.sameOrigin(request, url);
@@ -298,7 +314,7 @@ export class Accounts {
     }
     if (route === 'profile' && method === 'GET') {
       const { user } = await this.authenticate(request);
-      return { body: { id: user.id, username: user.name, rating: 1000 } };
+      return { body: this.publicUser(user) };
     }
     if (route === 'cloud' && (method === 'GET' || method === 'HEAD')) {
       const { user } = await this.authenticate(request);

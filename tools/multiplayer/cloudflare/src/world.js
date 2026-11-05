@@ -31,7 +31,8 @@ export class World extends DurableObject {
     this.roomsDirty = false;
     this.social = null;
     // Accounts and cloud saves live in this object's SQLite (absent in the unit-test stub).
-    this.accounts = ctx.storage.sql ? new Accounts(ctx.storage.sql) : null;
+    const creators = String(env.CREATOR_NAMES || '').split(',').map(n => n.trim()).filter(Boolean);
+    this.accounts = ctx.storage.sql ? new Accounts(ctx.storage.sql, { creators }) : null;
     if (this.accounts) {
       this.accounts.transactionSync = fn => ctx.storage.transactionSync(fn);
       this.accounts.onDelete = id => this.forgetAccount(id);
@@ -98,7 +99,7 @@ export class World extends DurableObject {
 
   listing() {
     return [...this.rooms.values()].filter(r => r.listed !== false).map(r => ({
-      id: r.id, name: r.name, host_username: r.hostName || r.name, status: r.status || 'waiting',
+      id: r.id, name: r.name, host_username: r.hostName || r.name, host_badge: r.hostBadge || null, status: r.status || 'waiting',
       max_players: r.maxPlayers || 0, player_count: this.playerCount(r.id), region: 'global', open: !!r.open || !r.maxPlayers
     }));
   }
@@ -151,8 +152,10 @@ export class World extends DurableObject {
     switch (data.type) {
       case 'join': {
         if (me.id) return this.send(ws, { type: 'error', error: 'Already authenticated' });
+        // a guest never appears under a registered player's name (badges and rankings follow names)
+        const name = this.accounts && this.accounts.isRegisteredName(data.name) ? data.name.trim().slice(0, 40) + ' (guest)' : data.name;
         const id = crypto.randomUUID();
-        me = { ...me, id, userId: 'guest-' + id, username: data.name, type: data.clientType || 'browser', gameId: null };
+        me = { ...me, id, userId: 'guest-' + id, username: name, type: data.clientType || 'browser', gameId: null };
         this.setInfo(ws, me);
         this.send(ws, { type: 'auth_ok', user: { id: me.userId, username: me.username } });
         break;
@@ -162,9 +165,9 @@ export class World extends DurableObject {
         const v = this.accounts && await this.accounts.verifyToken(data.token);
         if (!v) { this.send(ws, { type: 'error', error: 'Invalid token' }); return ws.close(1008, 'Invalid token'); }
         me = { ...this.info(ws), id: crypto.randomUUID(), userId: v.id, username: v.username, sid: v.sid,
-          type: data.clientType || 'browser', gameId: null };
+          badge: v.badge || null, type: data.clientType || 'browser', gameId: null };
         this.setInfo(ws, me);
-        this.send(ws, { type: 'auth_ok', user: { id: v.id, username: v.username } });
+        this.send(ws, { type: 'auth_ok', user: { id: v.id, username: v.username, badge: me.badge } });
         break;
       }
       case 'list':
@@ -179,7 +182,7 @@ export class World extends DurableObject {
         if (!this.rooms.has(id) && this.rooms.size >= MAX_ROOMS) return this.send(ws, { type: 'error', error: 'Room quota reached.' });
         if (data.type === 'create_game') {
           this.rooms.set(id, { id, name: data.name, listed: true, open: false, maxPlayers: data.maxPlayers || 0,
-            hostId: me.userId, hostName: me.username, status: 'waiting' });
+            hostId: me.userId, hostName: me.username, hostBadge: me.badge || null, status: 'waiting' });
           this.roomsDirty = true;
         } else if (data.type === 'enter_room' && !this.rooms.has(id)) {
           this.rooms.set(id, { id, name: data.name, listed: false, open: true, maxPlayers: 0, status: 'waiting' });
@@ -197,7 +200,7 @@ export class World extends DurableObject {
         this.send(ws, { type: created ? 'game_created' : 'game_joined', role: created ? 'host' : 'player', color,
           game: { id, name: room.name, maxPlayers: room.maxPlayers || 0, playerCount: this.playerCount(id), region: 'global',
             open: !room.maxPlayers, main: id === MAIN_ID, listed: room.listed !== false, hostUsername: room.hostName } });
-        this.broadcast(id, { type: 'player_joined', username: me.username, color, playerCount: this.playerCount(id) }, ws);
+        this.broadcast(id, { type: 'player_joined', username: me.username, badge: me.badge || null, color, playerCount: this.playerCount(id) }, ws);
         this.gameList();
         break;
       }
@@ -228,7 +231,7 @@ export class World extends DurableObject {
         break;
       }
       case 'chat':
-        if (me.gameId) this.broadcast(me.gameId, { type: 'chat', from: me.username, text: data.text, ts: Date.now() });
+        if (me.gameId) this.broadcast(me.gameId, { type: 'chat', from: me.username, fromBadge: me.badge || null, text: data.text, ts: Date.now() });
         break;
       case 'ping':
         this.send(ws, { type: 'pong', ts: data.ts });
@@ -274,9 +277,9 @@ export class World extends DurableObject {
     if (room && id !== MAIN_ID && left === 0) { this.rooms.delete(id); this.roomsDirty = true; }
     else if (room && room.hostId === me.userId) {
       const next = this.inRoom(id)[0];
-      if (next) { const n = this.info(next); room.hostId = n.userId; room.hostName = n.username;
+      if (next) { const n = this.info(next); room.hostId = n.userId; room.hostName = n.username; room.hostBadge = n.badge || null;
         this.roomsDirty = true;
-        this.broadcast(id, { type: 'host_transferred', newHost: n.username }); }
+        this.broadcast(id, { type: 'host_transferred', newHost: n.username, newHostBadge: n.badge || null }); }
     }
   }
 

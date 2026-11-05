@@ -161,7 +161,7 @@
         ++this.epoch; clearTimeout(this.syncTimer); this.cloud = this.draft = this.conflict = null; this.retained = []; this.dirty = false;
         this.saving = this.settingsAgain = this.fullSaveAgain = false; this.lastError = '';
       }
-      this.session = { token: data.token, user: { id: data.user.id, username: data.user.username.slice(0, 100) }, remembered: data.remembered === true };
+      this.session = { token: data.token, user: { id: data.user.id, username: data.user.username.slice(0, 100), badge: data.user.badge === 'creator' ? 'creator' : null }, remembered: data.remembered === true };
       if (changed) this.preferences = this.readPreferences();
       this.onSession(this.session); this.onChange(); return this.session;
     }

@@ -25,4 +25,6 @@ new_sqlite_classes = ["World"]
 
 [vars]
 MAIN_LOBBY = "Main Lobby"
+# player names shown with the DEV / CREATOR badge, comma separated (pinned to the first account holding each name)
+CREATOR_NAMES = "USEYOURNAME1691"
 
