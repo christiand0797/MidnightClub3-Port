@@ -11,6 +11,7 @@
 #include "core/remote_pad.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <mutex>
 #include <thread>
 
@@ -25,6 +26,9 @@ std::mutex g_remote_lock;
 Pad g_remote[4];
 uint64_t g_remote_ms[4] = {};
 std::once_flag g_remote_once;
+// MC3_REMOTE_PRIMARY=1 (a copy run by tools/multiplayer/playhost for one browser player, with no controller of its
+// own): the stream proxy hands browsers ports 1-3, so they shift down one and the browser player is player 1
+int g_remote_shift = 0;
 
 uint64_t NowMs() {
     using namespace std::chrono;
@@ -56,6 +60,8 @@ void Listen(SOCKET s) {
 
 void StartRemotePads() {
     std::call_once(g_remote_once, [] {
+        const char* primary = std::getenv("MC3_REMOTE_PRIMARY");
+        g_remote_shift = primary && primary[0] == '1' ? 1 : 0;
         WSADATA wsa;
         WSAStartup(MAKEWORD(2, 2), &wsa);
         SOCKET s = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -69,12 +75,13 @@ void StartRemotePads() {
             if (s != INVALID_SOCKET) ::closesocket(s);
             return;
         }
-        LOGI("input: remote controllers on 127.0.0.1:%u", port);
+        LOGI("input: remote controllers on 127.0.0.1:%u%s", port, g_remote_shift ? ", browser is player 1" : "");
         std::thread(Listen, s).detach();
     });
 }
 
 Pad RemotePad(int port) {
+    port += g_remote_shift;
     if (port < 0 || port > 3) return {};
     std::lock_guard lock(g_remote_lock);
     if (!g_remote[port].connected || NowMs() - g_remote_ms[port] > kRemotePadStaleMs) return {};
