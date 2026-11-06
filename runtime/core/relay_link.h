@@ -24,6 +24,9 @@ struct Status {
     bool in_main = false;
     uint32_t room_players = 0;
     uint32_t peers = 0;     // players we have exchanged game traffic with
+    std::string account;          // the mc3.top account signed in on this PC (empty: playing as a guest)
+    std::string account_message;  // the last sign-in result: an error, or "Signed in"
+    bool account_busy = false;    // a sign-in / sign-out is in progress
 };
 
 void Start();  // connects (and keeps reconnecting) with the saved settings; harmless when already running
@@ -37,5 +40,12 @@ void EnterMain();
 void EnterPrivate(const std::string& name);  // unlisted room shared by name (friends)
 void CreateRoom(const std::string& name);    // listed room hosted by this player
 void JoinRoom(const std::string& id);
+
+// mc3.top accounts (the same store as tools/multiplayer/proxy/account.py: %LOCALAPPDATA%\MidnightClub3-Port\
+// multiplayer\accounts.json, one entry per server). The password goes to the server once and is never kept: what is
+// kept is the 30-day device credential, traded for a 30-minute access token each time the game connects. Signed in,
+// the game joins as the account (badge, race points, rankings) instead of a guest.
+void SignIn(const std::string& username, const std::string& password, bool create);  // runs in the background
+void SignOut();
 
 }  // namespace relay

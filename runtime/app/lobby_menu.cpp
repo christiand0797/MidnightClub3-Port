@@ -16,6 +16,7 @@ namespace app {
 
 namespace {
 char g_name[33], g_room[51];
+char g_account[21], g_password[257];
 bool g_fields_loaded = false;
 
 void LoadFields() {
@@ -59,8 +60,36 @@ bool DrawLobby() {
         ImGui::TextDisabled("  as %s", st.name.c_str());
     }
 
+    // the mc3.top account: badge, race points and rankings follow it (the password is not kept, see relay_link.h)
     ImGui::Separator();
-    ImGui::TextUnformatted("Your name");
+    if (!st.account.empty()) {
+        ImGui::Text("Account: %s", st.account.c_str());
+        ImGui::SameLine();
+        if (ImGui::Button("Sign out")) relay::SignOut();
+    } else {
+        ImGui::TextUnformatted("mc3.top account");
+        ImGui::SetNextItemWidth(160.0f * ui);
+        ImGui::InputTextWithHint("##account", "player name", g_account, sizeof g_account);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(160.0f * ui);
+        bool enter = ImGui::InputTextWithHint("##password", "password", g_password, sizeof g_password,
+                                              ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        bool ready = g_account[0] && g_password[0] && !st.account_busy;
+        if (!ready) ImGui::BeginDisabled();
+        bool sign_in = ImGui::Button("Sign in") || (enter && ready);
+        ImGui::SameLine();
+        bool create = ImGui::Button("Create");
+        if (!ready) ImGui::EndDisabled();
+        if (sign_in || create) {
+            relay::SignIn(g_account, g_password, create);
+            std::memset(g_password, 0, sizeof g_password);  // not kept: the server issues a device sign-in instead
+        }
+    }
+    if (!st.account_message.empty()) ImGui::TextDisabled("%s", st.account_message.c_str());
+
+    ImGui::Separator();
+    ImGui::TextUnformatted(st.account.empty() ? "Guest name" : "Name (guests only)");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-1);
     if (ImGui::InputText("##name", g_name, sizeof g_name, ImGuiInputTextFlags_EnterReturnsTrue)) SaveName();

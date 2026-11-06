@@ -12,8 +12,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -67,6 +71,132 @@ std::string Origin(const std::string& url);
 void StopRoom();
 std::atomic<bool> g_reconnect{false};  // Reconnect(): sign in again at once (a new name), no retry delay
 SOCKET g_udp = INVALID_SOCKET;
+
+// ---------- accounts (proxy/account.py's protocol and store) ----------
+std::string AccountBase() {  // wss://host/ws -> https://host
+    std::string r = app::Get().online.relay;
+    std::string scheme = r.rfind("wss://", 0) == 0 ? "https://" : "http://";
+    size_t a = r.find("://");
+    std::string rest = a == std::string::npos ? r : r.substr(a + 3);
+    return scheme + rest.substr(0, rest.find('/'));
+}
+
+std::filesystem::path AccountFile() {
+    const char* local = std::getenv("LOCALAPPDATA");
+    std::filesystem::path root = local && *local ? std::filesystem::path(local) : std::filesystem::path(std::getenv("USERPROFILE") ? std::getenv("USERPROFILE") : ".");
+    return root / "MidnightClub3-Port" / "multiplayer" / "accounts.json";
+}
+
+json::Value LoadAccounts() {
+    std::ifstream f(AccountFile(), std::ios::binary);
+    std::string text((std::istreambuf_iterator<char>(f)), {});
+    json::Value v = json::Parse(text);
+    return v.kind == json::Value::Object ? v : json::Value{json::Value::Object};
+}
+
+void SaveAccounts(const json::Value& all) {
+    std::string out = "{";
+    bool first = true;
+    for (const auto& [base, e] : all.o) {
+        if (e.kind != json::Value::Object) continue;
+        out += (first ? "\n " : ",\n ") + json::Quote(base) + ": {\"username\": " + json::Quote(e["username"].str()) +
+               ", \"device\": " + json::Quote(e["device"].str()) + "}";
+        first = false;
+    }
+    out += "\n}\n";
+    std::error_code ec;
+    std::filesystem::create_directories(AccountFile().parent_path(), ec);
+    std::filesystem::path tmp = AccountFile();
+    tmp += ".tmp";
+    { std::ofstream f(tmp, std::ios::binary | std::ios::trunc); f << out; }
+    std::filesystem::rename(tmp, AccountFile(), ec);
+}
+
+bool ValidDevice(const std::string& d) {
+    if (d.size() != 43) return false;
+    for (char c : d)
+        if (!(std::isalnum(uint8_t(c)) || c == '-' || c == '_')) return false;
+    return true;
+}
+
+struct HttpResult {
+    int status = 0;
+    std::string body;
+    std::vector<std::string> cookies;
+};
+
+// one HTTPS request to the account API, with the headers proxy/account.py sends
+HttpResult Http(const std::string& method, const std::string& url, const std::string& body, const std::string& device) {
+    HttpResult r;
+    std::wstring w(url.begin(), url.end());
+    URL_COMPONENTS u{sizeof u};
+    wchar_t host[256] = {}, path[1024] = {};
+    u.lpszHostName = host, u.dwHostNameLength = 256;
+    u.lpszUrlPath = path, u.dwUrlPathLength = 1024;
+    if (!WinHttpCrackUrl(w.c_str(), 0, 0, &u)) return r;
+    HINTERNET s = WinHttpOpen(L"mc3-game/1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!s) return r;
+    WinHttpSetTimeouts(s, 10000, 10000, 15000, 15000);
+    HINTERNET c = WinHttpConnect(s, host, u.nPort, 0);
+    std::wstring wmethod(method.begin(), method.end());
+    HINTERNET q = c ? WinHttpOpenRequest(c, wmethod.c_str(), path, nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                         u.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0)
+                    : nullptr;
+    if (q) {
+        std::string origin = AccountBase();
+        std::string headers = "Content-Type: application/json\r\nOrigin: " + origin + "\r\n";
+        if (!device.empty()) headers += "Cookie: mc3_device=" + device + "\r\n";
+        std::wstring wh(headers.begin(), headers.end());
+        WinHttpAddRequestHeaders(q, wh.c_str(), DWORD(-1), WINHTTP_ADDREQ_FLAG_ADD);
+        DWORD flags = WINHTTP_DISABLE_COOKIES;
+        WinHttpSetOption(q, WINHTTP_OPTION_DISABLE_FEATURE, &flags, sizeof flags);  // the device cookie is read by hand
+        if (WinHttpSendRequest(q, WINHTTP_NO_ADDITIONAL_HEADERS, 0, (LPVOID)body.data(), DWORD(body.size()), DWORD(body.size()), 0) &&
+            WinHttpReceiveResponse(q, nullptr)) {
+            DWORD code = 0, size = sizeof code;
+            WinHttpQueryHeaders(q, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, nullptr, &code, &size, nullptr);
+            r.status = int(code);
+            for (DWORD index = 0;;) {
+                wchar_t cookie[2048];
+                DWORD len = sizeof cookie;
+                if (!WinHttpQueryHeaders(q, WINHTTP_QUERY_SET_COOKIE, nullptr, cookie, &len, &index)) break;
+                std::wstring wc(cookie, len / sizeof(wchar_t));
+                r.cookies.emplace_back(wc.begin(), wc.end());
+            }
+            for (;;) {
+                DWORD avail = 0;
+                if (!WinHttpQueryDataAvailable(q, &avail) || !avail || r.body.size() > 65536) break;
+                std::string chunk(avail, '\0');
+                DWORD got = 0;
+                if (!WinHttpReadData(q, chunk.data(), avail, &got) || !got) break;
+                r.body.append(chunk.data(), got);
+            }
+        }
+        WinHttpCloseHandle(q);
+    }
+    if (c) WinHttpCloseHandle(c);
+    WinHttpCloseHandle(s);
+    return r;
+}
+
+// the saved account for this server: {username, device}, or empty
+std::pair<std::string, std::string> SavedAccount() {
+    json::Value e = LoadAccounts()[AccountBase()];
+    std::string device = e["device"].str();
+    if (!ValidDevice(device)) return {};
+    return {e["username"].str(), device};
+}
+
+// a fresh access token for the saved device sign-in, empty when not signed in (or it expired or was revoked)
+std::string AccessToken() {
+    auto [name, device] = SavedAccount();
+    if (device.empty()) return {};
+    HttpResult r = Http("POST", AccountBase() + "/api/session", "{}", device);
+    if (r.status != 200) {
+        LOGW("relay: account sign-in for %s not accepted (HTTP %d), playing as a guest", name.c_str(), r.status);
+        return {};
+    }
+    return json::Parse(r.body)["token"].str();
+}
 
 void SetStatus(Status::State st, const std::string& msg) {
     std::lock_guard lock(g_lock);
@@ -384,7 +514,13 @@ void Session(const std::string& url) {
     if (ws) {
         LOGR("relay: connected to %s", url.c_str());
         SetStatus(Status::Connecting, "Signing in to " + HostOf(url));
-        Send(R"({"type":"join","clientType":"game","name":)" + json::Quote(PlayerName()) + "}");
+        std::string token = AccessToken();
+        {
+            std::lock_guard lock(g_lock);
+            g_status.account = token.empty() ? std::string() : SavedAccount().first;
+        }
+        if (!token.empty()) Send(R"({"type":"auth","clientType":"game","token":)" + json::Quote(token) + "}");
+        else Send(R"({"type":"join","clientType":"game","name":)" + json::Quote(PlayerName()) + "}");
         std::string message;
         std::vector<char> buf(16 * 1024);
         while (g_run) {
@@ -532,6 +668,64 @@ void Stop() {
     g_udp = INVALID_SOCKET;
 }
 
+void SignIn(const std::string& username, const std::string& password, bool create) {
+    {
+        std::lock_guard lock(g_lock);
+        if (g_status.account_busy) return;
+        g_status.account_busy = true;
+        g_status.account_message = create ? "Creating the account..." : "Signing in...";
+    }
+    std::thread([username, password, create] {
+        std::string body = R"({"username":)" + json::Quote(username) + R"(,"password":)" + json::Quote(password) + R"(,"remember":true})";
+        HttpResult r = Http("POST", AccountBase() + (create ? "/api/register" : "/api/login"), body, {});
+        std::string device;
+        for (const std::string& c : r.cookies) {
+            size_t at = c.find("mc3_device=");
+            if (at == std::string::npos) continue;
+            std::string v = c.substr(at + 11, 43);
+            if (ValidDevice(v)) device = v;
+        }
+        json::Value answer = json::Parse(r.body);
+        std::string message;
+        if ((r.status == 200 || r.status == 201) && !device.empty()) {
+            std::string name = answer["user"]["username"].str(username);
+            json::Value all = LoadAccounts();
+            json::Value e{json::Value::Object};
+            json::Value n{json::Value::String}, d{json::Value::String};
+            n.s = name, d.s = device;
+            e.o["username"] = n, e.o["device"] = d;
+            all.o[AccountBase()] = e;
+            SaveAccounts(all);
+            message = "Signed in as " + name;
+            LOGR("relay: signed in as %s", name.c_str());
+        } else {
+            message = answer["error"].str(r.status ? "Sign-in failed (HTTP " + std::to_string(r.status) + ")" : "The account server is unreachable");
+        }
+        {
+            std::lock_guard lock(g_lock);
+            g_status.account_busy = false;
+            g_status.account_message = message;
+        }
+        if (!device.empty()) Reconnect();  // sign in to the lobby server as the account
+    }).detach();
+}
+
+void SignOut() {
+    std::thread([] {
+        auto [name, device] = SavedAccount();
+        json::Value all = LoadAccounts();
+        all.o.erase(AccountBase());
+        SaveAccounts(all);
+        if (!device.empty()) Http("POST", AccountBase() + "/api/logout", "{}", device);  // revoke this PC's device
+        {
+            std::lock_guard lock(g_lock);
+            g_status.account.clear();
+            g_status.account_message = name.empty() ? "" : "Signed out";
+        }
+        Reconnect();
+    }).detach();
+}
+
 void Reconnect() {
     if (!g_run) return;
     g_reconnect = true;
@@ -561,6 +755,8 @@ void JoinRoom(const std::string& id) { Want_(Want::Join, id); }
 void Start() {}
 void Stop() {}
 void Reconnect() {}
+void SignIn(const std::string&, const std::string&, bool) {}
+void SignOut() {}
 bool Running() { return false; }
 Status Current() { return {}; }
 std::vector<Room> Rooms() { return {}; }
