@@ -52,6 +52,7 @@ Pad Poll(int port, bool) {
 namespace app {
 void GarageTuningActive() {}
 void EndGarageNavigation() {}
+void OpenLobby() {}  // the online lobbies window is a native ImGui overlay; the page gets its own (browser plan step 6)
 }  // namespace app
 
 namespace app::tuning_profiles {

@@ -327,6 +327,12 @@ void Load() {
     s.dump_textures = t["dump_textures"].value_or(s.dump_textures);
     s.texture_dump_format = std::min(t["texture_dump_format"].value_or(s.texture_dump_format), 1u);
     s.join_ip = t["join_ip"].value_or(s.join_ip);
+    if (const toml::table* o = t["online"].as_table()) {
+        s.online.enabled = (*o)["enabled"].value_or(s.online.enabled);
+        s.online.relay = (*o)["relay"].value_or(s.online.relay);
+        s.online.name = (*o)["name"].value_or(s.online.name);
+        s.online.room = (*o)["room"].value_or(s.online.room);
+    }
     for (const Option& o : kGame.options) {
         if (o.flag) *o.flag = t[o.key].value_or(*o.flag);
         else *o.value = t[o.key].value_or(*o.value);
@@ -392,6 +398,8 @@ toml::table Table() {
                   {"dump_textures", s.dump_textures},
                   {"texture_dump_format", int64_t(s.texture_dump_format)},
                   {"join_ip", s.join_ip}};
+    t.insert("online", toml::table{{"enabled", s.online.enabled}, {"relay", s.online.relay}, {"name", s.online.name},
+                                   {"room", s.online.room}});
     for (const Option& o : kGame.options) {
         if (o.flag) t.insert(o.key, *o.flag);
         else t.insert(o.key, int64_t(*o.value));

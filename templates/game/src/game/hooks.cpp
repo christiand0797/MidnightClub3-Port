@@ -15,12 +15,14 @@
 #include "app/app.h"
 #include "core/log.h"
 #include "xdk/hle.h"
+#include "kernel/memory.h"
 #include "world_tuning.h"
 #include "tuning_profiles.h"
 
 using kernel::G;
 using kernel::R32;
 using kernel::W32;
+using kernel::W16;
 
 // The engine's clock (time manager at 0x20B6F0, once a frame) runs in one of two modes:
 //  - measured: seconds since the last frame from the time stamp counter (1/733.33 MHz), rounded UP to whole 60 Hz
@@ -171,6 +173,38 @@ std::mutex g_keys_lock;
 std::set<std::string> g_keys;
 }  // namespace
 
+// The Internet Play entry opens the online lobbies (online.cpp), so its label says so. The lookup returns a string
+// object whose +8 is the text; the copy keeps the object's other fields and points at a guest copy of the new label,
+// in the same character width as the original (UTF-16 when its second byte is 0).
+namespace {
+uint32_t g_online_label = 0;
+void RenameInternetPlay(X86Context& ctx) {
+    uint32_t obj = ctx.eax;
+    if (!obj || !R32(obj + 8)) return;
+    if (!g_online_label) {
+        uint32_t buf = mem::AllocSystem(0x100);
+        if (!buf) return;
+        for (uint32_t i = 0; i < 0x40; i += 4) W32(buf + i, R32(obj + i));
+        uint32_t text = buf + 0x40, old = R32(obj + 8);
+        const char* label = "Online Lobbies";
+        bool wide = G<uint8_t>(old + 1) == 0;
+        for (uint32_t i = 0; label[i] || !i; i++) {
+            if (wide) W16(text + i * 2, uint16_t(uint8_t(label[i])));
+            else G<uint8_t>(text + i) = uint8_t(label[i]);
+            if (!label[i + 1]) {
+                if (wide) W16(text + (i + 1) * 2, 0);
+                else G<uint8_t>(text + i + 1) = 0;
+                break;
+            }
+        }
+        W32(buf + 8, text);
+        g_online_label = buf;
+        LOGR("online: Internet Play is labelled Online Lobbies (%s text)", wide ? "UTF-16" : "8-bit");
+    }
+    ctx.eax = g_online_label;
+}
+}  // namespace
+
 X86_EXTERN_FUNC(__imp__sub_000EA750);
 X86_FUNC(sub_000EA750) {
     uint32_t caller = R32(ctx.esp), key = R32(ctx.esp + 4), table = ctx.ecx;
@@ -183,6 +217,11 @@ X86_FUNC(sub_000EA750) {
         }
         std::lock_guard<std::mutex> lock(g_keys_lock);
         if (g_keys.insert(k).second) LOGR("text: \"%s\" from %08X (table %08X)", k.c_str(), caller, table);
+        if (k == "Internet_Play" && app::Get().online.enabled) {
+            __imp__sub_000EA750(ctx, base);
+            RenameInternetPlay(ctx);
+            return;
+        }
     }
     __imp__sub_000EA750(ctx, base);
 }

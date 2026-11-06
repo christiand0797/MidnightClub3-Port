@@ -495,8 +495,22 @@ void FeedController() {
 
 bool MenuOpen() { return g_open.load(std::memory_order_relaxed); }
 
+namespace {
+bool g_lobby = false;  // UiLock
+}
+void OpenLobby() {
+    std::lock_guard lock(UiLock());
+    g_lobby = true;
+    SetMenuOpen(true);
+}
+
 void ToggleMenu() {
     std::lock_guard lock(UiLock());
+    if (g_lobby) {  // F10 / Back+Start while the lobby window is up closes it
+        g_lobby = false;
+        SetMenuOpen(false);
+        return;
+    }
     const bool was = g_open.load(std::memory_order_relaxed);
     SetMenuOpen(!was);
     if (was) RevertDisplay();
@@ -577,6 +591,13 @@ void DrawSettingsMenu(float fps) {
     }
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard;
     FeedController();
+    if (g_lobby) {
+        if (!DrawLobby()) {
+            g_lobby = false;
+            SetMenuOpen(false);
+        }
+        return;
+    }
 
     // sized for the screen: the console's UI is drawn for 480 lines, this follows the output height
     float ui = std::clamp(io.DisplaySize.y / 900.0f, 1.0f, 2.0f);

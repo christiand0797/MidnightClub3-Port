@@ -102,6 +102,15 @@ struct Settings {
         uint32_t limit = 20;       // automatic captures a session, 1..500 (each is 30-80 MB)
     } capture;
 
+    // [online]: the built-in link to the online lobbies (core/relay_link.cpp, app/lobby_menu.cpp). The game's
+    // Internet Play entry opens the lobby list; races then run over System Link inside the chosen room.
+    struct Online {
+        bool enabled = true;
+        std::string relay = "wss://mc3.top/ws";  // ws:// or wss:// address of the lobby server
+        std::string name;                        // shown to other players; empty: the PC's user name
+        std::string room;                        // last room joined by name (private rooms); empty: Main Lobby
+    } online;
+
     // PC-only reviewed material preferences. Disabled by default; renderer telemetry
     // determines which exact assignments can actually use PBR.
     gpu::pbr::controls::Settings pbr;
@@ -165,6 +174,9 @@ std::recursive_mutex& UiLock();
 // game's controllers read neutral and the menu takes the input.
 bool MenuOpen();
 void ToggleMenu();
+// Online lobbies window (lobby_menu.cpp): opened by the game's Internet Play entry, freezes game input like the menu
+void OpenLobby();
+bool DrawLobby();  // settings_menu.cpp calls it inside the ImGui frame; false when closed
 void OpenVehicleMenu();  // F2: show the live vehicle tuning page, including while in the garage
 void GarageTuningActive();  // the garage's update refreshes the visible PC tuning button
 bool GarageNavigationActive(); // short fresh-update lease; separate from the longer visible-button hint
