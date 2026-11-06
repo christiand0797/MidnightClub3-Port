@@ -75,7 +75,7 @@ def main():
 
     base = ["-std=c++20", "-pthread", "-fno-strict-aliasing", "-msimd128", "-msse4.2"]
     gen_flags = base + ["-O2", "-g0", "-w", f"-I{RT}", f"-I{RT / 'cpu/freestanding'}", f"-I{GEN}"]
-    host_flags = base + ["-O1", "-g", "-Wno-everything", f"-I{GAME / 'src'}", f"-I{RT}", f"-I{GEN}", f"-I{HARNESS}",
+    host_flags = base + (["-O1", "-g"] if a.debug else ["-O2"]) + ["-Wno-everything", f"-I{GAME / 'src'}", f"-I{RT}", f"-I{GEN}", f"-I{HARNESS}",
                          f"-I{HARNESS / 'compat'}", f"-I{DEPS / 'tomlplusplus-src/include'}", f"-I{DEPS / 'imgui-src'}",
                          "-DXBE_RAW_VERTICES=0", "-DXBE_RENDER_THREAD=0", "-DXBE_WEB=1"]
     if a.target == "web":
