@@ -133,8 +133,8 @@ let started = false, gpuMode = false;
 async function start() {
   if (started || !crossOriginIsolated) return;
   started = true;
-  // WebGPU (step 4, in progress): ?gpu=1 draws through the page's WebGPU side; otherwise the CPU picture
-  if (params.has('gpu')) {
+  // WebGPU draws the game when the browser has it (?cpu=1: the CPU picture instead, the fallback without WebGPU)
+  if (!params.has('cpu')) {
     const problem = await MC3Gpu.init($('gpu'));
     if (problem) console.warn('webgpu: ' + problem + ', using the CPU picture');
     else { gpuMode = true; $('canvas').hidden = true; $('gpu').hidden = false; }
@@ -143,7 +143,9 @@ async function start() {
   $('screen').style.display = 'block';
   status('Loading the game');
   window.Module = {
-    arguments: ['/opfs/' + DISC, '--env', 'REF=' + (params.get('ref') || (gpuMode ? '0' : '2'))].concat(gpuMode ? ['--env', 'GPU=1'] : []),
+    // ?env=KEY=VALUE,KEY=VALUE passes test settings to the game (DUAL, LIMIT, ...)
+    arguments: ['/opfs/' + DISC, '--env', 'REF=' + (params.get('ref') || (gpuMode ? '0' : '2'))].concat(gpuMode ? ['--env', 'GPU=1'] : [],
+      (params.get('env') || '').split(',').filter(Boolean).flatMap(kv => ['--env', kv])),
     print: t => console.log(t),
     printErr: t => console.warn(t),
     onRuntimeInitialized() {
@@ -203,11 +205,15 @@ wake.port1.onmessage = () => {
   wake.port2.postMessage(0);
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden && started) wake.port2.postMessage(0); });
+// a covered window gets no animation frames either while still "visible": a timer stands in when none came for 32 ms
+let lastTick = 0;
+setInterval(() => { if (started && !document.hidden && performance.now() - lastTick > 32) tick(); }, 8);
 function frame() {
   requestAnimationFrame(frame);
   tick();
 }
 function tick() {
+  lastTick = performance.now();
   if (gpuMode) {
     shown += MC3Gpu.frame();
     if (performance.now() - fpsAt > 1000) { status(`Running on WebGPU, ${shown} frames/s`); shown = 0; fpsAt = performance.now(); }
@@ -229,6 +235,18 @@ function tick() {
   shown++;
   if (performance.now() - fpsAt > 1000) { status(`Running, ${shown} frames/s drawn`); shown = 0; fpsAt = performance.now(); }
 }
+
+// testing: the CPU picture's last frame as a data URL (with ?ref=1, also in WebGPU compare mode)
+window.cpuSnapshot = () => {
+  const M = window.Module, info = M._web_frame() >>> 2;
+  const w = M.HEAPU32[info + 1], h = M.HEAPU32[info + 2], ptr = M.HEAPU32[info + 3];
+  if (!w || !M._web_frame_lock(1)) return null;
+  const img = new ImageData(w, h);
+  try { img.data.set(M.HEAPU8.subarray(ptr, ptr + w * h * 4)); } finally { M._web_frame_lock(0); }
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').putImageData(img, 0, 0);
+  return c.toDataURL('image/jpeg', 0.7);
+};
 
 // input: player 1's pad (input::Pad, tools/web/web_stubs.cpp)
 const keys = new Set(), taps = new Map();  // a tap counts as held for 250 ms: the game reads input once per frame

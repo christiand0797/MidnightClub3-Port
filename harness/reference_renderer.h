@@ -49,5 +49,13 @@ struct GpuDraw {
 };
 using GpuSink = void (*)(const GpuDraw&);
 void SetGpuSink(GpuSink sink);
+// comparison (browser build): dual also rasterizes on the CPU after handing a draw to the sink; limit draws only the
+// first n draws of each frame (0: all), on both sides
+void SetGpuCompare(bool dual, uint32_t limit);
+// a surface's size in pixels (false when it cannot be read); a copy's destination becomes a GPU target
+bool SurfaceSize(const gpu::Surface& s, uint32_t& w, uint32_t& h);
+void MarkGpuTarget(uint32_t address, uint32_t width);
+// GPU targets are keyed by physical offset: the same 64 MB of RAM shows at physical and contiguous virtual addresses
+inline uint32_t GpuKey(uint32_t address) { return address & 0x03FFFFFF; }
 
 }  // namespace reference

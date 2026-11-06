@@ -225,6 +225,9 @@
     transition: all 0.2s;
   }
   .menu-btn.primary { background: #00d4ff; color: #000; }
+  /* the browser build (/play/): the game itself, from the player's own disc */
+  a.menu-btn.play-browser { display: block; text-align: center; text-decoration: none; background: #ff4d3d; color: #fff; font-weight: 800; }
+  a.menu-btn.play-browser:hover { background: #ff6a5c; transform: translateY(-1px); }
   .menu-btn.primary:hover { background: #33e0ff; transform: translateY(-1px); }
   .menu-btn.secondary { background: #1f2d44; color: #c9d1e2; border: 1px solid #2a3f5f; }
   .menu-btn.secondary:hover { background: #2a3f5f; }
@@ -553,6 +556,7 @@
       <button class="btn primary" id="authBtn">Log In</button>
       <button class="btn secondary" id="authToggleBtn">Create Account</button>
     </div>
+    <a class="menu-btn play-browser" href="/play/" style="margin-top:14px">&#9654; Play in Browser &mdash; no account needed</a>
     <div class="toggle-text" id="authToggleText">Don't have an account? <a id="authSwitchLink" href="#">Sign up</a></div>
   </div>
 </div>
@@ -563,6 +567,7 @@
     <h1 id="menuTitle">MC3 Multiplayer</h1>
     <div class="subtitle" id="menuSubtitle">Play online with players worldwide</div>
     <div class="menu-actions">
+      <a class="menu-btn play-browser" href="/play/">&#9654; Play in Browser</a>
       <button class="menu-btn primary" id="btnCreateGame">Create Game</button>
       <button class="menu-btn secondary" id="btnRefresh">Refresh List</button>
       <button class="menu-btn secondary" id="btnViewSaves">Cloud Saves</button>

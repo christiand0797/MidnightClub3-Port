@@ -1061,6 +1061,8 @@ void Copy(const Surface& src, const Surface& dst, uint32_t count, uint32_t rects
 
 namespace {
 GpuSink g_gpu_sink = nullptr;
+bool g_gpu_dual = false;
+uint32_t g_draw_limit = 0;
 std::map<uint32_t, uint32_t> g_gpu_targets;  // render target addresses the GPU has drawn -> width
 
 // a texture's level 0 as RGBA8 for the GPU, decoded again only when its guest bytes change
@@ -1095,9 +1097,18 @@ const GpuImage* GpuImageFor(uint32_t header) {
 }  // namespace
 
 void SetGpuSink(GpuSink sink) { g_gpu_sink = sink; }
+void SetGpuCompare(bool dual, uint32_t limit) { g_gpu_dual = dual, g_draw_limit = limit; }
+bool SurfaceSize(const Surface& s, uint32_t& w, uint32_t& h) {
+    Plane p = OpenPlane(s);
+    if (!p.ok) return false;
+    w = p.w, h = p.h;
+    return true;
+}
+void MarkGpuTarget(uint32_t address, uint32_t width) { g_gpu_targets[GpuKey(address)] = width; }
 
 void Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) {
     uint32_t draw = g_draws++;
+    if (g_draw_limit && draw >= g_draw_limit) return;
     Assembled as;
     if (!Assemble(s, prim, start, count, indices, as) || as.topology != Topology::Triangles) return;
     Plane rt = OpenPlane(s.rt);
@@ -1195,9 +1206,9 @@ void Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const u
 
     if (g_gpu_sink) {
         GpuDraw g;
-        g.rt = rt.ok ? s.rt.data : 0;
+        g.rt = rt.ok ? GpuKey(s.rt.data) : 0;
         g.rt_w = gw, g.rt_h = gh;
-        g.zs = zs.ok && (s.rs[kRsZEnable] || s.rs[kRsStencilEnable]) ? s.zs.data : 0;
+        g.zs = zs.ok && (s.rs[kRsZEnable] || s.rs[kRsStencilEnable]) ? GpuKey(s.zs.data) : 0;
         g.zscale = s.zscale;
         int l = int(s.viewport.x), t = int(s.viewport.y), r = l + int(s.viewport.w), b = t + int(s.viewport.h);
         if (s.scissor_count) {
@@ -1232,9 +1243,9 @@ void Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const u
             if (!s.textures[size_t(i)] || !mat.info[i].kind) continue;
             GpuTexture& gt = g.tex[i];
             TextureDesc td;
-            if (Describe(s.textures[size_t(i)], td) && g_gpu_targets.count(td.data)) {
+            if (Describe(s.textures[size_t(i)], td) && g_gpu_targets.count(GpuKey(td.data))) {
                 // rendered on the GPU earlier: its pixels live there, not in guest memory
-                gt.key = td.data, gt.w = td.width, gt.h = td.height, gt.target = 1;
+                gt.key = GpuKey(td.data), gt.w = td.width, gt.h = td.height, gt.target = 1;
                 gt.kind = mat.info[i].kind, gt.rect = mat.info[i].rect;
                 gt.address_u = mat.unit[i].address_u, gt.address_v = mat.unit[i].address_v;
                 gt.linear = mat.unit[i].mag >= 2 || mat.unit[i].min >= 2;
@@ -1248,7 +1259,7 @@ void Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const u
             gt.linear = mat.unit[i].mag >= 2 || mat.unit[i].min >= 2;
         }
         g_gpu_sink(g);
-        return;
+        if (!g_gpu_dual) return;
     }
 
     // raster and output state

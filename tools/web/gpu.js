@@ -8,7 +8,7 @@
 // and blends, then shows the target the game presents.
 'use strict';
 window.MC3Gpu = (() => {
-  const OP_CLEAR = 1, OP_PRESENT = 2, OP_TEXTURE = 3, OP_DRAW = 4;
+  const OP_CLEAR = 1, OP_PRESENT = 2, OP_TEXTURE = 3, OP_DRAW = 4, OP_COPY = 5;
   const DRAW_HEADER = 98, VERTEX_FLOATS = 32, UNIFORM_STRIDE = 512, MAX_DRAWS = 16384;
 
   const SHADER = /* wgsl */ `
@@ -227,7 +227,7 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     if (!t || t.w !== w || t.h !== h) {
       t?.color.destroy(); t?.depth.destroy();
       t = { w, h,
-        color: device.createTexture({ size: [w, h], format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING }),
+        color: device.createTexture({ size: [w, h], format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST }),
         depth: device.createTexture({ size: [w, h], format: 'depth24plus-stencil8', usage: GPUTextureUsage.RENDER_ATTACHMENT }) };
       t.view = t.color.createView(); t.dview = t.depth.createView();
       targets.set(key, t);
@@ -384,6 +384,25 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
           pass.drawIndexed(ic, 1, iat, base);
           vat += vc * VERTEX_FLOATS; iat += ic; nd++;
           stats.draws++;
+        }
+      } else if (op === OP_COPY) {
+        // CopyRects between targets, outside any pass
+        const src = targets.get(u32[p]);
+        if (src) {
+          pass?.end(); pass = null; passKey = 0;
+          const dst = target(u32[p + 3], u32[p + 4], u32[p + 5]);
+          const i32 = new Int32Array(u32.buffer);
+          for (let r = 0, n = u32[p + 6]; r < n; r++) {
+            const q = p + 7 + r * 6;
+            let x0 = i32[q], y0 = i32[q + 1], x1 = i32[q + 2], y1 = i32[q + 3], dx = i32[q + 4], dy = i32[q + 5];
+            // clip to both textures
+            if (x0 < 0) { dx -= x0; x0 = 0; } if (y0 < 0) { dy -= y0; y0 = 0; }
+            if (dx < 0) { x0 -= dx; dx = 0; } if (dy < 0) { y0 -= dy; dy = 0; }
+            const w = Math.min(x1, src.w) - x0, h = Math.min(y1, src.h) - y0;
+            const cw = Math.min(w, dst.w - dx), ch = Math.min(h, dst.h - dy);
+            if (cw > 0 && ch > 0) encoder.copyTextureToTexture({ texture: src.color, origin: [x0, y0] }, { texture: dst.color, origin: [dx, dy] }, [cw, ch]);
+          }
+          stats.copies = (stats.copies || 0) + 1;
         }
       } else if (op === OP_PRESENT) {
         front = u32[p]; fw = u32[p + 1]; fh = u32[p + 2];

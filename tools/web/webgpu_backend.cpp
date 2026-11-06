@@ -16,9 +16,11 @@
 //   2 present: front buffer (guest address), width, height
 //   3 texture: key, width, height, then width * height RGBA8 texels
 //   4 draw:    kDrawHeader words (see Draw), vertices (reference::kVertexFloats floats each), u32 indices
+//   5 copy:    src, src width, src height, dst, dst width, dst height, rect count, rects (x0 y0 x1 y1 dx dy, i32)
 // The recorder wraps the CPU stand in (harness/null_backend.cpp) for copies and the console-memory effects.
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <memory>
@@ -27,6 +29,7 @@
 
 #include "core/log.h"
 #include "gpu/backend.h"
+#include "kernel/kernel.h"
 #include "reference_renderer.h"
 
 #ifdef __EMSCRIPTEN__
@@ -37,7 +40,7 @@
 
 namespace {
 
-enum Op : uint32_t { kOpClear = 1, kOpPresent = 2, kOpTexture = 3, kOpDraw = 4 };
+enum Op : uint32_t { kOpClear = 1, kOpPresent = 2, kOpTexture = 3, kOpDraw = 4, kOpCopy = 5 };
 constexpr uint32_t kDrawHeader = 98;
 constexpr uint32_t kBufferWords = 8u << 20;  // 32 MiB per frame buffer
 
@@ -79,6 +82,11 @@ public:
         }
         g_recorder = this;
         reference::SetGpuSink(&Sink);
+        // DUAL=1: the CPU renderer draws every frame too (REF=1 shows it), LIMIT=n: first n draws only
+        dual_ = std::getenv("DUAL") && std::getenv("DUAL")[0] == '1';
+        const char* limit = std::getenv("LIMIT");
+        reference::SetGpuCompare(dual_, limit ? uint32_t(std::atoi(limit)) : 0);
+        if (dual_ || limit) LOGI("webgpu: compare mode, dual %d, limit %s", int(dual_), limit ? limit : "none");
     }
 
     bool Init(uint32_t w, uint32_t h) override {
@@ -88,7 +96,8 @@ public:
     }
     void Clear(const State& s, uint32_t n, const uint8_t* rects, uint32_t flags, uint32_t color, float z,
                uint32_t stencil) override {
-        std::vector<uint32_t> p{flags, color, Bits(z), stencil, s.rt.data, s.zs.data, width_, height_, rects ? n : 0};
+        std::vector<uint32_t> p{flags, color, Bits(z), stencil, reference::GpuKey(s.rt.data), reference::GpuKey(s.zs.data),
+                                width_, height_, rects ? n : 0};
         if (rects)
             for (uint32_t i = 0; i < n * 4; i++) {
                 uint32_t v;
@@ -96,15 +105,35 @@ public:
                 p.push_back(v);
             }
         Put(kOpClear, {{p.data(), uint32_t(p.size())}});
+        if (dual_) reference::Clear(s, n, rects, flags, color, z, stencil);
     }
     void Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) override {
         reference::Draw(s, prim, start, count, indices);  // its vertex stage, then Sink
     }
+    // CopyRects between surfaces: on the GPU (the screen effects copy the back buffer into a texture they then draw
+    // with); the destination becomes a GPU target, so later draws sample it from there
     void Copy(const Surface& src, const Surface& dst, uint32_t n, uint32_t rects, uint32_t points) override {
-        inner_->Copy(src, dst, n, rects, points);
+        uint32_t sw = 0, sh = 0, dw = 0, dh = 0;
+        if (reference::SurfaceSize(src, sw, sh) && reference::SurfaceSize(dst, dw, dh)) {
+            uint32_t count = n && rects ? n : 1;
+            std::vector<uint32_t> p{reference::GpuKey(src.data), sw, sh, reference::GpuKey(dst.data), dw, dh, count};
+            for (uint32_t i = 0; i < count; i++) {
+                int32_t x0 = 0, y0 = 0, x1 = int32_t(sw), y1 = int32_t(sh), dx = 0, dy = 0;
+                if (n && rects) {
+                    x0 = int32_t(kernel::R32(rects + i * 16)), y0 = int32_t(kernel::R32(rects + i * 16 + 4));
+                    x1 = int32_t(kernel::R32(rects + i * 16 + 8)), y1 = int32_t(kernel::R32(rects + i * 16 + 12));
+                    dx = x0, dy = y0;
+                }
+                if (points) dx = int32_t(kernel::R32(points + i * 8)), dy = int32_t(kernel::R32(points + i * 8 + 4));
+                for (int32_t v : {x0, y0, x1, y1, dx, dy}) p.push_back(uint32_t(v));
+            }
+            Put(kOpCopy, {{p.data(), uint32_t(p.size())}});
+            reference::MarkGpuTarget(dst.data, dw);
+        }
+        if (dual_) inner_->Copy(src, dst, n, rects, points);
     }
     void Present(const Surface& front) override {
-        uint32_t p[3] = {front.data, width_, height_};
+        uint32_t p[3] = {reference::GpuKey(front.data), width_, height_};
         Put(kOpPresent, {{p, 3}});
         inner_->Present(front);
         uint32_t frame = frame_ + 1;
@@ -177,7 +206,7 @@ private:
     std::unique_ptr<Backend> inner_;
     uint32_t width_ = 640, height_ = 480;
     uint32_t frame_ = 0, used_ = 0;
-    bool overflowed_ = false;
+    bool overflowed_ = false, dual_ = false;
     std::map<uint32_t, uint64_t> uploaded_;  // texture key -> hash of what the page has
 };
 
