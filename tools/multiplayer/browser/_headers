@@ -4,3 +4,20 @@
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
   Cross-Origin-Resource-Policy: same-origin
+
+# pages and their scripts revalidate every visit, so a deploy reaches players without a forced reload (the game code
+# itself is cached by version in the page, mc3.wasm.json)
+/play/
+  Cache-Control: no-cache
+/play/index.html
+  Cache-Control: no-cache
+/play/*.js
+  Cache-Control: no-cache
+/play/mc3.wasm.json
+  Cache-Control: no-cache
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/*.js
+  Cache-Control: no-cache

@@ -41,6 +41,10 @@ export class World extends DurableObject {
     this.members = null;      // room id -> Set(ws)
     this.listTimer = null;
     this.queueAt = 0;         // order for queued sign-ins
+    // rooms on objects of their own (room.js): one-use tickets for /ws/room/<id>, and how many clients each room has
+    // that still send through the World (told to the room so it forwards to them only when needed)
+    this.tickets = new Map();     // ticket -> { roomId, id, userId, username, type, exp }
+    this.legacySent = new Map();  // room id -> count last told to that room
     this.rooms = new Map();          // id -> { id, name, listed, open, maxPlayers, hostId, status }
     this.roomsDirty = false;
     this.social = null;
@@ -221,6 +225,49 @@ export class World extends DurableObject {
     return 'r-' + (await sha256hex(key)).slice(0, 20);
   }
 
+  // ---------- rooms on their own objects (room.js) ----------
+  ticketFor(me, roomId) {
+    if (!this.env.ROOM || me.type !== 'game') return undefined;
+    const now = Date.now();
+    if (this.tickets.size > 4096) for (const [k, t] of this.tickets) if (t.exp < now) this.tickets.delete(k);
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    const ticket = [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+    this.tickets.set(ticket, { roomId, id: me.id, userId: me.userId, username: me.username, type: me.type, exp: now + 60000 });
+    return '/ws/room/' + encodeURIComponent(roomId) + '?t=' + ticket;
+  }
+  // a room object checking a client's ticket (RPC): its identity once, and the client counts as on its room socket
+  async claimTicket(ticket, roomId) {
+    const t = this.tickets.get(ticket);
+    this.tickets.delete(ticket);
+    if (!t || t.roomId !== roomId || t.exp < Date.now()) return null;
+    const ws = this.sockets().find(s => this.info(s).id === t.id);
+    if (!ws || this.info(ws).gameId !== roomId) return null;  // left since
+    this.setInfo(ws, { ...this.info(ws), roomSocket: roomId });
+    this.tellLegacy(roomId);
+    return { id: t.id, userId: t.userId, username: t.username, type: t.type };
+  }
+  legacyCount(roomId) {
+    let n = 0;
+    for (const ws of this.inRoom(roomId)) { const i = this.info(ws); if (i.type === 'game' && i.roomSocket !== roomId) n++; }
+    return n;
+  }
+  tellLegacy(roomId) {
+    if (!this.env.ROOM || !roomId) return;
+    const n = this.legacyCount(roomId);
+    if (this.legacySent.get(roomId) === n) return;
+    this.legacySent.set(roomId, n);
+    if (!n && !this.inRoom(roomId).length) this.legacySent.delete(roomId);
+    this.env.ROOM.get(this.env.ROOM.idFromName(roomId)).setLegacy(n).catch(() => this.legacySent.delete(roomId));
+  }
+  // a room object's datagram for the room's clients without a room socket (RPC)
+  async forward(roomId, raw, to, fromId) {
+    for (const ws of this.inRoom(roomId)) {
+      const i = this.info(ws);
+      if (i.type !== 'game' || i.roomSocket === roomId || i.id === fromId || (to && i.id !== to)) continue;
+      this.sendRaw(ws, raw);
+    }
+  }
+
   // the fullest Main Lobby instance with room (busy lobbies), else a new one
   mainInstance() {
     let best = null, most = -1;
@@ -296,10 +343,12 @@ export class World extends DurableObject {
         const color = COLORS[Math.floor(Math.random() * COLORS.length)];
         me.gameId = id; me.color = color; this.setInfo(ws, me);
         const created = data.type === 'create_game';
-        this.send(ws, { type: created ? 'game_created' : 'game_joined', role: created ? 'host' : 'player', color,
+        const roomWs = this.ticketFor(me, id);
+        this.send(ws, { type: created ? 'game_created' : 'game_joined', role: created ? 'host' : 'player', color, roomWs,
           game: { id, name: room.name, maxPlayers: room.maxPlayers || 0, playerCount: this.playerCount(id), region: 'global',
             open: !room.maxPlayers || !!room.main, main: !!room.main, listed: room.listed !== false, hostUsername: room.hostName } });
         this.broadcast(id, { type: 'player_joined', username: me.username, badge: me.badge || null, color, playerCount: this.playerCount(id) }, ws);
+        this.tellLegacy(id);
         this.gameList();
         break;
       }
@@ -371,7 +420,8 @@ export class World extends DurableObject {
     const me = this.info(ws);
     const id = me.gameId;
     if (!id) return;
-    me.gameId = null; this.setInfo(ws, me);
+    me.gameId = null; me.roomSocket = null; this.setInfo(ws, me);
+    this.tellLegacy(id);
     const room = this.rooms.get(id);
     const left = this.playerCount(id);
     this.broadcast(id, { type: 'player_left', username: me.username, id: me.id, playerCount: left });

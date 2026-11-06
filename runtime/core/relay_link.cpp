@@ -6,6 +6,8 @@
 // Server hop: JSON over one WebSocket. {"type":"join","clientType":"game","name":...} then enter_room / join_game /
 // create_game; each datagram is {"type":"input","data":"{\"payload\":<base64>,\"src_port\":..,\"dst_port\":..}",
 // "to":<client id>?}; arriving datagrams are "input" messages naming the sender's client id (fromId).
+// Rooms on objects of their own (server room.js): game_joined names roomWs, a one-use address for the room's socket;
+// datagrams then go there (in parallel with other rooms) and arrive on both sockets. Without it, the main socket.
 #include "core/relay_link.h"
 
 #include <algorithm>
@@ -55,6 +57,14 @@ std::thread g_ws_thread, g_udp_thread;
 std::mutex g_send_lock;  // one WinHttpWebSocketSend at a time; receive runs alongside on the WebSocket thread
 HINTERNET g_ws = nullptr;
 std::atomic<bool> g_ready{false};  // joined a room: datagrams flow
+// the room's own socket (roomWs), a thread of its own
+std::mutex g_room_lock;
+HINTERNET g_room_ws = nullptr;
+std::thread g_room_thread;
+std::atomic<bool> g_room_ready{false};
+void StartRoom(const std::string& url);
+std::string Origin(const std::string& url);
+void StopRoom();
 std::atomic<bool> g_reconnect{false};  // Reconnect(): sign in again at once (a new name), no retry delay
 SOCKET g_udp = INVALID_SOCKET;
 
@@ -213,6 +223,9 @@ void OnMessage(const std::string& text) {
         g_ready = true;
         LOGR("relay: %s (%u here)", g["main"].boolean() ? "in the Main Lobby" : ("in room " + g["name"].str()).c_str(),
              uint32_t(g["playerCount"].num()));
+        std::string room_ws = m["roomWs"].str();
+        if (!room_ws.empty() && room_ws[0] == '/') StartRoom(Origin(app::Get().online.relay) + room_ws);
+        else StopRoom();
         Send(R"({"type":"list"})");
     } else if (type == "gameList") {
         std::vector<Room> rooms;
@@ -258,7 +271,9 @@ void OnMessage(const std::string& text) {
     }
 }
 
-bool Connect(const std::string& url, HINTERNET& session, HINTERNET& connection) {
+// a WebSocket to url (ws:// or wss://), null on failure; session and connection are the caller's to close
+HINTERNET Connect(const std::string& url, HINTERNET& session, HINTERNET& connection) {
+    HINTERNET ws = nullptr;
     std::wstring w(url.begin(), url.end());
     URL_COMPONENTS u{sizeof u};
     wchar_t host[256] = {}, path[1024] = {};
@@ -267,38 +282,106 @@ bool Connect(const std::string& url, HINTERNET& session, HINTERNET& connection) 
     std::wstring http = w;
     if (http.rfind(L"wss://", 0) == 0) http = L"https://" + http.substr(6);
     else if (http.rfind(L"ws://", 0) == 0) http = L"http://" + http.substr(5);
-    if (!WinHttpCrackUrl(http.c_str(), 0, 0, &u)) return false;
+    u.dwExtraInfoLength = 1024;
+    wchar_t extra[1024] = {};
+    u.lpszExtraInfo = extra;
+    if (!WinHttpCrackUrl(http.c_str(), 0, 0, &u)) return nullptr;
     bool secure = u.nScheme == INTERNET_SCHEME_HTTPS;
     session = WinHttpOpen(L"MC3-PC/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!session) return false;
+    if (!session) return nullptr;
     WinHttpSetTimeouts(session, 10000, 10000, 10000, 0);  // receive waits forever: the server pushes when it has news
     connection = WinHttpConnect(session, host, u.nPort, 0);
-    if (!connection) return false;
-    HINTERNET req = WinHttpOpenRequest(connection, L"GET", path[0] ? path : L"/ws", nullptr, WINHTTP_NO_REFERER,
+    if (!connection) return nullptr;
+    std::wstring target = std::wstring(path[0] ? path : L"/ws") + extra;  // the room address carries ?t=ticket
+    HINTERNET req = WinHttpOpenRequest(connection, L"GET", target.c_str(), nullptr, WINHTTP_NO_REFERER,
                                        WINHTTP_DEFAULT_ACCEPT_TYPES, secure ? WINHTTP_FLAG_SECURE : 0);
-    if (!req) return false;
+    if (!req) return nullptr;
     bool ok = WinHttpSetOption(req, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0) &&
               WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr, 0, 0, 0) &&
               WinHttpReceiveResponse(req, nullptr);
     if (ok) {
         DWORD code = 0, size = sizeof code;
         WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, nullptr, &code, &size, nullptr);
-        ok = code == 101;
-        if (ok) {
-            std::lock_guard lock(g_send_lock);
-            g_ws = WinHttpWebSocketCompleteUpgrade(req, 0);
-            ok = g_ws != nullptr;
-        }
+        if (code == 101) ws = WinHttpWebSocketCompleteUpgrade(req, 0);
     }
     WinHttpCloseHandle(req);
-    return ok;
+    return ws;
+}
+
+// the scheme and host of the relay address: where roomWs paths go
+std::string Origin(const std::string& url) {
+    size_t a = url.find("://");
+    size_t b = url.find('/', a == std::string::npos ? 0 : a + 3);
+    return b == std::string::npos ? url : url.substr(0, b);
+}
+
+bool SendRoom(const std::string& text) {
+    std::lock_guard lock(g_room_lock);
+    if (!g_room_ws) return false;
+    return WinHttpWebSocketSend(g_room_ws, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE, (PVOID)text.data(),
+                                DWORD(text.size())) == NO_ERROR;
+}
+
+void RoomThread(std::string url) {
+    HINTERNET session = nullptr, connection = nullptr;
+    HINTERNET ws = Connect(url, session, connection);
+    if (ws) {
+        {
+            std::lock_guard lock(g_room_lock);
+            g_room_ws = ws;
+        }
+        g_room_ready = true;
+        LOGR("relay: room socket open (%s)", url.substr(0, url.find('?')).c_str());
+        std::string message;
+        std::vector<char> buf(16 * 1024);
+        while (g_run) {
+            DWORD got = 0;
+            WINHTTP_WEB_SOCKET_BUFFER_TYPE type;
+            if (WinHttpWebSocketReceive(ws, buf.data(), DWORD(buf.size()), &got, &type) != NO_ERROR) break;
+            if (type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE) break;
+            message.append(buf.data(), got);
+            if (message.size() > kMaxMessage) break;
+            if (type == WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE || type == WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE)
+                continue;
+            json::Value m = json::Parse(message);
+            if (m["type"].str() == "input") Deliver(m);
+            message.clear();
+        }
+        g_room_ready = false;
+        std::lock_guard lock(g_room_lock);
+        WinHttpWebSocketClose(ws, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
+        WinHttpCloseHandle(ws);
+        g_room_ws = nullptr;
+    } else {
+        LOGW("relay: room socket refused, datagrams stay on the main socket");
+    }
+    if (connection) WinHttpCloseHandle(connection);
+    if (session) WinHttpCloseHandle(session);
+}
+
+void StopRoom() {
+    g_room_ready = false;
+    {
+        std::lock_guard lock(g_room_lock);
+        if (g_room_ws) WinHttpWebSocketShutdown(g_room_ws, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
+    }
+    if (g_room_thread.joinable()) g_room_thread.join();
+}
+
+void StartRoom(const std::string& url) {
+    StopRoom();
+    g_room_thread = std::thread(RoomThread, url);
 }
 
 void Session(const std::string& url) {
     HINTERNET session = nullptr, connection = nullptr;
     SetStatus(Status::Connecting, "Connecting to " + HostOf(url));
-    bool connected = Connect(url, session, connection);
-    if (connected) {
+    HINTERNET ws = Connect(url, session, connection);
+    {
+        std::lock_guard lock(g_send_lock);
+        g_ws = ws;
+    }
+    if (ws) {
         LOGR("relay: connected to %s", url.c_str());
         SetStatus(Status::Connecting, "Signing in to " + HostOf(url));
         Send(R"({"type":"join","clientType":"game","name":)" + json::Quote(PlayerName()) + "}");
@@ -320,6 +403,7 @@ void Session(const std::string& url) {
         LOGW("relay: cannot reach %s (%lu)", url.c_str(), GetLastError());
     }
     g_ready = false;
+    StopRoom();
     {
         std::lock_guard lock(g_send_lock);
         if (g_ws) {
@@ -391,7 +475,7 @@ void UdpThread() {
         std::string inner = R"({"payload":")" + B64(buf.data() + head, size_t(n) - head) + R"(","src_port":)" +
                             std::to_string(src) + R"(,"dst_port":)" + std::to_string(dst) + "}";
         std::string env = R"({"type":"input","data":)" + json::Quote(inner) + (to.empty() ? "" : R"(,"to":)" + json::Quote(to)) + "}";
-        Send(env);
+        if (!(g_room_ready && SendRoom(env))) Send(env);
     }
 }
 
@@ -442,6 +526,7 @@ void Stop() {
         if (g_ws) WinHttpWebSocketShutdown(g_ws, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
     }
     if (g_udp_thread.joinable()) g_udp_thread.join();
+    StopRoom();
     if (g_ws_thread.joinable()) g_ws_thread.detach();  // a blocked receive ends with the shutdown above
     closesocket(g_udp);
     g_udp = INVALID_SOCKET;

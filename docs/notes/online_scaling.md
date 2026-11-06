@@ -38,6 +38,22 @@ client in it: traffic grows with the square of the players in the lobby, and one
   (one discovery broadcast a second each) at 32 per instance: 500 players = ~15,500 copies a second. Beyond that the
   rooms must leave the World object (step 2 below).
 
+## Rooms on their own objects (6 Nov 2026, deployed)
+
+- `src/room.js`: a `Room` Durable Object per room (binding ROOM, migration v2). On joining a room the World sends
+  `roomWs` (`/ws/room/<id>?t=<one-use ticket>`); the client opens it and sends that room's datagrams there; the room
+  relays them in parallel with every other room. The ticket is claimed from the World once (`claimTicket` RPC), only
+  for its room and within a minute.
+- Older clients keep sending through the World, which relays to everyone in the room as before (room clients read
+  both sockets). The World tells each room how many such clients it has (`setLegacy`); only then does the room call
+  `World.forward` for them, so an up-to-date room costs the World nothing.
+- Clients: the game's built-in link (`runtime/core/relay_link.cpp`) and `proxy/proxy.py` open the room socket and
+  fall back to the main one when it is refused.
+- Tests: `rooms_live.test.mjs` (room to room, room and older client both ways, tickets) against `wrangler dev`;
+  `load_test.mjs ... rooms`. Locally every object shares one process, so the parallelism shows only on Cloudflare.
+  Live check: two guests on mc3.top exchanged a datagram through a room object.
+- MAX_PLAYERS raised to 1,500 (wrangler.toml var, tunable without a code change).
+
 ## Plan, in order
 
 1. **Main Lobby instances**: the Main Lobby becomes "Main Lobby 1, 2, ..." of at most 64 players each (System Link

@@ -26,6 +26,7 @@ import json
 import socket
 import struct
 import time
+import urllib.parse
 
 import websockets
 
@@ -52,6 +53,8 @@ class Proxy:
         self.event_window, self.event_budget = 0.0, 20
         self.record = open(record, 'a', encoding='ascii') if record else None  # --record: every datagram, hex
         self.ws = None
+        self.room_ws = None      # the room's own socket (server room.js), when game_joined offers one
+        self.room_task = None
         self.udp_sock = None
         self.game_port = None   # the game's socket port, learned from its datagrams
         self.game_ip = game_ip  # instance N binds 127.0.0.N; updated from the address the game sends from
@@ -138,7 +141,7 @@ class Proxy:
                     continue  # that player left
                 envelope['to'] = target
             try:
-                await self.ws.send(json.dumps(envelope))
+                await (self.room_ws or self.ws).send(json.dumps(envelope))
                 self.log(f"[proxy] -> relay {envelope.get('to', 'room')}: {len(payload)} bytes "
                          f"{src_port}->{dst_port}")
             except Exception as e:
@@ -251,6 +254,7 @@ class Proxy:
                         await self.enter_room(ws)
                     elif kind in ('game_created', 'game_joined'):
                         game = msg.get('game', {})
+                        self.open_room(msg.get('roomWs'))
                         self.game_id = game.get('id')
                         self.room_name = game.get('name')
                         self.game_id_event.set()
@@ -276,12 +280,42 @@ class Proxy:
                         print(f"[proxy] relay error: {msg.get('error')}", flush=True)
             finally:
                 print(f"[proxy] {self.client_name} websocket connection ended", flush=True)
+                self.open_room(None)
                 self.ws = None
                 self.game_id = None
                 self.peers.clear()
                 self.peer_names.clear()
                 self.auth_ok.clear()
                 self.game_id_event.clear()
+
+    # rooms run on objects of their own: datagrams go to the room's socket and arrive on both sockets
+    def open_room(self, path):
+        if self.room_task:
+            self.room_task.cancel()
+            self.room_task = None
+        self.room_ws = None
+        if isinstance(path, str) and path.startswith('/'):
+            base = urllib.parse.urlsplit(self.relay_url)
+            self.room_task = asyncio.ensure_future(self.room_loop(f"{base.scheme}://{base.netloc}{path}"))
+
+    async def room_loop(self, url):
+        try:
+            async with websockets.connect(url) as rws:
+                self.room_ws = rws
+                print("[proxy] room socket open", flush=True)
+                async for message in rws:
+                    try:
+                        msg = json.loads(message)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                    if msg.get('type') == 'input':
+                        await self.handle_relay_input(msg)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"[proxy] room socket unavailable ({e.__class__.__name__}); datagrams stay on the main socket", flush=True)
+        finally:
+            self.room_ws = None
 
     async def relay_loop(self):
         # keep the game online: reconnect with backoff and rejoin the same room

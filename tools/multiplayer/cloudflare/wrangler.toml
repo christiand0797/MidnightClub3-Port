@@ -12,19 +12,30 @@ routes = [{ pattern = "mc3.top", custom_domain = true }]
 [assets]
 directory = "../browser"
 not_found_handling = "none"
-run_worker_first = ["/ws", "/healthz", "/api/*"]
+run_worker_first = ["/ws", "/ws/*", "/healthz", "/api/*"]
 
 [[durable_objects.bindings]]
 name = "WORLD"
 class_name = "World"
+
+# one per room: that room's game traffic in parallel with the others (src/room.js)
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
 
 # SQLite-backed Durable Objects are on the free plan
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["World"]
 
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Room"]
+
 [vars]
 MAIN_LOBBY = "Main Lobby"
 # player names shown with the DEV / CREATOR badge, comma separated (pinned to the first account holding each name)
 CREATOR_NAMES = "USEYOURNAME1691"
+# players signed in at once, then a queue (src/world.js); room traffic runs on per-room objects (src/room.js)
+MAX_PLAYERS = "1500"
 

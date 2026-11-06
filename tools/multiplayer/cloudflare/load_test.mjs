@@ -1,10 +1,12 @@
 // Load test for the World (docs/notes/online_scaling.md): N game clients join the Main Lobby and send System Link sized
 // datagrams; reports how instances filled, delivery and latency.
 //   npx wrangler dev --var MAX_PER_ADDRESS:100000 --var MAX_PLAYERS:5000      (local, in another terminal)
-//   node load_test.mjs [players=300] [rate per player per s=5] [seconds=20] [server=ws://127.0.0.1:8787/ws]
+//   node load_test.mjs [players=300] [rate per player per s=5] [seconds=20] [server=ws://127.0.0.1:8787/ws] [rooms]
+// "rooms": datagrams go over each room's own socket (game_joined roomWs, src/room.js) instead of the World
 // Never point it at mc3.top: it is a load generator.
 const N = Number(process.argv[2] || 300), RATE = Number(process.argv[3] || 5), SECONDS = Number(process.argv[4] || 20);
 const URL_ = process.argv[5] || 'ws://127.0.0.1:8787/ws';
+const ROOMS = process.argv[6] === 'rooms';
 if (!/^ws:\/\/(127\.0\.0\.1|localhost)[:/]/.test(URL_)) { console.error('local servers only'); process.exit(2); }
 
 const payload = Buffer.alloc(120, 7).toString('base64');  // a typical System Link datagram
@@ -15,13 +17,21 @@ const rooms = new Map();
 function client(i) {
   return new Promise(resolve => {
     const ws = new WebSocket(URL_);
-    const c = { ws, room: null, ready: false };
+    const c = { ws, room: null, ready: false, out: ws };
     ws.onopen = () => ws.send(JSON.stringify({ type: 'join', clientType: 'game', name: 'load' + i }));
     ws.onmessage = e => {
       const m = JSON.parse(e.data);
       if (m.type === 'auth_ok') ws.send(JSON.stringify({ type: 'enter_room', name: '' }));
       else if (m.type === 'queue') queued++;
-      else if (m.type === 'game_joined') { c.room = m.game.name; c.ready = true; rooms.set(c.room, (rooms.get(c.room) || 0) + 1); resolve(c); }
+      else if (m.type === 'game_joined') {
+        c.room = m.game.name; rooms.set(c.room, (rooms.get(c.room) || 0) + 1);
+        if (ROOMS && m.roomWs) {
+          const rw = new WebSocket(URL_.replace(/\/ws$/, '') + m.roomWs);
+          rw.onmessage = ev => ws.onmessage(ev);
+          rw.onopen = () => { c.out = rw; c.ready = true; resolve(c); };
+          rw.onerror = () => { errors++; c.ready = true; resolve(c); };
+        } else { c.ready = true; resolve(c); }
+      }
       else if (m.type === 'input') {
         received++;
         try { const t = JSON.parse(m.data).t; if (t) lat.push(Date.now() - t); } catch (_) {}
@@ -40,8 +50,8 @@ console.log(`${ready.length}/${N} joined in ${((Date.now() - t0) / 1000).toFixed
 const end = Date.now() + SECONDS * 1000;
 const timer = setInterval(() => {
   for (const c of ready) {
-    if (c.ws.readyState !== 1) continue;
-    c.ws.send(JSON.stringify({ type: 'input', data: JSON.stringify({ payload, src_port: 1000, dst_port: 1000, t: Date.now() }) }));
+    if (c.out.readyState !== 1) continue;
+    c.out.send(JSON.stringify({ type: 'input', data: JSON.stringify({ payload, src_port: 1000, dst_port: 1000, t: Date.now() }) }));
     sent++;
   }
 }, 1000 / RATE);
