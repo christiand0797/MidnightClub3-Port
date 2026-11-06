@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MC3 Browser</title>
+<script>
+// the game's storage and threads exist only on https pages: a plain http visit moves there
+if (location.protocol === 'http:' && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) location.replace('https://' + location.host + location.pathname + location.search + location.hash);
+</script>
 <!-- Browser port (docs/notes/browser_port_plan.md): the game runs here from the player's own disc image. The disc is
      copied once into this site's private browser storage (OPFS) and never leaves this computer. Needs a server that
      sends Cross-Origin-Opener-Policy / Cross-Origin-Embedder-Policy (tools/web/serve.py), for threads. -->
@@ -64,11 +68,17 @@ const DISC = 'disc.iso';
 const status = text => { $('status').textContent = text; };
 const fail = text => { $('error').textContent = text; $('error').hidden = false; status('Stopped'); };
 
-if (!crossOriginIsolated) {
+const hasStorage = !!(navigator.storage && navigator.storage.getDirectory);
+if (!isSecureContext) {
+  fail('Open the game over https: https://' + location.host + location.pathname);
+} else if (!crossOriginIsolated) {
   fail('This page needs cross-origin isolation for threads. Open it through tools/web/serve.py (or a server that sends COOP/COEP headers).');
+} else if (!hasStorage) {
+  fail('This browser window has no private storage for the disc. Private windows do not: open the page in a normal window.');
 }
 
 async function storedDisc() {
+  if (!hasStorage) return null;
   try {
     const root = await navigator.storage.getDirectory();
     const handle = await root.getFileHandle(DISC);
@@ -113,7 +123,7 @@ async function refresh() {
   status(have ? 'Ready' : 'No disc yet');
 }
 
-$('pick').onclick = () => $('file').click();
+$('pick').onclick = () => { if (!hasStorage || !crossOriginIsolated) return; $('file').click(); };
 $('file').onchange = async () => {
   const file = $('file').files[0];
   if (!file) return;

@@ -11,7 +11,7 @@ const { Social } = require('../relay/social');
 const source = fs.readFileSync(path.join(__dirname, 'src/world.js'), 'utf8')
   .replace(/^import .*;\r?\n/gm, '').replace('export class World', 'class World') + '\nmodule.exports = { World };';
 const sandbox = { module: {exports:{}}, DurableObject: class {constructor(ctx, env){this.ctx=ctx;this.env=env;}},
-  validateMessage, Social, TextEncoder, crypto:webcrypto, Date, Response, URL, console, JSON };
+  validateMessage, Social, TextEncoder, crypto:webcrypto, Date, Response, URL, console, JSON, setTimeout, clearTimeout };
 vm.runInNewContext(source, sandbox, {filename:'world.js'});
 const { World } = sandbox.module.exports;
 function socket(info) {
@@ -35,7 +35,7 @@ test('cross-origin websocket and global/address quotas reject before admission',
   for(let n=0;n<16;n++)f.add();
   r=await f.world.fetch(new Request('https://mc3.test/ws',{headers:{Upgrade:'websocket','CF-Connecting-IP':'127.0.0.1'}}));
   assert.equal(r.status,429);
-  for(let n=16;n<128;n++)f.add({ip:String(n)});
+  for(let n=16;n<500+2000;n++)f.add({ip:String(n)});  // players (MAX_PLAYERS 500) plus the queue (2000)
   r=await f.world.fetch(new Request('https://mc3.test/ws',{headers:{Upgrade:'websocket','CF-Connecting-IP':'new'}}));
   assert.equal(r.status,429);
 });
@@ -47,7 +47,8 @@ test('UTF-8 size, message and byte budgets reject and survive a new World object
   const again=new World(f.ctx,{});await f.ctx.ready;
   assert.equal(again.allowed(b,512*1024),false);
   b.info.budget={tokens:0,bytes:512*1024,at:Date.now()+1000};
-  assert.equal(again.allowed(b,1),false);
+  const third=new World(f.ctx,{});await f.ctx.ready;  // a woken object reads the attachment (a live one keeps its copy)
+  assert.equal(third.allowed(b,1),false);
 });
 test('never-authenticated viewers expire on alarm or first late message',async()=>{
   const f=await fixture(), a=f.add({at:Date.now()-16000}),b=f.add({at:Date.now()-1000});
@@ -65,9 +66,9 @@ test('tunnel input and ping do not write storage, room changes do',async()=>{
 });
 test('room capacity and outgoing queues are bounded',async()=>{
   const f=await fixture(), a=f.add({id:'a',userId:'guest-a',username:'a'});
-  for(let n=1;n<128;n++)f.world.rooms.set('r'+n,{id:'r'+n,name:'room',listed:false});
+  for(let n=1;n<1024;n++)f.world.rooms.set('r'+n,{id:'r'+n,name:'room',listed:false});
   await f.world.webSocketMessage(a,JSON.stringify({type:'enter_room',name:'another'}));
-  assert.match(a.sent.at(-1).error,/quota/);assert.equal(f.world.rooms.size,128);
+  assert.match(a.sent.at(-1).error,/quota/);assert.equal(f.world.rooms.size,1024);  // MAX_ROOMS
   a.bufferedAmount=2*1024*1024;f.world.send(a,{type:'ping'});assert.equal(a.closed.at(-1).code,1009);
   const b=f.add();f.world.send(b,{text:'é'.repeat(70000)});assert.equal(b.closed.at(-1).code,1009);
 });

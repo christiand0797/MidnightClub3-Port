@@ -224,7 +224,7 @@ void OnMessage(const std::string& text) {
             r.players = uint32_t(g["player_count"].num());
             r.max_players = uint32_t(g["max_players"].num());
             r.racing = g["status"].str() == "playing";
-            r.main = r.id == "main";
+            r.main = g["main"].boolean() || r.id == "main";  // Main Lobby instances: Main Lobby, Main Lobby 2, ...
             if (!r.id.empty()) rooms.push_back(std::move(r));
         }
         std::stable_sort(rooms.begin(), rooms.end(), [](const Room& a, const Room& b) { return a.main > b.main; });
@@ -232,6 +232,12 @@ void OnMessage(const std::string& text) {
         g_rooms = std::move(rooms);
         for (const Room& r : g_rooms)
             if (r.id == g_status.room_id) g_status.room_players = r.players;
+    } else if (type == "queue") {
+        // the server is full: the sign-in waits here until a place frees (auth_ok follows)
+        std::lock_guard lock(g_lock);
+        g_status.state = Status::Connecting;
+        g_status.message = "Server full: you are " + std::to_string(int(m["pos"].num())) + " of " +
+                           std::to_string(int(m["of"].num())) + " in line";
     } else if (type == "player_left") {
         std::lock_guard lock(g_lock);
         auto it = g_peer_of.find(m["id"].str());

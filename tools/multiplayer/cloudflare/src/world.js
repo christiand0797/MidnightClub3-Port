@@ -11,7 +11,12 @@ import { Accounts } from './accounts.js';
 
 const MAIN_ID = 'main';
 const MAX_PER_ADDRESS = 16;          // connections from one address (as the Node relay)
-const MAX_CONNECTIONS = 128, MAX_ROOMS = 128, MAX_PAYLOAD = 16 * 1024;
+const MAX_ROOMS = 1024, MAX_PAYLOAD = 16 * 1024;
+// Scale (docs/notes/online_scaling.md): players signed in at once (env MAX_PLAYERS), then a queue; the Main Lobby is
+// instances of MAIN_CAP players (a System Link race is 8 at most), a new player goes to the fullest one with room.
+// Measured with load_test.mjs: one World object relays about 20,000 copies a second; 500 players in lobbies of 32 stay
+// under that (a Durable Object per room is the next step, docs/notes/online_scaling.md)
+const DEFAULT_MAX_PLAYERS = 500, MAX_QUEUE = 2000, MAIN_CAP = 32, LIST_EVERY_MS = 1000;
 const AUTH_TIMEOUT = 15000, MAX_OUTGOING = 128 * 1024, MAX_BUFFERED = 1024 * 1024;
 const MSG_RATE = 120, MSG_BURST = 240;
 const BYTE_RATE = 256 * 1024, BYTE_BURST = 512 * 1024;
@@ -27,6 +32,15 @@ export class World extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.mainName = (env.MAIN_LOBBY || 'Main Lobby').trim().slice(0, 50) || 'Main Lobby';
+    this.maxPlayers = Math.max(1, Number(env.MAX_PLAYERS) || DEFAULT_MAX_PLAYERS);
+    this.maxPerAddress = Math.max(1, Number(env.MAX_PER_ADDRESS) || MAX_PER_ADDRESS);  // raised only for local load tests
+    // In memory, rebuilt from the sockets' attachments when the object wakes: who each socket is, and each room's
+    // sockets, so relaying a datagram touches its room only (not every connection on the server)
+    this.cache = new Map();   // ws -> info
+    this.roomOf = new Map();  // ws -> room id
+    this.members = null;      // room id -> Set(ws)
+    this.listTimer = null;
+    this.queueAt = 0;         // order for queued sign-ins
     this.rooms = new Map();          // id -> { id, name, listed, open, maxPlayers, hostId, status }
     this.roomsDirty = false;
     this.social = null;
@@ -40,18 +54,65 @@ export class World extends DurableObject {
     ctx.blockConcurrencyWhile(async () => {
       const rooms = await ctx.storage.get('rooms');
       if (rooms) for (const r of rooms) this.rooms.set(r.id, r);
-      this.rooms.set(MAIN_ID, { id: MAIN_ID, name: this.mainName, listed: true, open: true, maxPlayers: 0, status: 'waiting' });
+      for (const r of [...this.rooms.values()]) if (r.main) this.rooms.delete(r.id);  // instances are not kept
+      this.rooms.set(MAIN_ID, { id: MAIN_ID, name: this.mainName, listed: true, open: true, maxPlayers: MAIN_CAP, status: 'waiting', main: true });
       const state = await ctx.storage.get('social');
       this.social = new Social({ state, store: s => { this.pendingSocial = s; } });
     });
   }
 
   // ---------- connection bookkeeping (survives hibernation through attachments) ----------
-  info(ws) { return ws.deserializeAttachment() || {}; }
-  setInfo(ws, info) { ws.serializeAttachment(info); }
+  info(ws) {
+    let i = this.cache.get(ws);
+    if (!i) { i = ws.deserializeAttachment() || {}; this.cache.set(ws, i); }
+    return i;
+  }
+  setInfo(ws, info) {
+    ws.serializeAttachment(info);
+    this.cache.set(ws, info);
+    this.place(ws, info.gameId || null);
+  }
+  index() {
+    if (!this.members) {
+      this.members = new Map();
+      for (const ws of this.ctx.getWebSockets()) this.place(ws, this.info(ws).gameId || null);
+    }
+    return this.members;
+  }
+  place(ws, to) {
+    const m = this.index(), from = this.roomOf.get(ws) || null;
+    if (from === to) return;
+    if (from) { const set = m.get(from); if (set) { set.delete(ws); if (!set.size) m.delete(from); } this.roomOf.delete(ws); }
+    if (to) { if (!m.has(to)) m.set(to, new Set()); m.get(to).add(ws); this.roomOf.set(ws, to); }
+  }
+  forgetSocket(ws) { this.place(ws, null); this.cache.delete(ws); }
   sockets() { return this.ctx.getWebSockets(); }
   clients() { return this.sockets().map(ws => this.info(ws)).filter(c => c.id && c.username); }
-  inRoom(id) { return this.sockets().filter(ws => this.info(ws).gameId === id); }
+  inRoom(id) { return [...(this.index().get(id) || [])]; }
+  playersOnline() { let n = 0; for (const ws of this.sockets()) if (this.info(ws).id) n++; return n; }
+  queued() { return this.sockets().filter(ws => this.info(ws).queued).sort((a, b) => this.info(a).queuedAt - this.info(b).queuedAt); }
+  // a signed-in client's welcome, or a place in the queue when the server is full
+  admit(ws, me, reply) {
+    if (this.playersOnline() < this.maxPlayers && !this.queued().length) { this.setInfo(ws, me); this.send(ws, reply); return; }
+    const waiting = this.queued();
+    if (waiting.length >= MAX_QUEUE) { this.send(ws, { type: 'error', error: 'Server full, try again soon.' }); ws.close(1013, 'Server full'); return; }
+    const info = { ...this.info(ws), queued: true, queuedAt: ++this.queueAt + Date.now() * 1000, pending: { me, reply } };
+    this.setInfo(ws, info);
+    this.send(ws, { type: 'queue', pos: waiting.length + 1, of: waiting.length + 1, max: this.maxPlayers });
+  }
+  // places freed: admit from the front of the queue, tell the rest their place
+  promote() {
+    const waiting = this.queued();
+    if (!waiting.length) return;
+    let free = this.maxPlayers - this.playersOnline();
+    while (free > 0 && waiting.length) {
+      const ws = waiting.shift(), { pending } = this.info(ws);
+      this.setInfo(ws, { ...pending.me, ip: this.info(ws).ip, at: this.info(ws).at });
+      this.send(ws, pending.reply);
+      free--;
+    }
+    waiting.forEach((ws, i) => this.send(ws, { type: 'queue', pos: i + 1, of: waiting.length, max: this.maxPlayers }));
+  }
   playerCount(id) { return new Set(this.inRoom(id).map(ws => this.info(ws).userId)).size; }
   send(ws, obj) {
     try {
@@ -62,11 +123,17 @@ export class World extends DurableObject {
       ws.send(raw);
     } catch (_) { try { ws.close(1011, 'Send failed'); } catch (_) { /* closed */ } }
   }
+  sendRaw(ws, raw) {
+    try {
+      if (Number.isFinite(ws.bufferedAmount) && ws.bufferedAmount > MAX_BUFFERED) { ws.close(1009, 'Outgoing queue budget'); return; }
+      ws.send(raw);
+    } catch (_) { try { ws.close(1011, 'Send failed'); } catch (_) { /* closed */ } }
+  }
   wsOf(client) { return this.sockets().find(ws => this.info(ws).id === client.id); }
 
   async persist() {
     const writes = {};
-    if (this.roomsDirty) { writes.rooms = [...this.rooms.values()].filter(r => r.id !== MAIN_ID); this.roomsDirty = false; }
+    if (this.roomsDirty) { writes.rooms = [...this.rooms.values()].filter(r => r.id !== MAIN_ID && !r.main); this.roomsDirty = false; }
     if (this.pendingSocial) { writes.social = this.pendingSocial; this.pendingSocial = null; }
     if (!Object.keys(writes).length) return;
     await this.ctx.storage.put(writes);
@@ -76,6 +143,12 @@ export class World extends DurableObject {
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === '/api/games') return Response.json({ games: this.listing() });
+    if (url.pathname === '/api/players') {
+      const players = this.playersOnline(), queue = this.queued().length;
+      return Response.json({ players, queue, max: this.maxPlayers, full: players >= this.maxPlayers,
+        rooms: [...this.rooms.values()].filter(r => r.listed !== false).length,
+        lobbies: [...this.rooms.values()].filter(r => r.main).map(r => ({ name: r.name, players: this.playerCount(r.id) })) });
+    }
     if (url.pathname.startsWith('/api/')) {
       const answer = this.accounts && await this.accounts.handle(request);
       return answer || Response.json({ error: 'Not found.' }, { status: 404 });
@@ -83,9 +156,9 @@ export class World extends DurableObject {
     if (url.pathname !== '/ws' || request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('WebSocket expected', { status: 426 });
     const origin = request.headers.get('Origin');
     if (origin !== null && origin !== url.origin) return new Response('Origin refused', { status: 403 });
-    if (this.sockets().length >= MAX_CONNECTIONS) return new Response('Server connection quota', { status: 429 });
+    if (this.sockets().length >= this.maxPlayers + MAX_QUEUE) return new Response('Server connection quota', { status: 429 });
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-    if (this.sockets().filter(ws => this.info(ws).ip === ip).length >= MAX_PER_ADDRESS) {
+    if (this.sockets().filter(ws => this.info(ws).ip === ip).length >= this.maxPerAddress) {
       return new Response('Address connection quota', { status: 429 });
     }
     const pair = new WebSocketPair();
@@ -99,27 +172,35 @@ export class World extends DurableObject {
 
   listing() {
     return [...this.rooms.values()].filter(r => r.listed !== false).map(r => ({
-      id: r.id, name: r.name, host_username: r.hostName || r.name, host_badge: r.hostBadge || null, status: r.status || 'waiting',
+      id: r.id, name: r.name, main: !!r.main, host_username: r.main ? '' : r.hostName || r.name, host_badge: r.hostBadge || null, status: r.status || 'waiting',
       max_players: r.maxPlayers || 0, player_count: this.playerCount(r.id), region: 'global', open: !!r.open || !r.maxPlayers
     }));
   }
+  // a client asking gets the list at once; room changes reach everyone at most once a second (each change used to send
+  // the whole list to every connection)
   gameList(target) {
-    const msg = { type: 'gameList', games: this.listing() };
-    if (target) return this.send(target, msg);
-    for (const ws of this.sockets()) if (this.info(ws).id) this.send(ws, msg);
+    if (target) return this.send(target, { type: 'gameList', games: this.listing() });
+    if (this.listTimer) return;
+    this.listTimer = setTimeout(() => {
+      this.listTimer = null;
+      const msg = { type: 'gameList', games: this.listing() };
+      for (const ws of this.sockets()) if (this.info(ws).id) this.send(ws, msg);
+    }, LIST_EVERY_MS);
   }
   broadcast(roomId, obj, except) { for (const ws of this.inRoom(roomId)) if (ws !== except) this.send(ws, obj); }
 
   allowed(ws, size) {
     const now = Date.now(), info = this.info(ws);
-    if (!info.id && now - info.at >= AUTH_TIMEOUT) return false;
+    if (!info.id && !info.queued && now - info.at >= AUTH_TIMEOUT) return false;
     const b = info.budget || { tokens: MSG_BURST, bytes: BYTE_BURST, at: now };
     const elapsed = Math.max(0, now - b.at);
     b.tokens = Math.min(MSG_BURST, b.tokens + elapsed * MSG_RATE / 1000);
     b.bytes = Math.min(BYTE_BURST, b.bytes + elapsed * BYTE_RATE / 1000); b.at = now;
     if (b.tokens < 1 || b.bytes < size) return false;
     b.tokens -= 1; b.bytes -= size;
-    info.budget = b; this.setInfo(ws, info); // Survives Durable Object hibernation.
+    info.budget = b;
+    // kept in the attachment to survive hibernation, written at most once a second per socket (not every datagram)
+    if (!(now - (info.budgetSaved || 0) < 1000)) { info.budgetSaved = now; this.setInfo(ws, info); } else this.cache.set(ws, info);
     return true;
   }
 
@@ -127,7 +208,7 @@ export class World extends DurableObject {
     let next = Infinity;
     for (const ws of this.sockets()) {
       const info = this.info(ws);
-      if (info.id) continue;
+      if (info.id || info.queued) continue;
       if (Date.now() - info.at >= AUTH_TIMEOUT) { try { ws.close(1008, 'Authentication timed out'); } catch (_) {} }
       else next = Math.min(next, info.at + AUTH_TIMEOUT);
     }
@@ -136,14 +217,32 @@ export class World extends DurableObject {
 
   async roomIdFor(name) {
     const key = (name || '').trim().toLowerCase();
-    if (!key || key === this.mainName.toLowerCase()) return MAIN_ID;
+    if (!key || key === this.mainName.toLowerCase()) return this.mainInstance();
     return 'r-' + (await sha256hex(key)).slice(0, 20);
+  }
+
+  // the fullest Main Lobby instance with room (busy lobbies), else a new one
+  mainInstance() {
+    let best = null, most = -1;
+    for (const r of this.rooms.values()) {
+      if (!r.main) continue;
+      const n = this.playerCount(r.id);
+      if (n < MAIN_CAP && n > most) { best = r; most = n; }
+    }
+    if (best) return best.id;
+    let k = 2;
+    while (this.rooms.has('main-' + k)) k++;
+    const id = 'main-' + k;
+    this.rooms.set(id, { id, name: `${this.mainName} ${k}`, listed: true, open: true, maxPlayers: MAIN_CAP, status: 'waiting', main: true });
+    return id;
   }
 
   // ---------- WebSocket ----------
   async webSocketMessage(ws, raw) {
-    if (typeof raw !== 'string' || utf8.encode(raw).length > MAX_PAYLOAD) return ws.close(1009, 'Message too large');
-    if (!this.allowed(ws, utf8.encode(raw).length)) return ws.close(1008, 'Message rate or authentication limit');
+    // UTF-8 size without encoding: at most 3 bytes per UTF-16 unit, exact only when it matters
+    const size = typeof raw !== 'string' ? Infinity : raw.length * 3 <= MAX_PAYLOAD ? raw.length : utf8.encode(raw).length;
+    if (size > MAX_PAYLOAD) return ws.close(1009, 'Message too large');
+    if (!this.allowed(ws, size)) return ws.close(1008, 'Message rate or authentication limit');
     let parsed;
     try { parsed = validateMessage(JSON.parse(raw), 0); } catch (_) { return ws.close(1007, 'Invalid JSON'); }
     if (!parsed.ok) return ws.close(parsed.code || 1008, parsed.reason);
@@ -155,19 +254,19 @@ export class World extends DurableObject {
         // a guest never appears under a registered player's name (badges and rankings follow names)
         const name = this.accounts && this.accounts.isRegisteredName(data.name) ? data.name.trim().slice(0, 40) + ' (guest)' : data.name;
         const id = crypto.randomUUID();
+        if (me.queued) return;
         me = { ...me, id, userId: 'guest-' + id, username: name, type: data.clientType || 'browser', gameId: null };
-        this.setInfo(ws, me);
-        this.send(ws, { type: 'auth_ok', user: { id: me.userId, username: me.username } });
+        this.admit(ws, me, { type: 'auth_ok', user: { id: me.userId, username: me.username } });
         break;
       }
       case 'auth': {
         if (me.id) return this.send(ws, { type: 'error', error: 'Already authenticated' });
         const v = this.accounts && await this.accounts.verifyToken(data.token);
         if (!v) { this.send(ws, { type: 'error', error: 'Invalid token' }); return ws.close(1008, 'Invalid token'); }
+        if (me.queued) return;
         me = { ...this.info(ws), id: crypto.randomUUID(), userId: v.id, username: v.username, sid: v.sid,
           badge: v.badge || null, type: data.clientType || 'browser', gameId: null };
-        this.setInfo(ws, me);
-        this.send(ws, { type: 'auth_ok', user: { id: v.id, username: v.username, badge: me.badge } });
+        this.admit(ws, me, { type: 'auth_ok', user: { id: v.id, username: v.username, badge: me.badge } });
         break;
       }
       case 'list':
@@ -199,7 +298,7 @@ export class World extends DurableObject {
         const created = data.type === 'create_game';
         this.send(ws, { type: created ? 'game_created' : 'game_joined', role: created ? 'host' : 'player', color,
           game: { id, name: room.name, maxPlayers: room.maxPlayers || 0, playerCount: this.playerCount(id), region: 'global',
-            open: !room.maxPlayers, main: id === MAIN_ID, listed: room.listed !== false, hostUsername: room.hostName } });
+            open: !room.maxPlayers || !!room.main, main: !!room.main, listed: room.listed !== false, hostUsername: room.hostName } });
         this.broadcast(id, { type: 'player_joined', username: me.username, badge: me.badge || null, color, playerCount: this.playerCount(id) }, ws);
         this.gameList();
         break;
@@ -221,12 +320,14 @@ export class World extends DurableObject {
         break;
       case 'input': {
         if (!me.gameId) return;
-        const msg = { type: 'input', from: me.username, fromId: me.id, data: data.data, ts: Date.now() };
+        // encoded once for the whole room: each copy only checks the receiver's queue
+        const raw2 = JSON.stringify({ type: 'input', from: me.username, fromId: me.id, data: data.data, ts: Date.now() });
+        if (raw2.length * 3 > MAX_OUTGOING && utf8.encode(raw2).length > MAX_OUTGOING) break;
         for (const other of this.inRoom(me.gameId)) {
           if (other === ws) continue;
           const o = this.info(other);
           if (o.type !== 'game' || (data.to && o.id !== data.to)) continue;
-          this.send(other, msg);
+          this.sendRaw(other, raw2);
         }
         break;
       }
@@ -283,6 +384,12 @@ export class World extends DurableObject {
     }
   }
 
-  async webSocketClose(ws) { if (this.info(ws).gameId) { this.leave(ws); this.gameList(); } await this.persist(); }
+  async webSocketClose(ws) {
+    const wasPlayer = !!this.info(ws).id, wasQueued = !!this.info(ws).queued;
+    if (this.info(ws).gameId) { this.leave(ws); this.gameList(); }
+    this.forgetSocket(ws);
+    if (wasPlayer || wasQueued) this.promote();
+    await this.persist();
+  }
   async webSocketError(ws) { await this.webSocketClose(ws); }
 }

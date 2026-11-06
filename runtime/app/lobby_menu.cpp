@@ -76,7 +76,7 @@ bool DrawLobby() {
     if (rooms.empty()) ImGui::TextDisabled(st.state == relay::Status::Online ? "No lobbies listed." : "Waiting for the server...");
     for (const relay::Room& r : rooms) {
         bool here = r.id == st.room_id;
-        std::string label = r.main ? "Main Lobby (everyone online)" : r.name;
+        std::string label = r.main ? r.name + " (open to everyone)" : r.name;
         if (here) label += "   < you are here";
         char info[96];
         std::snprintf(info, sizeof info, "%u online%s%s", r.players, r.racing ? " - racing" : "",

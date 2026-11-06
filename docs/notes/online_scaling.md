@@ -25,6 +25,19 @@ One Cloudflare Durable Object (`World`, tools/multiplayer/cloudflare/src/world.j
 and the social state. The Main Lobby has no cap and relays every System Link datagram (JSON + base64) to every game
 client in it: traffic grows with the square of the players in the lobby, and one Durable Object is one thread.
 
+## Done (5 Nov 2026, deployed)
+
+- Main Lobby instances of 32 ("Main Lobby", "Main Lobby 2", ...; the fullest with room first; empty ones removed).
+- Player cap (MAX_PLAYERS, default 500) with a queue: a sign-in past the cap waits, gets `{type:'queue',pos,of}` and its
+  `auth_ok` when a place frees (old clients just wait; the game's lobby window shows the place). `/api/players`.
+- The relay no longer scans every connection per datagram: an in-memory index of sockets and room members, rebuilt
+  after hibernation; datagrams encoded once per room; rate budgets written to the attachment at most once a second;
+  room list broadcasts batched to once a second.
+- Measured locally (`load_test.mjs` against `wrangler dev`): one World object relays about 20,000 copies a second
+  whatever the mix (one client or two, 1 or 5 sends a second) — the single thread is the limit. Real lobbies
+  (one discovery broadcast a second each) at 32 per instance: 500 players = ~15,500 copies a second. Beyond that the
+  rooms must leave the World object (step 2 below).
+
 ## Plan, in order
 
 1. **Main Lobby instances**: the Main Lobby becomes "Main Lobby 1, 2, ..." of at most 64 players each (System Link
