@@ -57,7 +57,15 @@ web/src/gpu/encoder.ts, read 6 Nov 2026)
   missing input and decode. `tools/web/vs_from_hlsl.py` rebuilds the game's programs from D3D12 captures (26 distinct).
   Their regenerated HLSL matches the captures exactly, and all 34 WGSL modules compile and build pipelines in
   Chromium's WebGPU (`tools/web/wgsl_check.html`). Firefox not checked yet: its WebGPU device would not open during the
-  run. Next: `FixedVertexHlsl`, `PixelHlsl` (combiners), `QuadHlsl`, then the hooks.
+  run.
+- Step 1, fixed function, pixel and quad shaders (6 Nov 2026): `FixedVertexWgsl`, `PixelWgsl` (combiners, texture
+  modes, fixed stages, PBR, signed blends, alpha test) and `QuadWgsl` come out of the same functions as their HLSL, with
+  both spellings side by side in one decision tree. Pixel bindings: `tex<i>` at `@group(1) @binding(2i)`, `smp<i>` at
+  2i + 1, `pbr_nrm` 8, `pbr_orm` 9. `tests/wgsl_corpus_test` runs 600 generated keys. Its HLSL output is byte-identical
+  to the generator before the change, so the D3D12 build is unchanged. All 657 WGSL modules (corpus plus vertex
+  programs) compile and build pipelines in Chromium. The WGSL uses `ShaderHooks`' defaults: D3D12's extension hooks
+  (texture pack reads, cube overrides, car paint, reversed depth, DLSS velocity) have no WGSL spelling yet, so they
+  come with step 2's backend.
 
 Milestone order: 1 (vertex programs first: most draws), then 2's draw path for the menus, then 3D scenes, then targets
 and effects, then 4.

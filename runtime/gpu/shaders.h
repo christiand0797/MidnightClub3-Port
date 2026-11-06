@@ -63,6 +63,11 @@ struct FixedKey {
 FixedKey MakeFixedKey(const State& s);
 std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode = 0, const FixedKey& f = {});
 std::string PixelHlsl(const PixelKey& k);
+// the same shaders as WGSL for WebGPU (the browser build): same bindings as VertexProgramWgsl, the pixel stage's textures
+// and samplers in @group(1) (tex<i> at binding 2i, smp<i> at 2i + 1, pbr_nrm 8, pbr_orm 9)
+std::string FixedVertexWgsl(uint16_t regs, bool pretransformed, uint64_t decode = 0, const FixedKey& f = {});
+std::string PixelWgsl(const PixelKey& k);
+std::string QuadWgsl(std::string s);
 // a screen quad's vertex or pixel shader: texture coordinates as the quad was drawn, before its far edges were pulled out
 std::string QuadHlsl(std::string s);
 // depth stored reversed (1 at the near clip, 0 at the far one) from DrawConstants::zparams, for a vertex shader

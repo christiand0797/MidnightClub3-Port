@@ -21,10 +21,20 @@ try {
     const info = await module.getCompilationInfo();
     const errors = info.messages.filter(m => m.type === 'error')
       .map(m => `${m.lineNum}:${m.linePos} ${m.message} | ${code.split('\n')[m.lineNum - 1]?.trim()}`);
-    if (!errors.length) {
+    if (!errors.length && code.includes('@fragment')) {
+      // a pixel shader: paired with a vertex stage writing its own VOut
+      const vout = code.match(/struct VOut \{[^}]*\};/)[0];
+      const vs = device.createShaderModule({ code: `${vout}\n@vertex fn vs() -> VOut { var o: VOut; return o; }` });
+      device.createRenderPipeline({
+        layout: 'auto', vertex: { module: vs, entryPoint: 'vs' }, primitive: { topology: 'triangle-list' },
+        fragment: { module, entryPoint: 'main', targets: [{ format: 'rgba8unorm' }] },
+      });
+    } else if (!errors.length) {
       // one buffer per input, in the format its declared type takes
       const formats = { vec4f: 'float32x4', vec4i: 'sint32x4', u32: 'uint32' };
-      const buffers = [...code.matchAll(/@location\((\d+)\) v\d+: (vec4f|vec4i|u32),/g)].map(m => ({ arrayStride: 16, attributes: [{ shaderLocation: +m[1], offset: 0, format: formats[m[2]] }] }));
+      const attributes = [...code.matchAll(/@location\((\d+)\) v\d+: (vec4f|vec4i|u32),/g)]
+        .map((m, n) => ({ shaderLocation: +m[1], offset: n * 16, format: formats[m[2]] }));
+      const buffers = attributes.length ? [{ arrayStride: attributes.length * 16, attributes }] : [];
       device.createRenderPipeline({
         layout: 'auto', vertex: { module, entryPoint: 'main', buffers }, primitive: { topology: 'triangle-list' },
         fragment: { module: fragment, entryPoint: 'fs', targets: [{ format: 'rgba8unorm' }] },

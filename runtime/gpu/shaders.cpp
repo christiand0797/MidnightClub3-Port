@@ -274,8 +274,14 @@ struct In {
 };
 In ParseIn(uint32_t v) { return {v & 0xF, v & 0x10, v & 0xE0}; }
 
+// the pixel stage's generators write HLSL for D3D12 or, with w set, WGSL for WebGPU (the browser build): one decision
+// tree, two spellings side by side. WGSL has no multi-lane swizzle writes, no implicit vector size changes or scalar
+// to vector clamps, select for conditions, mix for lerp, dpdx/dpdy for ddx/ddy, and reads DC through dc.
+const char* Sp(bool w, const char* hlsl, const char* wgsl) { return w ? wgsl : hlsl; }
+
 struct Ps {
     const PixelKey& k;
+    bool w = false;
     int stage = 0;
     std::string e, f;  // final combiner E F for EF_PROD
     bool clamp_sum = false, inv_v1 = false, inv_r0 = false;
@@ -283,10 +289,11 @@ struct Ps {
 
     std::string Var(uint32_t reg) {
         uint32_t flags = k.count >> 8;  // PS_COMBINERCOUNT flags: 0x10 unique C0 per stage, 0x100 unique C1
+        const char* pc = Sp(w, "pc[%d]", "dc.pc[%d]");
         switch (reg) {
-            case 0: return "float4(0,0,0,0)";
-            case 1: return F("pc[%d]", stage == 8 ? 16 : ((flags & 0x10) ? stage * 2 : 0));
-            case 2: return F("pc[%d]", stage == 8 ? 17 : ((flags & 0x100) ? stage * 2 + 1 : 1));
+            case 0: return Sp(w, "float4(0,0,0,0)", "vec4f(0.0)");
+            case 1: return F(pc, stage == 8 ? 16 : ((flags & 0x10) ? stage * 2 : 0));
+            case 2: return F(pc, stage == 8 ? 17 : ((flags & 0x100) ? stage * 2 + 1 : 1));
             case 3: return "fogin";
             case 4: return "v0";
             case 5: return "v1";
@@ -297,10 +304,10 @@ struct Ps {
             case 12: return "r0";
             case 13: return "r1";
             case 14:
-                return F("%s(float4(%s.rgb + %s.rgb, 0))", clamp_sum ? "saturate" : "", inv_v1 ? "(1 - v1)" : "v1",
-                         inv_r0 ? "(1 - r0)" : "r0");
-            case 15: return "float4(" + e + " * " + f + ", 0)";
-            default: return "float4(0,0,0,0)";
+                return F(Sp(w, "%s(float4(%s.rgb + %s.rgb, 0))", "%s(vec4f(%s.rgb + %s.rgb, 0.0))"), clamp_sum ? "saturate" : "",
+                         inv_v1 ? "(1 - v1)" : "v1", inv_r0 ? "(1 - r0)" : "r0");
+            case 15: return Sp(w, "float4(", "vec4f(") + e + " * " + f + Sp(w, ", 0)", ", 0.0)");
+            default: return Sp(w, "float4(0,0,0,0)", "vec4f(0.0)");
         }
     }
 
@@ -308,14 +315,15 @@ struct Ps {
         std::string r = Var(in.reg);
         if (!alpha) r += in.chan ? ".aaa" : ".rgb";
         else r += in.chan ? ".a" : ".b";
+        std::string z = w ? (alpha ? "0.0" : "vec3f(0.0)") : "0";
         switch (in.mod) {
             // PS_INPUTMAPPING
-            case 0x00: return "max(" + r + ", 0)";
+            case 0x00: return "max(" + r + ", " + z + ")";
             case 0x20: return "(1 - saturate(" + r + "))";
-            case 0x40: return "(2 * max(" + r + ", 0) - 1)";
-            case 0x60: return "(-2 * max(" + r + ", 0) + 1)";
-            case 0x80: return "(max(" + r + ", 0) - 0.5)";
-            case 0xA0: return "(-max(" + r + ", 0) + 0.5)";
+            case 0x40: return "(2 * max(" + r + ", " + z + ") - 1)";
+            case 0x60: return "(-2 * max(" + r + ", " + z + ") + 1)";
+            case 0x80: return "(max(" + r + ", " + z + ") - 0.5)";
+            case 0xA0: return "(-max(" + r + ", " + z + ") + 0.5)";
             case 0xC0: return r;
             default: return "-" + r;
         }
@@ -347,6 +355,12 @@ struct Ps {
         }
     }
 
+    // T x = clamp((T)v, -1, 1)
+    std::string Clamped(const char* T, bool alpha, const std::string& name, const std::string& v) {
+        if (!w) return F("%s %s = clamp((%s)%s, -1, 1);\n", T, name.c_str(), T, v.c_str());
+        return F("let %s = clamp(%s(%s), %s);\n", name.c_str(), T, v.c_str(), alpha ? "-1.0, 1.0" : "vec3f(-1.0), vec3f(1.0)");
+    }
+
     // rgb and alpha halves read the registers before either writes, so the writes come back to the caller
     std::string Stage(uint32_t inputs, uint32_t output, bool alpha) {
         In d = ParseIn(inputs & 0xFF), c = ParseIn((inputs >> 8) & 0xFF), b = ParseIn((inputs >> 16) & 0xFF),
@@ -354,29 +368,38 @@ struct Ps {
         // fl: 1 cd dot, 2 ab dot, 4 mux, 0x38 mapping, 0x40 and 0x80 blue to alpha
         uint32_t cd_dst = output & 0xF, ab_dst = (output >> 4) & 0xF, sum_dst = (output >> 8) & 0xF, fl = output >> 12;
         const char* m = alpha ? "a" : "rgb";
-        const char* T = alpha ? "float" : "float3";
+        const char* T = alpha ? Sp(w, "float", "f32") : Sp(w, "float3", "vec3f");
         const char* n = alpha ? "a" : "c";
         std::string A = Input(a, alpha), B = Input(b, alpha), C = Input(c, alpha), D = Input(d, alpha);
-        std::string ab = (fl & 2) ? "dot(" + A + ", " + B + ")" : "(" + A + " * " + B + ")";
-        std::string cd = (fl & 1) ? "dot(" + C + ", " + D + ")" : "(" + C + " * " + D + ")";
+        bool dots = !(w && alpha);  // HLSL's dot of two scalars is their product; WGSL has none
+        std::string ab = (fl & 2) && dots ? "dot(" + A + ", " + B + ")" : "(" + A + " * " + B + ")";
+        std::string cd = (fl & 1) && dots ? "dot(" + C + ", " + D + ")" : "(" + C + " * " + D + ")";
         uint32_t map = fl & 0x38;
-        code += F("%s ab%s = clamp((%s)%s, -1, 1);\n", T, n, T, Map(ab, map).c_str());
-        code += F("%s cd%s = clamp((%s)%s, -1, 1);\n", T, n, T, Map(cd, map).c_str());
-        std::string sum = (fl & 4) ? F("((%s) ? (%s)%s : (%s)%s)",
-                                       ((k.count >> 8) & 1) ? "r0.a >= 0.5" : "(uint(r0.a * 255) & 1) == 1", T,
-                                       cd.c_str(), T, ab.c_str())
-                                   : "(" + ab + " + " + cd + ")";
-        code += F("%s ms%s = clamp((%s)%s, -1, 1);\n", T, n, T, Map(sum, map).c_str());
+        code += Clamped(T, alpha, std::string("ab") + n, Map(ab, map));
+        code += Clamped(T, alpha, std::string("cd") + n, Map(cd, map));
+        std::string sum;
+        if (!(fl & 4)) sum = "(" + ab + " + " + cd + ")";
+        else if (!w)
+            sum = F("((%s) ? (%s)%s : (%s)%s)", ((k.count >> 8) & 1) ? "r0.a >= 0.5" : "(uint(r0.a * 255) & 1) == 1", T, cd.c_str(), T,
+                    ab.c_str());
+        else
+            sum = F("select(%s(%s), %s(%s), %s)", T, ab.c_str(), T, cd.c_str(),
+                    ((k.count >> 8) & 1) ? "r0.a >= 0.5" : "(u32(r0.a * 255.0) & 1u) == 1u");
+        code += Clamped(T, alpha, std::string("ms") + n, Map(sum, map));
+        auto put = [&](const char* r, const char* v) {
+            if (alpha || !w) return F("%s.%s = %s%s;\n", r, m, v, n);
+            return F("%s = vec4f(%s%s, %s.a);\n", r, v, n, r);
+        };
         std::string post;
         if (const char* r = Dest(ab_dst)) {
-            post += F("%s.%s = ab%s;\n", r, m, n);
+            post += put(r, "ab");
             if (!alpha && (fl & 0x80)) post += F("%s.a = abc.b;\n", r);
         }
         if (const char* r = Dest(cd_dst)) {
-            post += F("%s.%s = cd%s;\n", r, m, n);
+            post += put(r, "cd");
             if (!alpha && (fl & 0x40)) post += F("%s.a = cdc.b;\n", r);
         }
-        if (const char* r = Dest(sum_dst)) post += F("%s.%s = ms%s;\n", r, m, n);
+        if (const char* r = Dest(sum_dst)) post += put(r, "ms");
         return post;
     }
 };
@@ -393,88 +416,110 @@ std::string DotInput(uint32_t map, uint32_t src) {
 
 // stage i's coordinates as the title wrote them, over 0..1. The console draws half a pixel right and down of the
 // host unless a program writes positions raw: a render target is read where the console's offset puts it
-std::string TexUv(const TexInfo& t, int i, const std::string& uv) {
+std::string TexUv(const TexInfo& t, int i, const std::string& uv, bool w = false) {
     std::string n = "(" + uv + ")";
-    if (t.rect) n += F(" / texsize[%d].xy", i);
-    n += F(" + texsize[%d].zw", i);
+    if (t.rect) n += F(Sp(w, " / texsize[%d].xy", " / dc.texsize[%d].xy"), i);
+    n += F(Sp(w, " + texsize[%d].zw", " + dc.texsize[%d].zw"), i);
     if (!(t.flags & kTexTarget)) return n;
-    std::string step = "ddx(" + n + F(") + spread[%d].w * ddy(", i) + n + ")";
-    return n + F(" + rtshift[%d] * (", i) + step + ")";
+    std::string step = Sp(w, "ddx(", "dpdx(") + n + F(Sp(w, ") + spread[%d].w * ddy(", ") + dc.spread[%d].w * dpdy("), i) + n + ")";
+    return n + F(Sp(w, " + rtshift[%d] * (", " + dc.rtshift[%d] * ("), i) + step + ")";
 }
 
 // texture shader stage i, per its mode
-std::string TexFetch(const PixelKey& k, int i) {
+std::string TexFetch(const PixelKey& k, int i, bool w = false) {
     uint32_t mode = (k.tex_modes >> (i * 5)) & 0x1F;
     const TexInfo& t = k.tex[i];
     uint32_t in = i == 1 ? 0 : i == 2 ? (k.input_texture >> 16) & 0xF : (k.input_texture >> 20) & 0xF;
     uint32_t dm = i == 0 ? 0 : (k.dot_mapping >> ((i - 1) * 4)) & 0xF;
     const std::string tc = F("tc%d", i);
     const char* q = tc.c_str();
-    auto put = [&](const std::string& v) { return F("float4 t%d = %s;\n", i, v.c_str()); };
+    const char* zero = Sp(w, "0", "vec4f(0.0)");
+    const char* black = Sp(w, "float4(0,0,0,1)", "vec4f(0.0, 0.0, 0.0, 1.0)");
+    auto put = [&](const std::string& v) { return F(Sp(w, "float4 t%d = %s;\n", "var t%d: vec4f = %s;\n"), i, v.c_str()); };
     // dpN, or dpNn for stage N + 1's product taken early
     auto dp = [&](int n, int coord, uint32_t map, uint32_t src) {
-        return F("float dp%d%s = dot(tc%d.xyz, %s);\n", n, coord == n ? "" : "n", coord, DotInput(map, src).c_str());
+        return F(Sp(w, "float dp%d%s = dot(tc%d.xyz, %s);\n", "let dp%d%s = dot(tc%d.xyz, %s);\n"), n, coord == n ? "" : "n", coord,
+                 DotInput(map, src).c_str());
+    };
+    auto sample = [&](const std::string& uv) {
+        return F(Sp(w, "tex%d.Sample(smp%d, %s)", "textureSample(tex%d, smp%d, %s)"), i, i, uv.c_str());
     };
     auto tex2d = [&](const std::string& uv) {
-        if (t.flags & kTexWide) return F("spreadtap(tex%d, smp%d, %s, spread[%d], %s)", i, i, uv.c_str(), i, Hooks().ReadScale(t).c_str());
-        return F("tex%d.Sample(smp%d, %s)", i, i, uv.c_str());
+        if (t.flags & kTexWide)
+            return F(Sp(w, "spreadtap(tex%d, smp%d, %s, spread[%d], %s)", "spreadtap(tex%d, smp%d, %s, dc.spread[%d], %s)"), i, i,
+                     uv.c_str(), i, w ? "1.0" : Hooks().ReadScale(t).c_str());
+        return sample(uv);
     };
     auto cube = [&](const std::string& dir) {
-        std::string c = Hooks().Cube(t, i, dir);
-        return c.empty() ? F("tex%d.Sample(smp%d, %s)", i, i, dir.c_str()) : c;
+        std::string c = w ? std::string() : Hooks().Cube(t, i, dir);
+        return c.empty() ? sample(dir) : c;
     };
     auto sample2 = [&](const std::string& uv) {
-        if (t.kind == kTex2D) return tex2d(TexUv(t, i, uv));
-        if (t.kind == kTexCube) return cube("float3(" + uv + ", 1)");
-        if (t.kind == kTex3D) return F("tex%d.Sample(smp%d, float3(%s, 0))", i, i, uv.c_str());
-        return std::string("float4(0,0,0,1)");
+        if (t.kind == kTex2D) return tex2d(TexUv(t, i, uv, w));
+        if (t.kind == kTexCube) return cube(Sp(w, "float3(", "vec3f(") + uv + Sp(w, ", 1)", ", 1.0)"));
+        if (t.kind == kTex3D) return sample(Sp(w, "float3(", "vec3f(") + uv + Sp(w, ", 0)", ", 0.0)"));
+        return std::string(black);
     };
     auto sample3 = [&](const std::string& uvw) {
-        if (t.kind == kTex2D) return tex2d(TexUv(t, i, "(" + uvw + ").xy"));
+        if (t.kind == kTex2D) return tex2d(TexUv(t, i, "(" + uvw + ").xy", w));
         if (t.kind == kTexCube) return cube(uvw);
-        if (t.kind == kTex3D) return F("tex%d.Sample(smp%d, %s)", i, i, uvw.c_str());
-        return std::string("float4(0,0,0,1)");
+        if (t.kind == kTex3D) return sample(uvw);
+        return std::string(black);
     };
     auto depth = [&](const std::string& ref) {
-        std::string uv = TexUv(t, i, F("%s.xy / %s.w", q, q));
-        std::string rest = F(", %s, %d, i.pos.xy, texsize[%d].xy)", ref.c_str(), t.shadow, i);
+        std::string uv = TexUv(t, i, F("%s.xy / %s.w", q, q), w);
+        std::string rest = F(Sp(w, ", %s, %d, i.pos.xy, texsize[%d].xy)", ", %s, %d, i.pos.xy, dc.texsize[%d].xy)"), ref.c_str(), t.shadow, i);
         return put(F("shadow(tex%d, smp%d, ", i, i) + uv + rest);
     };
+    const char* f2 = Sp(w, "float2", "vec2f");
+    const char* f3 = Sp(w, "float3", "vec3f");
     std::string s;
     switch (mode) {
         // PS_TEXTUREMODES: 1 project2d, 2 project3d, 3 cubemap, 4 passthru, 5 clipplane, 6 and 7 bumpenvmap, 9 dot_st, 0xA dot_zw, 0xD dot_str_3d, 0xE dot_str_cube, 0xF dpndnt_ar, 0x10 dpndnt_gb, 0x11 dotproduct
-        case 0: return put("float4(0,0,0,1)");
+        case 0: return put(black);
         case 1: return t.shadow ? depth("0") : put(sample2(F("%s.xy / %s.w", q, q)));
         case 2: return t.shadow ? depth(F("%s.z / %s.w", q, q)) : put(sample3(F("%s.xyz / %s.w", q, q)));
         case 3: return put(sample3(tc + ".xyz"));
         case 4: return put(tc);
         case 5:  // clip plane: a set compare_mode bit kills at >= 0, a clear one below 0
-            s = put("0");
-            for (int j = 0; j < 4; j++) s += F("if (%s.%c %s 0) discard;\n", q, "xyzw"[j], ((k.compare_mode >> (i * 4 + j)) & 1) ? ">=" : "<");
+            s = put(zero);
+            for (int j = 0; j < 4; j++)
+                s += F(Sp(w, "if (%s.%c %s 0) discard;\n", "if (%s.%c %s 0.0) { discard; }\n"), q, "xyzw"[j],
+                       ((k.compare_mode >> (i * 4 + j)) & 1) ? ">=" : "<");
             return s;
         case 6:
         case 7:  // bump env map: signed du dv through the 2x2 matrix, 7 scales by luminance
-            s = F("float2 duv%d = sbyte(t%u.bgr, 0, 256, 127).xy;\n", i, in);
-            s += put(sample2(F("%s.xy + float2(dot(bumpmat[%d].xz, duv%d), dot(bumpmat[%d].yw, duv%d))", q, i, i, i, i)));
-            if (mode == 7) s += F("t%d *= bumplum[%d].x * t%u.r + bumplum[%d].y;\n", i, i, in, i);
+            s = F(Sp(w, "float2 duv%d = sbyte(t%u.bgr, 0, 256, 127).xy;\n", "let duv%d = sbyte(t%u.bgr, 0, 256, 127).xy;\n"), i, in);
+            s += put(sample2(F(Sp(w, "%s.xy + float2(dot(bumpmat[%d].xz, duv%d), dot(bumpmat[%d].yw, duv%d))",
+                                     "%s.xy + vec2f(dot(dc.bumpmat[%d].xz, duv%d), dot(dc.bumpmat[%d].yw, duv%d))"),
+                               q, i, i, i, i)));
+            if (mode == 7)
+                s += F(Sp(w, "t%d *= bumplum[%d].x * t%u.r + bumplum[%d].y;\n", "t%d *= dc.bumplum[%d].x * t%u.r + dc.bumplum[%d].y;\n"), i,
+                       i, in, i);
             return s;
-        case 9: return dp(i, i, dm, in) + put(sample2(F("float2(dp%d, dp%d)", i - 1, i)));
+        case 9: return dp(i, i, dm, in) + put(sample2(F("%s(dp%d, dp%d)", f2, i - 1, i)));
         case 0xA:
-        case 0x11: return dp(i, i, dm, in) + put("0");
+        case 0x11: return dp(i, i, dm, in) + put(zero);
         case 0xB:  // reflect diffuse at stage 2: stage 3's product early for the normal
             s = dp(i, i, dm, in) + dp(i, i + 1, (k.dot_mapping >> 8) & 0xF, (k.input_texture >> 20) & 0xF);
-            return s + put(sample3(F("float3(dp%d, dp%d, dp%dn)", i - 1, i, i)));
+            return s + put(sample3(F("%s(dp%d, dp%d, dp%dn)", f3, i - 1, i, i)));
         case 0xC:  // reflect specular at stage 3: eye from the three w
             s = dp(i, i, dm, in);
-            s += F("float3 nrm%d = float3(dp%d, dp%d, dp%d), eye%d = float3(tc%d.w, tc%d.w, tc%d.w);\n", i, i - 2, i - 1, i, i, i - 2,
-                   i - 1, i);
-            s += F("float3 refl%d = 2 * nrm%d * dot(nrm%d, eye%d) / dot(nrm%d, nrm%d) - eye%d;\n", i, i, i, i, i, i, i);
+            if (!w)
+                s += F("float3 nrm%d = float3(dp%d, dp%d, dp%d), eye%d = float3(tc%d.w, tc%d.w, tc%d.w);\n", i, i - 2, i - 1, i, i, i - 2,
+                       i - 1, i);
+            else
+                s += F("let nrm%d = vec3f(dp%d, dp%d, dp%d);\nlet eye%d = vec3f(tc%d.w, tc%d.w, tc%d.w);\n", i, i - 2, i - 1, i, i, i - 2,
+                       i - 1, i);
+            s += F(Sp(w, "float3 refl%d = 2 * nrm%d * dot(nrm%d, eye%d) / dot(nrm%d, nrm%d) - eye%d;\n",
+                      "let refl%d = 2 * nrm%d * dot(nrm%d, eye%d) / dot(nrm%d, nrm%d) - eye%d;\n"),
+                   i, i, i, i, i, i, i);
             return s + put(sample3(F("refl%d", i)));
         case 0xD:
-        case 0xE: return dp(i, i, dm, in) + put(sample3(F("float3(dp%d, dp%d, dp%d)", i - 2, i - 1, i)));
+        case 0xE: return dp(i, i, dm, in) + put(sample3(F("%s(dp%d, dp%d, dp%d)", f3, i - 2, i - 1, i)));
         case 0xF: return put(sample2(F("t%u.ar", in)));
         case 0x10: return put(sample2(F("t%u.gb", in)));
-        default: return put("0");
+        default: return put(zero);
     }
 }
 
@@ -502,14 +547,48 @@ void alphatest(float a) {
 
 std::string PsHelpers() { return kPsSbyte + Hooks().Shadow() + kPsTail; }
 
+// the same helpers in WGSL; shadow is ShaderHooks::Shadow's default (the browser has no backend extension)
+const char* kWgslPsHelpers = R"(
+// unorm to byte b, less lo under 128 or hi from 128, over d
+fn sbyte(u: vec3f, lo: f32, hi: f32, d: f32) -> vec3f {
+    let b = u * 255.0;
+    return (b - select(vec3f(lo), vec3f(hi), b >= vec3f(128.0))) / d;
+}
+// the sampler compares, a linear filter blends the four results like the console does
+fn shadow(t: texture_depth_2d, s: sampler_comparison, uv: vec2f, z: f32, fmt: i32, px: vec2f, size: vec2f) -> vec4f {
+    let mx = select(16777215.0, 65535.0, fmt == 2);
+    return vec4f(textureSampleCompareLevel(t, s, uv, clamp(z, 0.0, mx) / mx));
+}
+fn spreadtap(t: texture_2d<f32>, s: sampler, uv: vec2f, w: vec4f, m: f32) -> vec4f {
+    var c = vec4f(0.0);
+    let n = i32(w.z);
+    for (var y = 0; y < n; y++) {
+        for (var x = 0; x < n; x++) {
+            let v = textureSampleLevel(t, s, uv + w.xy * (vec2f(f32(x), f32(y)) - f32(n - 1) * 0.5), 0.0);
+            c += vec4f(saturate(v.rgb * m), v.a);
+        }
+    }
+    return c / f32(n * n);
+}
+fn alphatest(a: f32) {
+    let f = i32(dc.misc.y);
+    let v = i32(round(a * 255.0));
+    let r = i32(dc.misc.x);
+    var ok = true;
+    if (f == 0) { ok = false; } else if (f == 1) { ok = v < r; } else if (f == 2) { ok = v == r; } else if (f == 3) { ok = v <= r; }
+    else if (f == 4) { ok = v > r; } else if (f == 5) { ok = v != r; } else if (f == 6) { ok = v >= r; }
+    if (!ok) { discard; }
+}
+)";
+
 // fixed function texture stage arguments, D3DTA
-std::string FfArg(uint32_t a, int stage, bool alpha) {
+std::string FfArg(uint32_t a, int stage, bool alpha, bool w = false) {
     std::string v;
     switch (a & 0xF) {
         case 0: v = "v0"; break;
         case 1: v = "cur"; break;
         case 2: v = F("t%d", stage); break;
-        case 3: v = "tfactor"; break;
+        case 3: v = Sp(w, "tfactor", "dc.tfactor"); break;
         case 4: v = "v1"; break;
         case 5: v = "tmp"; break;
         default: v = "cur"; break;
@@ -520,7 +599,9 @@ std::string FfArg(uint32_t a, int stage, bool alpha) {
 }
 
 // D3DTOP
-std::string FfOp(uint32_t op, const std::string& a1, const std::string& a2, const std::string& a0, int stage, bool alpha) {
+std::string FfOp(uint32_t op, const std::string& a1, const std::string& a2, const std::string& a0, int stage, bool alpha,
+                 bool w = false) {
+    const std::string lerp = Sp(w, "lerp(", "mix(");
     switch (op) {
         case 2: return a1;
         case 3: return a2;
@@ -532,19 +613,22 @@ std::string FfOp(uint32_t op, const std::string& a1, const std::string& a2, cons
         case 9: return "(" + a1 + " + " + a2 + " - 0.5) * 2";
         case 10: return a1 + " - " + a2;
         case 11: return a1 + " + " + a2 + " * (1 - " + a1 + ")";
-        case 12: return "lerp(" + a2 + ", " + a1 + ", v0.a)";
-        case 13: return "lerp(" + a2 + ", " + a1 + ", cur.a)";
-        case 14: return F("lerp(%s, %s, t%d.a)", a2.c_str(), a1.c_str(), stage);
-        case 15: return "lerp(" + a2 + ", " + a1 + ", tfactor.a)";
+        case 12: return lerp + a2 + ", " + a1 + ", v0.a)";
+        case 13: return lerp + a2 + ", " + a1 + ", cur.a)";
+        case 14: return lerp + F("%s, %s, t%d.a)", a2.c_str(), a1.c_str(), stage);
+        case 15: return lerp + a2 + ", " + a1 + Sp(w, ", tfactor.a)", ", dc.tfactor.a)");
         case 16: return F("%s + %s * (1 - t%d.a)", a1.c_str(), a2.c_str(), stage);
         case 18: return alpha ? a1 : a1 + " + " + a2 + " * " + a1.substr(0, a1.size() - 4) + ".a";
         case 19: return alpha ? a1 : a1 + " * " + a2 + " + " + a1.substr(0, a1.size() - 4) + ".a";
         case 20: return alpha ? a1 : a1 + " + " + a2 + " * (1 - " + a1.substr(0, a1.size() - 4) + ".a)";
         case 21: return alpha ? a1 : "(1 - " + a1 + ") * " + a2 + " + " + a1.substr(0, a1.size() - 4) + ".a";
-        case 22: return F("saturate(dot((%s - 0.5) * 2, (%s - 0.5) * 2))", alpha ? ("float3(" + a1 + ",0,0)").c_str() : a1.c_str(),
-                          alpha ? ("float3(" + a2 + ",0,0)").c_str() : a2.c_str());
+        case 22: {
+            std::string f3 = Sp(w, "float3(", "vec3f(");
+            return F("saturate(dot((%s - 0.5) * 2, (%s - 0.5) * 2))", alpha ? (f3 + a1 + ",0,0)").c_str() : a1.c_str(),
+                     alpha ? (f3 + a2 + ",0,0)").c_str() : a2.c_str());
+        }
         case 23: return a0 + " + " + a1 + " * " + a2;
-        case 24: return "lerp(" + a2 + ", " + a1 + ", " + a0 + ")";
+        case 24: return lerp + a2 + ", " + a1 + ", " + a0 + ")";
         default: return alpha ? "cur.a" : "cur.rgb";
     }
 }
@@ -1012,118 +1096,9 @@ FixedKey MakeFixedKey(const State& s) {
     return f;
 }
 
-// D3D's fixed function vertex pipeline: transform, lighting in view space, texture coordinate generation and transforms
-std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode, const FixedKey& f) {
-    std::string s = Common();
-    s += kVsHelpers;
-    s += VsInputs(regs, decode);
-    s += kVsPrologue;
-    // a register the vertices lack reads its inline value, as on the console; position has none worth reading
-    auto v = [&](int r, const char* def) {
-        return (regs >> r) & 1 ? F("i.v%d", r) : r == 0 ? std::string(def) : F("vattr[%d]", r);
-    };
-    // only vertices that carry a normal (register 2) are lit: geometry drawn without one while D3DRS_LIGHTING is
-    // still on from a lit draw keeps its vertex diffuse colour unlit, per D3D8
-    bool lit = !pretransformed && (f.light & 1) && ((regs >> 2) & 1);
-    if (pretransformed) {
-        s += "    float4 rhw = " + v(0, "float4(0,0,0,1)") + ";\n";
-        s += "    float w = rhw.w == 0 ? 1 : 1 / rhw.w;\n";
-        s += "    oPos = float4(rhw.xy, rhw.z / surf.z, w);\n";
-    } else {
-        s += "    float4 ip = float4(" + v(0, "float4(0,0,0,1)") + ".xyz, 1);\n";
-        // only vertices that carry blend weights (register 1) are blended: geometry drawn without them while the
-        // state is still on from a skinned draw keeps its plain world transform
-        if (f.blend >= 1 && f.blend <= 6 && ((regs >> 1) & 1)) {
-            // the console's vertex blending: the weights in register 1 mix world 0 to 3; odd modes leave the last
-            // weight to make the sum one
-            uint32_t n = (f.blend + 3) / 2;
-            bool implied = f.blend & 1;
-            s += "    float4 bw = " + v(1, "float4(0,0,0,0)") + ";\n";
-            s += "    float bwt[4] = {bw.x, bw.y, bw.z, bw.w};\n";
-            if (implied) {
-                s += "    float bsum = 0;\n";
-                s += F("    for (int k = 0; k < %u; k++) bsum += bwt[k];\n", n - 1);
-                s += F("    bwt[%u] = 1 - bsum;\n", n - 1);
-            }
-            s += "    float4 cp = 0;\n    float3 vp = 0, vn = 0;\n";
-            s += "    float4 inrm = float4(" + v(2, "float4(0,0,0,0)") + ".xyz, 0);\n";
-            s += F("    for (int k = 0; k < %u; k++) {\n", n);
-            s += "        cp += bwt[k] * mul(ip, bwvp[k]);\n";
-            s += "        vp += bwt[k] * mul(ip, bwv[k]).xyz;\n";
-            s += "        vn += bwt[k] * mul(inrm, bwvn[k]).xyz;\n";
-            s += "    }\n";
-        } else {
-            s += "    float4 cp = mul(ip, wvp);\n";
-            s += "    float3 vp = mul(ip, wv).xyz;\n";
-            s += "    float3 vn = mul(float4(" + v(2, "float4(0,0,0,0)") + ".xyz, 0), wvn).xyz;\n";
-        }
-        if (f.light & 8) s += "    vn = dot(vn, vn) > 0 ? normalize(vn) : vn;\n";
-    }
-    if (lit) {
-        // D3DMCS: 1 the vertex diffuse, 2 its specular, else the material
-        auto src = [&](int field, const char* mat) {
-            uint32_t m = (f.light >> (8 + field * 2)) & 3;
-            if (m == 1) return v(3, "");
-            if (m == 2) return v(4, "");
-            return std::string(mat);
-        };
-        s += "    float4 md = " + src(0, "mat[0]") + ", ms = " + src(1, "mat[2]") + ", ma = " + src(2, "mat[1]") +
-             ", me = " + src(3, "mat[3]") + ";\n";
-        s += "    float3 la = 0, ld = 0, ls = 0;\n";
-        s += (f.light & 4) ? "    float3 eye = -normalize(vp);\n" : "    float3 eye = float3(0, 0, 1);\n";
-        for (int n = 0; n < 8; n++) {
-            uint32_t type = (f.types >> (n * 2)) & 3;  // D3DLIGHTTYPE: 1 point, 2 spot, 3 directional
-            if (!type) continue;
-            int b = n * 7;
-            s += "    {\n        float3 l;\n        float att = 1;\n";
-            if (type == 3) {
-                s += F("        l = -normalize(lt[%d].xyz);\n", b + 4);
-            } else {
-                s += F("        float3 d = lt[%d].xyz - vp;\n        float dist = length(d);\n        l = d / max(dist, 1e-6);\n", b + 3);
-                s += F("        att = dist > lt[%d].w ? 0 : 1 / max(lt[%d].x + lt[%d].y * dist + lt[%d].z * dist * dist, 1e-6);\n", b + 3, b + 5,
-                       b + 5, b + 5);
-                if (type == 2) {
-                    s += F("        float rho = dot(-l, normalize(lt[%d].xyz));\n", b + 4);
-                    s += F("        att *= rho > lt[%d].x ? 1 : rho <= lt[%d].y ? 0 : pow(saturate((rho - lt[%d].y) / (lt[%d].x - lt[%d].y)), lt[%d].w);\n",
-                           b + 6, b + 6, b + 6, b + 6, b + 6, b + 4);
-                }
-            }
-            s += F("        la += att * lt[%d].rgb;\n", b + 2);
-            s += "        float nl = dot(vn, l);\n";
-            s += F("        ld += att * lt[%d].rgb * max(nl, 0);\n", b);
-            if (f.light & 2) s += F("        if (nl > 0) ls += att * lt[%d].rgb * pow(max(dot(vn, normalize(l + eye)), 0), mat[4].x);\n", b + 1);
-            s += "    }\n";
-        }
-        s += "    oD0 = float4(me.rgb + ma.rgb * (amb.rgb + la) + md.rgb * ld, md.a);\n";
-        s += (f.light & 2) ? "    oD1 = float4(ms.rgb * ls, ms.a);\n" : "    oD1 = float4(0,0,0,0);\n";
-    } else {
-        s += "    oD0 = " + v(3, "float4(1,1,1,1)") + ";\n";
-        s += "    oD1 = " + v(4, "float4(0,0,0,0)") + ";\n";
-    }
-    s += "    oB0 = oD0;\n    oB1 = oD1;\n";
-    for (int t = 0; t < 4; t++) {
-        uint32_t u = f.tex[t], set = u & 3, gen = (u >> 4) & 7, count = (u >> 8) & 7, size = (u >> 12) & 7;
-        std::string in = v(9 + int(set), "float4(0,0,0,1)");
-        if (pretransformed || (!gen && !count)) {
-            s += F("    oT%d = %s;\n", t, in.c_str());
-            continue;
-        }
-        // generated coordinates are view space; a transform takes the set with 1 after its last element
-        std::string c = gen == 1 ? "float4(vn, 1)" : gen == 2 ? "float4(vp, 1)" : gen == 3 ? "float4(reflect(normalize(vp), vn), 1)"
-                        : size == 1 ? F("float4(%s.x, 1, 0, 0)", in.c_str()) : size == 2 ? F("float4(%s.xy, 1, 0)", in.c_str())
-                        : size == 3 ? F("float4(%s.xyz, 1)", in.c_str()) : in;
-        if (!count) {
-            s += F("    oT%d = %s;\n", t, c.c_str());
-            continue;
-        }
-        s += F("    {\n        float4 tc = mul(%s, tm[%d]);\n", c.c_str(), t);
-        if (u & 0x800) s += F("        oT%d = float4(tc.xy, tc.z, tc[%u]);\n", t, std::min<uint32_t>(count, 4) - 1);
-        else s += F("        oT%d = float4(tc.xy, %s, 1);\n", t, count >= 3 ? "tc.z" : "0");
-        s += "    }\n";
-    }
-    s += "    oFog = " + v(5, "float4(0,0,0,0)") + ";\n";
-    if (pretransformed) return s + kVsEpilogue;
-    s += R"(
+namespace {
+
+const char* kFixedTailHlsl = R"(
     VOut o;
     // like the pretransformed ones, target sized passes end half a console pixel short of the far edges
     float2 sp = (float2(cp.x, -cp.y) / cp.w + 1) * 0.5 * surf.xy;
@@ -1142,45 +1117,362 @@ std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode,
     return o;
 }
 )";
-    return s;
+
+const char* kFixedTailWgsl = R"(
+    var o: VOut;
+    // like the pretransformed ones, target sized passes end half a console pixel short of the far edges
+    let sp = (vec2f(cp.x, -cp.y) / cp.w + 1.0) * 0.5 * dc.surf.xy;
+    if (dc.surf.w == 0.0 && abs(sp.x - (dc.surf.x - 0.5)) < 1e-3) { cp.x = cp.w; }
+    if (dc.surf.w == 0.0 && abs(sp.y - (dc.surf.y - 0.5)) < 1e-3) { cp.y = -cp.w; }
+    o.pos = cp;
+    o.d0 = saturate(oD0);
+    o.d1 = saturate(oD1);
+    o.b0 = o.d0;
+    o.b1 = o.d1;
+    o.tc0 = oT0;
+    o.tc1 = oT1;
+    o.tc2 = oT2;
+    o.tc3 = oT3;
+    o.fogamt = fogfactor(abs(cp.z));
+    return o;
+}
+)";
+
+// D3D's fixed function vertex pipeline: transform, lighting in view space, texture coordinate generation and
+// transforms. w: WGSL, where mul(v, M) of HLSL's column_major matrices is v * M
+std::string FixedVertex(uint16_t regs, bool pretransformed, uint64_t decode, const FixedKey& f, bool w) {
+    std::string s = w ? std::string(kWgslCommon) + kWgslVsHelpers + WgslVsInputs(regs, decode) + kWgslVsPrologue
+                      : Common() + kVsHelpers + VsInputs(regs, decode) + kVsPrologue;
+    const char* f4 = Sp(w, "float4", "vec4f");
+    const char* dcp = Sp(w, "", "dc.");  // DC members
+    // a register the vertices lack reads its inline value, as on the console; position has none worth reading
+    auto v = [&](int r, const char* def) {
+        return (regs >> r) & 1 ? F("i.v%d", r) : r == 0 ? std::string(def) : F(Sp(w, "vattr[%d]", "dc.vattr[%d]"), r);
+    };
+    const char* black = Sp(w, "float4(0,0,0,1)", "vec4f(0.0, 0.0, 0.0, 1.0)");
+    const char* clear = Sp(w, "float4(0,0,0,0)", "vec4f(0.0)");
+    // only vertices that carry a normal (register 2) are lit: geometry drawn without one while D3DRS_LIGHTING is
+    // still on from a lit draw keeps its vertex diffuse colour unlit, per D3D8
+    bool lit = !pretransformed && (f.light & 1) && ((regs >> 2) & 1);
+    if (pretransformed) {
+        if (!w) {
+            s += "    float4 rhw = " + v(0, black) + ";\n";
+            s += "    float w = rhw.w == 0 ? 1 : 1 / rhw.w;\n";
+            s += "    oPos = float4(rhw.xy, rhw.z / surf.z, w);\n";
+        } else {
+            s += "    let rhw = " + v(0, black) + ";\n";
+            s += "    let w = select(1.0 / rhw.w, 1.0, rhw.w == 0.0);\n";
+            s += "    oPos = vec4f(rhw.xy, rhw.z / dc.surf.z, w);\n";
+        }
+    } else {
+        s += Sp(w, "    float4 ip = float4(", "    let ip = vec4f(") + v(0, black) + Sp(w, ".xyz, 1);\n", ".xyz, 1.0);\n");
+        // only vertices that carry blend weights (register 1) are blended: geometry drawn without them while the
+        // state is still on from a skinned draw keeps its plain world transform
+        if (f.blend >= 1 && f.blend <= 6 && ((regs >> 1) & 1)) {
+            // the console's vertex blending: the weights in register 1 mix world 0 to 3; odd modes leave the last
+            // weight to make the sum one
+            uint32_t n = (f.blend + 3) / 2;
+            bool implied = f.blend & 1;
+            if (!w) {
+                s += "    float4 bw = " + v(1, clear) + ";\n";
+                s += "    float bwt[4] = {bw.x, bw.y, bw.z, bw.w};\n";
+                if (implied) {
+                    s += "    float bsum = 0;\n";
+                    s += F("    for (int k = 0; k < %u; k++) bsum += bwt[k];\n", n - 1);
+                    s += F("    bwt[%u] = 1 - bsum;\n", n - 1);
+                }
+                s += "    float4 cp = 0;\n    float3 vp = 0, vn = 0;\n";
+                s += "    float4 inrm = float4(" + v(2, clear) + ".xyz, 0);\n";
+                s += F("    for (int k = 0; k < %u; k++) {\n", n);
+                s += "        cp += bwt[k] * mul(ip, bwvp[k]);\n";
+                s += "        vp += bwt[k] * mul(ip, bwv[k]).xyz;\n";
+                s += "        vn += bwt[k] * mul(inrm, bwvn[k]).xyz;\n";
+                s += "    }\n";
+            } else {
+                s += "    let bw = " + v(1, clear) + ";\n";
+                s += "    var bwt = array<f32, 4>(bw.x, bw.y, bw.z, bw.w);\n";
+                if (implied) {
+                    s += "    var bsum = 0.0;\n";
+                    s += F("    for (var k = 0; k < %u; k++) { bsum += bwt[k]; }\n", n - 1);
+                    s += F("    bwt[%u] = 1.0 - bsum;\n", n - 1);
+                }
+                s += "    var cp = vec4f(0.0);\n    var vp = vec3f(0.0);\n    var vn = vec3f(0.0);\n";
+                s += "    let inrm = vec4f(" + v(2, clear) + ".xyz, 0.0);\n";
+                s += F("    for (var k = 0; k < %u; k++) {\n", n);
+                s += "        cp += bwt[k] * (ip * dc.bwvp[k]);\n";
+                s += "        vp += bwt[k] * (ip * dc.bwv[k]).xyz;\n";
+                s += "        vn += bwt[k] * (inrm * dc.bwvn[k]).xyz;\n";
+                s += "    }\n";
+            }
+        } else if (!w) {
+            s += "    float4 cp = mul(ip, wvp);\n";
+            s += "    float3 vp = mul(ip, wv).xyz;\n";
+            s += "    float3 vn = mul(float4(" + v(2, clear) + ".xyz, 0), wvn).xyz;\n";
+        } else {
+            s += "    var cp = ip * dc.wvp;\n";
+            s += "    let vp = (ip * dc.wv).xyz;\n";
+            s += "    var vn = (vec4f(" + v(2, clear) + ".xyz, 0.0) * dc.wvn).xyz;\n";
+        }
+        if (f.light & 8) s += Sp(w, "    vn = dot(vn, vn) > 0 ? normalize(vn) : vn;\n", "    vn = select(vn, normalize(vn), dot(vn, vn) > 0.0);\n");
+    }
+    if (lit) {
+        // D3DMCS: 1 the vertex diffuse, 2 its specular, else the material
+        auto src = [&](int field, int mat) {
+            uint32_t m = (f.light >> (8 + field * 2)) & 3;
+            if (m == 1) return v(3, "");
+            if (m == 2) return v(4, "");
+            return F(Sp(w, "mat[%d]", "dc.mat[%d]"), mat);
+        };
+        if (!w) {
+            s += "    float4 md = " + src(0, 0) + ", ms = " + src(1, 2) + ", ma = " + src(2, 1) + ", me = " + src(3, 3) + ";\n";
+            s += "    float3 la = 0, ld = 0, ls = 0;\n";
+            s += (f.light & 4) ? "    float3 eye = -normalize(vp);\n" : "    float3 eye = float3(0, 0, 1);\n";
+        } else {
+            s += "    let md = " + src(0, 0) + ";\n    let ms = " + src(1, 2) + ";\n    let ma = " + src(2, 1) + ";\n    let me = " +
+                 src(3, 3) + ";\n";
+            s += "    var la = vec3f(0.0);\n    var ld = vec3f(0.0);\n    var ls = vec3f(0.0);\n";
+            s += (f.light & 4) ? "    let eye = -normalize(vp);\n" : "    let eye = vec3f(0.0, 0.0, 1.0);\n";
+        }
+        const char* lt = Sp(w, "lt", "dc.lt");
+        for (int n = 0; n < 8; n++) {
+            uint32_t type = (f.types >> (n * 2)) & 3;  // D3DLIGHTTYPE: 1 point, 2 spot, 3 directional
+            if (!type) continue;
+            int b = n * 7;
+            s += Sp(w, "    {\n        float3 l;\n        float att = 1;\n", "    {\n        var l: vec3f;\n        var att = 1.0;\n");
+            if (type == 3) {
+                s += F("        l = -normalize(%s[%d].xyz);\n", lt, b + 4);
+            } else {
+                s += F(Sp(w, "        float3 d = %s[%d].xyz - vp;\n        float dist = length(d);\n        l = d / max(dist, 1e-6);\n",
+                          "        let d = %s[%d].xyz - vp;\n        let dist = length(d);\n        l = d / max(dist, 1e-6);\n"),
+                       lt, b + 3);
+                if (!w)
+                    s += F("        att = dist > lt[%d].w ? 0 : 1 / max(lt[%d].x + lt[%d].y * dist + lt[%d].z * dist * dist, 1e-6);\n", b + 3, b + 5,
+                           b + 5, b + 5);
+                else
+                    s += F("        att = select(1.0 / max(dc.lt[%d].x + dc.lt[%d].y * dist + dc.lt[%d].z * dist * dist, 1e-6), 0.0, dist > dc.lt[%d].w);\n",
+                           b + 5, b + 5, b + 5, b + 3);
+                if (type == 2) {
+                    s += F(Sp(w, "        float rho = dot(-l, normalize(%s[%d].xyz));\n", "        let rho = dot(-l, normalize(%s[%d].xyz));\n"), lt,
+                           b + 4);
+                    if (!w)
+                        s += F("        att *= rho > lt[%d].x ? 1 : rho <= lt[%d].y ? 0 : pow(saturate((rho - lt[%d].y) / (lt[%d].x - lt[%d].y)), lt[%d].w);\n",
+                               b + 6, b + 6, b + 6, b + 6, b + 6, b + 4);
+                    else
+                        s += F("        att *= select(select(pow(saturate((rho - dc.lt[%d].y) / (dc.lt[%d].x - dc.lt[%d].y)), dc.lt[%d].w), 0.0, "
+                               "rho <= dc.lt[%d].y), 1.0, rho > dc.lt[%d].x);\n",
+                               b + 6, b + 6, b + 6, b + 4, b + 6, b + 6);
+                }
+            }
+            s += F("        la += att * %s[%d].rgb;\n", lt, b + 2);
+            s += Sp(w, "        float nl = dot(vn, l);\n", "        let nl = dot(vn, l);\n");
+            s += F(Sp(w, "        ld += att * %s[%d].rgb * max(nl, 0);\n", "        ld += att * %s[%d].rgb * max(nl, 0.0);\n"), lt, b);
+            if (f.light & 2)
+                s += F(Sp(w, "        if (nl > 0) ls += att * %s[%d].rgb * pow(max(dot(vn, normalize(l + eye)), 0), %s[4].x);\n",
+                          "        if (nl > 0.0) { ls += att * %s[%d].rgb * pow(max(dot(vn, normalize(l + eye)), 0.0), %s[4].x); }\n"),
+                       lt, b + 1, Sp(w, "mat", "dc.mat"));
+            s += "    }\n";
+        }
+        s += F("    oD0 = %s(me.rgb + ma.rgb * (%samb.rgb + la) + md.rgb * ld, md.a);\n", f4, dcp);
+        s += (f.light & 2) ? F("    oD1 = %s(ms.rgb * ls, ms.a);\n", f4) : F("    oD1 = %s;\n", clear);
+    } else {
+        s += "    oD0 = " + v(3, Sp(w, "float4(1,1,1,1)", "vec4f(1.0)")) + ";\n";
+        s += "    oD1 = " + v(4, clear) + ";\n";
+    }
+    s += "    oB0 = oD0;\n    oB1 = oD1;\n";
+    for (int t = 0; t < 4; t++) {
+        uint32_t u = f.tex[t], set = u & 3, gen = (u >> 4) & 7, count = (u >> 8) & 7, size = (u >> 12) & 7;
+        std::string in = v(9 + int(set), black);
+        if (pretransformed || (!gen && !count)) {
+            s += F("    oT%d = %s;\n", t, in.c_str());
+            continue;
+        }
+        // generated coordinates are view space; a transform takes the set with 1 after its last element
+        std::string c = !w ? (gen == 1 ? "float4(vn, 1)" : gen == 2 ? "float4(vp, 1)" : gen == 3 ? "float4(reflect(normalize(vp), vn), 1)"
+                              : size == 1 ? F("float4(%s.x, 1, 0, 0)", in.c_str()) : size == 2 ? F("float4(%s.xy, 1, 0)", in.c_str())
+                              : size == 3 ? F("float4(%s.xyz, 1)", in.c_str()) : in)
+                           : (gen == 1 ? "vec4f(vn, 1.0)" : gen == 2 ? "vec4f(vp, 1.0)" : gen == 3 ? "vec4f(reflect(normalize(vp), vn), 1.0)"
+                              : size == 1 ? F("vec4f(%s.x, 1.0, 0.0, 0.0)", in.c_str()) : size == 2 ? F("vec4f(%s.xy, 1.0, 0.0)", in.c_str())
+                              : size == 3 ? F("vec4f(%s.xyz, 1.0)", in.c_str()) : in);
+        if (!count) {
+            s += F("    oT%d = %s;\n", t, c.c_str());
+            continue;
+        }
+        s += F(Sp(w, "    {\n        float4 tc = mul(%s, tm[%d]);\n", "    {\n        let tc = %s * dc.tm[%d];\n"), c.c_str(), t);
+        if (u & 0x800) s += F("        oT%d = %s(tc.xy, tc.z, tc[%u]);\n", t, f4, std::min<uint32_t>(count, 4) - 1);
+        else s += F("        oT%d = %s(tc.xy, %s, 1%s);\n", t, f4, count >= 3 ? "tc.z" : Sp(w, "0", "0.0"), Sp(w, "", ".0"));
+        s += "    }\n";
+    }
+    s += "    oFog = " + v(5, clear) + ";\n";
+    if (pretransformed) return s + (w ? kWgslVsEpilogue : kVsEpilogue);
+    return s + (w ? kFixedTailWgsl : kFixedTailHlsl);
 }
 
-std::string PixelHlsl(const PixelKey& k) {
-    std::string s = Common();
-    s += PsHelpers();
+const char* kPsTailHlsl =
+    "if (sblend.x != 0) {\n"
+    "    float4 sb = round(saturate(outc) * 255);\n"
+    "    float4 sv = (sb >= 128 ? sb - 256 : sb) / 255;\n"
+    "    outc = sblend.x == 1 ? max(sv, 0) : max(-sv, 0);\n"
+    "}\n"
+    // the game's screen effects, scaled by the graphics settings (D3D12Backend::ScaleScreenEffect)
+    "outc.a *= 1 + sblend.y;\n"
+    "outc *= 1 + sblend.z;\n"
+    // a source-alpha blended draw made brighter (D3D12Backend::ScaleTextureEffect): alpha up to 1 first, the
+    // rest of the factor into the colour, so colour times alpha grows by 1 + sblend.w. The colour grows only
+    // until its brightest channel reaches 1: past that the others would catch up and a coloured neon go white
+    "if (sblend.w != 0) {\n"
+    "    float sa = outc.a * (1 + sblend.w), na = saturate(sa);\n"
+    "    float peak = max(max(outc.r, outc.g), outc.b);\n"
+    "    outc.rgb *= na > 0 ? min(sa / na, peak > 0 ? 1 / peak : 1) : 0;\n"
+    "    outc.a = na;\n"
+    "}\n";
+
+const char* kPsTailWgsl =
+    "if (dc.sblend.x != 0.0) {\n"
+    "    let sb = round(saturate(outc) * 255.0);\n"
+    "    let sv = select(sb, sb - 256.0, sb >= vec4f(128.0)) / 255.0;\n"
+    "    outc = select(max(-sv, vec4f(0.0)), max(sv, vec4f(0.0)), dc.sblend.x == 1.0);\n"
+    "}\n"
+    "outc.a *= 1.0 + dc.sblend.y;\n"
+    "outc *= 1.0 + dc.sblend.z;\n"
+    "if (dc.sblend.w != 0.0) {\n"
+    "    let sa = outc.a * (1.0 + dc.sblend.w);\n"
+    "    let na = saturate(sa);\n"
+    "    let peak = max(max(outc.r, outc.g), outc.b);\n"
+    "    outc = vec4f(outc.rgb * select(0.0, min(sa / na, select(1.0, 1.0 / peak, peak > 0.0)), na > 0.0), na);\n"
+    "}\n"
+    "outc = vec4f(saturate(outc.rgb), outc.a);\n";
+
+const char* kPbrParallaxHlsl =
+    "    if (pbr2.x > 0) {\n"
+    "        float h0 = pbr_orm.Sample(smp0, tc0.xy).a - 0.5;\n"
+    "        float2 duv_dx = ddx(tc0.xy), duv_dy = ddy(tc0.xy);\n"
+    "        float2 v_scr = normalize((i.pos.xy / max(surf.xy, 1) - 0.5) + 1e-6);\n"
+    "        tc0.xy -= (duv_dx * v_scr.x + duv_dy * v_scr.y) * (h0 * pbr2.x * 16.0);\n"
+    "    }\n";
+
+const char* kPbrParallaxWgsl =
+    "    if (dc.pbr2.x > 0.0) {\n"
+    "        let h0 = textureSample(pbr_orm, smp0, tc0.xy).a - 0.5;\n"
+    "        let duv_dx = dpdx(tc0.xy);\n"
+    "        let duv_dy = dpdy(tc0.xy);\n"
+    "        let v_scr = normalize((i.pos.xy / max(dc.surf.xy, vec2f(1.0)) - 0.5) + 1e-6);\n"
+    "        tc0 = vec4f(tc0.xy - (duv_dx * v_scr.x + duv_dy * v_scr.y) * (h0 * dc.pbr2.x * 16.0), tc0.zw);\n"
+    "    }\n";
+
+const char* kPbrHlsl =
+    "{\n"
+    "    float3 pn = pbr_nrm.Sample(smp0, tc0.xy).rgb * 2 - 1;\n"
+    "    pn.xy *= pbr.x;\n"
+    "    pn = normalize(float3(pn.xy, max(pn.z, 1e-3)));\n"
+    "    float4 orm = pbr_orm.Sample(smp0, tc0.xy);\n"
+    "    float ao = saturate(1 + (orm.r - 1) * pbr.y);\n"
+    "    float rough = clamp(pbr.z < 0 ? (-pbr.z - 1) : orm.g * pbr.z, 0.04, 1);\n"
+    "    float metal = saturate(pbr.w < 0 ? (-pbr.w - 1) : orm.b * pbr.w);\n"
+    "    float2 dux = ddx(tc0.xy), duy = ddy(tc0.xy);\n"
+    "    float2 grad = float2(pn.x * dux.x + pn.y * duy.x, pn.x * dux.y + pn.y * duy.y);\n"
+    "    float glen = max(length(dux) + length(duy), 1e-5);\n"
+    "    float2 n_scr = clamp(grad / glen, -1, 1);\n"
+    "    float3 L_ts = normalize(float3(0.35, 0.45, 0.82));\n"
+    "    float nl = saturate(dot(pn, L_ts));\n"
+    "    float relief = clamp(1 + (nl - 0.82) * 0.85 * saturate(pbr.x) + (n_scr.x * 0.12 - n_scr.y * 0.15) * saturate(pbr.x), 0.55, 1.45);\n"
+    "    float3 V_ts = normalize(float3(-(i.pos.xy / max(surf.xy, 1) - 0.5) * 0.5, 1));\n"
+    "    float3 H_ts = normalize(L_ts + V_ts);\n"
+    "    float nh = saturate(dot(pn, H_ts)), nv = saturate(dot(pn, V_ts)) + 1e-4, vh = saturate(dot(V_ts, H_ts));\n"
+    "    float a2 = rough * rough * rough * rough;\n"
+    "    float d = nh * nh * (a2 - 1) + 1;\n"
+    "    float D = a2 / (3.14159265 * d * d + 1e-6);\n"
+    "    float3 F0 = lerp(float3(0.04, 0.04, 0.04), max(outc.rgb, 0.04), metal);\n"
+    "    float3 F = F0 + (1 - F0) * pow(1 - vh, 5);\n"
+    "    float k_g = rough * rough * 0.5;\n"
+    "    float G = nl / (4 * (nl * (1 - k_g) + k_g) * (nv * (1 - k_g) + k_g) + 1e-5);\n"
+    "    float luma = dot(v0.rgb, float3(0.299, 0.587, 0.114));\n"
+    "    float3 spec = D * F * G * max(v0.rgb, float3(luma, luma, luma) * 0.5 + 0.15) * saturate(pbr.x);\n"
+    "    float3 lit = outc.rgb * pbr2.yzw * (relief * ao) * (1 - metal * 0.25) + spec * 0.35;\n"
+    "    outc.rgb = lerp(outc.rgb, lit, fogin.a);\n"
+    "}\n";
+
+const char* kPbrWgsl =
+    "{\n"
+    "    var pn = textureSample(pbr_nrm, smp0, tc0.xy).rgb * 2.0 - 1.0;\n"
+    "    pn = vec3f(pn.xy * dc.pbr.x, pn.z);\n"
+    "    pn = normalize(vec3f(pn.xy, max(pn.z, 1e-3)));\n"
+    "    let orm = textureSample(pbr_orm, smp0, tc0.xy);\n"
+    "    let ao = saturate(1.0 + (orm.r - 1.0) * dc.pbr.y);\n"
+    "    let rough = clamp(select(orm.g * dc.pbr.z, -dc.pbr.z - 1.0, dc.pbr.z < 0.0), 0.04, 1.0);\n"
+    "    let metal = saturate(select(orm.b * dc.pbr.w, -dc.pbr.w - 1.0, dc.pbr.w < 0.0));\n"
+    "    let dux = dpdx(tc0.xy);\n"
+    "    let duy = dpdy(tc0.xy);\n"
+    "    let grad = vec2f(pn.x * dux.x + pn.y * duy.x, pn.x * dux.y + pn.y * duy.y);\n"
+    "    let glen = max(length(dux) + length(duy), 1e-5);\n"
+    "    let n_scr = clamp(grad / glen, vec2f(-1.0), vec2f(1.0));\n"
+    "    let L_ts = normalize(vec3f(0.35, 0.45, 0.82));\n"
+    "    let nl = saturate(dot(pn, L_ts));\n"
+    "    let relief = clamp(1.0 + (nl - 0.82) * 0.85 * saturate(dc.pbr.x) + (n_scr.x * 0.12 - n_scr.y * 0.15) * saturate(dc.pbr.x), 0.55, 1.45);\n"
+    "    let V_ts = normalize(vec3f(-(i.pos.xy / max(dc.surf.xy, vec2f(1.0)) - 0.5) * 0.5, 1.0));\n"
+    "    let H_ts = normalize(L_ts + V_ts);\n"
+    "    let nh = saturate(dot(pn, H_ts));\n"
+    "    let nv = saturate(dot(pn, V_ts)) + 1e-4;\n"
+    "    let vh = saturate(dot(V_ts, H_ts));\n"
+    "    let a2 = rough * rough * rough * rough;\n"
+    "    let d = nh * nh * (a2 - 1.0) + 1.0;\n"
+    "    let D = a2 / (3.14159265 * d * d + 1e-6);\n"
+    "    let F0 = mix(vec3f(0.04), max(outc.rgb, vec3f(0.04)), metal);\n"
+    "    let F = F0 + (1.0 - F0) * pow(1.0 - vh, 5.0);\n"
+    "    let k_g = rough * rough * 0.5;\n"
+    "    let G = nl / (4.0 * (nl * (1.0 - k_g) + k_g) * (nv * (1.0 - k_g) + k_g) + 1e-5);\n"
+    "    let luma = dot(v0.rgb, vec3f(0.299, 0.587, 0.114));\n"
+    "    let spec = D * F * G * max(v0.rgb, vec3f(luma) * 0.5 + 0.15) * saturate(dc.pbr.x);\n"
+    "    let lit = outc.rgb * dc.pbr2.yzw * (relief * ao) * (1.0 - metal * 0.25) + spec * 0.35;\n"
+    "    outc = vec4f(mix(outc.rgb, lit, fogin.a), outc.a);\n"
+    "}\n";
+
+std::string Pixel(const PixelKey& k, bool w) {
+    std::string s = w ? std::string(kWgslCommon) + kWgslPsHelpers : Common() + PsHelpers();
     for (int i = 0; i < 4; i++) {
         const TexInfo& t = k.tex[i];
-        const char* type = t.shadow ? "Texture2D<float>" : t.kind == kTex3D ? "Texture3D" : t.kind == kTexCube ? "TextureCube" : "Texture2D";
-        s += F("%s tex%d : register(t%d);\n%s smp%d : register(s%d);\n", type, i, i, t.shadow ? "SamplerComparisonState" : "SamplerState", i, i);
+        if (!w) {
+            const char* type = t.shadow ? "Texture2D<float>" : t.kind == kTex3D ? "Texture3D" : t.kind == kTexCube ? "TextureCube" : "Texture2D";
+            s += F("%s tex%d : register(t%d);\n%s smp%d : register(s%d);\n", type, i, i, t.shadow ? "SamplerComparisonState" : "SamplerState", i, i);
+        } else {
+            const char* type = t.shadow ? "texture_depth_2d" : t.kind == kTex3D ? "texture_3d<f32>" : t.kind == kTexCube ? "texture_cube<f32>" : "texture_2d<f32>";
+            s += F("@group(1) @binding(%d) var tex%d: %s;\n@group(1) @binding(%d) var smp%d: %s;\n", i * 2, i, type, i * 2 + 1, i,
+                   t.shadow ? "sampler_comparison" : "sampler");
+        }
     }
-    if (k.pbr) s += "Texture2D pbr_nrm : register(t4);\nTexture2D pbr_orm : register(t5);\n";
-    s += F("float4 main(VOut i, bool front : SV_IsFrontFace) : SV_Target {\n");
-    s += "    float4 tc0 = i.tc0, tc1 = i.tc1, tc2 = i.tc2, tc3 = i.tc3;\n";
-    s += k.two_sided ? "    float4 v0 = front ? i.d0 : i.b0, v1 = front ? i.d1 : i.b1;\n" : "    float4 v0 = i.d0, v1 = i.d1;\n";
-    s += "    if (misc.w == 0) v1 = float4(0, 0, 0, 1);\n";
-    s += "    float4 fogin = float4(fogcolor.rgb, saturate(i.fogamt));\n";
-    if (k.pbr) {
-        s += "    if (pbr2.x > 0) {\n"
-             "        float h0 = pbr_orm.Sample(smp0, tc0.xy).a - 0.5;\n"
-             "        float2 duv_dx = ddx(tc0.xy), duv_dy = ddy(tc0.xy);\n"
-             "        float2 v_scr = normalize((i.pos.xy / max(surf.xy, 1) - 0.5) + 1e-6);\n"
-             "        tc0.xy -= (duv_dx * v_scr.x + duv_dy * v_scr.y) * (h0 * pbr2.x * 16.0);\n"
-             "    }\n";
+    if (k.pbr)
+        s += Sp(w, "Texture2D pbr_nrm : register(t4);\nTexture2D pbr_orm : register(t5);\n",
+                "@group(1) @binding(8) var pbr_nrm: texture_2d<f32>;\n@group(1) @binding(9) var pbr_orm: texture_2d<f32>;\n");
+    if (!w) {
+        s += F("float4 main(VOut i, bool front : SV_IsFrontFace) : SV_Target {\n");
+        s += "    float4 tc0 = i.tc0, tc1 = i.tc1, tc2 = i.tc2, tc3 = i.tc3;\n";
+        s += k.two_sided ? "    float4 v0 = front ? i.d0 : i.b0, v1 = front ? i.d1 : i.b1;\n" : "    float4 v0 = i.d0, v1 = i.d1;\n";
+        s += "    if (misc.w == 0) v1 = float4(0, 0, 0, 1);\n";
+        s += "    float4 fogin = float4(fogcolor.rgb, saturate(i.fogamt));\n";
+    } else {
+        s += "@fragment\nfn main(i: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {\n";
+        s += "    var tc0 = i.tc0;\n    var tc1 = i.tc1;\n    var tc2 = i.tc2;\n    var tc3 = i.tc3;\n";
+        s += k.two_sided ? "    var v0 = select(i.b0, i.d0, front);\n    var v1 = select(i.b1, i.d1, front);\n"
+                         : "    var v0 = i.d0;\n    var v1 = i.d1;\n";
+        s += "    if (dc.misc.w == 0.0) { v1 = vec4f(0.0, 0.0, 0.0, 1.0); }\n";
+        s += "    let fogin = vec4f(dc.fogcolor.rgb, saturate(i.fogamt));\n";
     }
+    if (k.pbr) s += w ? kPbrParallaxWgsl : kPbrParallaxHlsl;
+    const char* kill = Sp(w, "if (t%d.a == 0) discard;\n", "if (t%d.a == 0.0) { discard; }\n");
     std::string body;
     if (k.programmable) {
         for (int i = 0; i < 4; i++) {
-            body += TexFetch(k, i);
-            body += Hooks().Fetched(k.tex[i], i);
+            body += TexFetch(k, i, w);
+            if (!w) body += Hooks().Fetched(k.tex[i], i);
         }
         for (int i = 0; i < 4; i++) {
             uint32_t m = (k.tex_modes >> (i * 5)) & 0x1F;
             bool fetch = m && m != 4 && m != 5 && m != 0xA && m != 0x11;
-            if (fetch && ((k.alphakill >> i) & 1)) body += F("if (t%d.a == 0) discard;\n", i);
+            if (fetch && ((k.alphakill >> i) & 1)) body += F(kill, i);
         }
         uint32_t mode0 = k.tex_modes & 0x1F;
-        body += F("float4 r0 = float4(0, 0, 0, %s), r1 = 0;\n", mode0 ? "t0.a" : "1");
-        Ps ps{k};
+        body += F(Sp(w, "float4 r0 = float4(0, 0, 0, %s), r1 = 0;\n", "var r0 = vec4f(0.0, 0.0, 0.0, %s);\nvar r1 = vec4f(0.0);\n"),
+                  mode0 ? "t0.a" : Sp(w, "1", "1.0"));
+        Ps ps{k, w};
         uint32_t n = std::min<uint32_t>(k.count & 0xFF, 8);
         for (uint32_t st = 0; st < n; st++) {
             ps.stage = int(st);
@@ -1201,94 +1493,74 @@ std::string PixelHlsl(const PixelKey& k) {
             std::string A = ps.Input(ParseIn(k.final_abcd >> 24), false), B = ps.Input(ParseIn((k.final_abcd >> 16) & 0xFF), false),
                         C = ps.Input(ParseIn((k.final_abcd >> 8) & 0xFF), false), D = ps.Input(ParseIn(k.final_abcd & 0xFF), false),
                         G = ps.Input(ParseIn((k.final_efg >> 8) & 0xFF), true);
-            body += "float4 outc;\n";
-            body += "outc.rgb = " + D + " + lerp(" + C + ", " + B + ", " + A + ");\n";
-            body += "outc.a = " + G + ";\n";
+            if (!w) {
+                body += "float4 outc;\n";
+                body += "outc.rgb = " + D + " + lerp(" + C + ", " + B + ", " + A + ");\n";
+                body += "outc.a = " + G + ";\n";
+            } else {
+                body += "var outc = vec4f(" + D + " + mix(" + C + ", " + B + ", " + A + "), " + G + ");\n";
+            }
         } else {
-            body += "float4 outc = float4(lerp(fogin.rgb, r0.rgb, fogin.a), r0.a);\n";
+            body += Sp(w, "float4 outc = float4(lerp(fogin.rgb, r0.rgb, fogin.a), r0.a);\n", "var outc = vec4f(mix(fogin.rgb, r0.rgb, fogin.a), r0.a);\n");
         }
     } else {
-        body += "float4 cur = v0, tmp = 0;\n";
+        body += Sp(w, "float4 cur = v0, tmp = 0;\n", "var cur = v0;\nvar tmp = vec4f(0.0);\n");
         for (int i = 0; i < 4; i++) {
             const uint32_t* f = k.ff[i];
             if (f[0] <= 1) break;
             const TexInfo& t = k.tex[i];
-            std::string uv = TexUv(t, i, (k.proj >> i) & 1 ? F("tc%d.xy / tc%d.w", i, i) : F("tc%d.xy", i));
+            std::string uv = TexUv(t, i, (k.proj >> i) & 1 ? F("tc%d.xy / tc%d.w", i, i) : F("tc%d.xy", i), w);
+            const char* decl = Sp(w, "float4 t%d = ", "var t%d: vec4f = ");
             std::string cube;
             if (t.shadow)
-                body += F("float4 t%d = shadow(tex%d, smp%d, ", i, i, i) + TexUv(t, i, F("tc%d.xy / tc%d.w", i, i)) +
-                        F(", tc%d.z / tc%d.w, %d, i.pos.xy, texsize[%d].xy);\n", i, i, t.shadow, i);
+                body += F(decl, i) + F("shadow(tex%d, smp%d, ", i, i) + TexUv(t, i, F("tc%d.xy / tc%d.w", i, i), w) +
+                        F(Sp(w, ", tc%d.z / tc%d.w, %d, i.pos.xy, texsize[%d].xy);\n", ", tc%d.z / tc%d.w, %d, i.pos.xy, dc.texsize[%d].xy);\n"), i, i,
+                          t.shadow, i);
             else if (t.kind == kTex2D && (t.flags & kTexWide))
-                body += F("float4 t%d = spreadtap(tex%d, smp%d, %s, spread[%d], %s);\n", i, i, i, uv.c_str(), i, Hooks().ReadScale(t).c_str());
-            else if (t.kind == kTex2D) body += F("float4 t%d = tex%d.Sample(smp%d, %s);\n", i, i, i, uv.c_str());
-            else if (t.kind == kTexCube && !(cube = Hooks().Cube(t, i, F("tc%d.xyz", i))).empty()) body += F("float4 t%d = %s;\n", i, cube.c_str());
-            else if (t.kind) body += F("float4 t%d = tex%d.Sample(smp%d, tc%d.xyz);\n", i, i, i, i);
-            else body += F("float4 t%d = float4(1,1,1,1);\n", i);
-            body += Hooks().Fetched(t, i);
-            if ((k.alphakill >> i) & 1) body += F("if (t%d.a == 0) discard;\n", i);
+                body += F(decl, i) + F(Sp(w, "spreadtap(tex%d, smp%d, %s, spread[%d], %s);\n", "spreadtap(tex%d, smp%d, %s, dc.spread[%d], %s);\n"), i, i,
+                                       uv.c_str(), i, w ? "1.0" : Hooks().ReadScale(t).c_str());
+            else if (t.kind == kTex2D)
+                body += F(decl, i) + F(Sp(w, "tex%d.Sample(smp%d, %s);\n", "textureSample(tex%d, smp%d, %s);\n"), i, i, uv.c_str());
+            else if (!w && t.kind == kTexCube && !(cube = Hooks().Cube(t, i, F("tc%d.xyz", i))).empty())
+                body += F("float4 t%d = %s;\n", i, cube.c_str());
+            else if (t.kind)
+                body += F(decl, i) + F(Sp(w, "tex%d.Sample(smp%d, tc%d.xyz);\n", "textureSample(tex%d, smp%d, tc%d.xyz);\n"), i, i, i);
+            else
+                body += F(decl, i) + Sp(w, "float4(1,1,1,1);\n", "vec4f(1.0);\n");
+            if (!w) body += Hooks().Fetched(t, i);
+            if ((k.alphakill >> i) & 1) body += F(kill, i);
             const char* dst = f[8] == 5 ? "tmp" : "cur";
-            std::string rgb = FfOp(f[0], FfArg(f[1], i, false), FfArg(f[2], i, false), FfArg(f[3], i, false), i, false);
-            std::string a = f[4] <= 1 ? std::string("cur.a") : FfOp(f[4], FfArg(f[5], i, true), FfArg(f[6], i, true), FfArg(f[7], i, true), i, true);
-            body += F("{ float3 c3 = saturate(%s); float c1 = saturate(%s); %s = float4(c3, c1); }\n", rgb.c_str(), a.c_str(), dst);
+            std::string rgb = FfOp(f[0], FfArg(f[1], i, false, w), FfArg(f[2], i, false, w), FfArg(f[3], i, false, w), i, false, w);
+            std::string a = f[4] <= 1 ? std::string("cur.a")
+                                      : FfOp(f[4], FfArg(f[5], i, true, w), FfArg(f[6], i, true, w), FfArg(f[7], i, true, w), i, true, w);
+            body += F(Sp(w, "{ float3 c3 = saturate(%s); float c1 = saturate(%s); %s = float4(c3, c1); }\n",
+                         "{ let c3 = vec3f(saturate(%s)); let c1 = f32(saturate(%s)); %s = vec4f(c3, c1); }\n"),
+                      rgb.c_str(), a.c_str(), dst);
         }
-        body += "cur.rgb = saturate(cur.rgb + v1.rgb);\n";
-        body += "float4 outc = float4(lerp(fogin.rgb, cur.rgb, fogin.a), cur.a);\n";
+        body += Sp(w, "cur.rgb = saturate(cur.rgb + v1.rgb);\n", "cur = vec4f(saturate(cur.rgb + v1.rgb), cur.a);\n");
+        body += Sp(w, "float4 outc = float4(lerp(fogin.rgb, cur.rgb, fogin.a), cur.a);\n", "var outc = vec4f(mix(fogin.rgb, cur.rgb, fogin.a), cur.a);\n");
     }
     // the console's signed blends read colours as signed bytes; the draw runs as an add of the positive part and a
     // reverse subtract of the negative one, this picks the part
-    if (k.pbr && !k.car_paint) {
-        body += "{\n"
-                "    float3 pn = pbr_nrm.Sample(smp0, tc0.xy).rgb * 2 - 1;\n"
-                "    pn.xy *= pbr.x;\n"
-                "    pn = normalize(float3(pn.xy, max(pn.z, 1e-3)));\n"
-                "    float4 orm = pbr_orm.Sample(smp0, tc0.xy);\n"
-                "    float ao = saturate(1 + (orm.r - 1) * pbr.y);\n"
-                "    float rough = clamp(pbr.z < 0 ? (-pbr.z - 1) : orm.g * pbr.z, 0.04, 1);\n"
-                "    float metal = saturate(pbr.w < 0 ? (-pbr.w - 1) : orm.b * pbr.w);\n"
-                "    float2 dux = ddx(tc0.xy), duy = ddy(tc0.xy);\n"
-                "    float2 grad = float2(pn.x * dux.x + pn.y * duy.x, pn.x * dux.y + pn.y * duy.y);\n"
-                "    float glen = max(length(dux) + length(duy), 1e-5);\n"
-                "    float2 n_scr = clamp(grad / glen, -1, 1);\n"
-                "    float3 L_ts = normalize(float3(0.35, 0.45, 0.82));\n"
-                "    float nl = saturate(dot(pn, L_ts));\n"
-                "    float relief = clamp(1 + (nl - 0.82) * 0.85 * saturate(pbr.x) + (n_scr.x * 0.12 - n_scr.y * 0.15) * saturate(pbr.x), 0.55, 1.45);\n"
-                "    float3 V_ts = normalize(float3(-(i.pos.xy / max(surf.xy, 1) - 0.5) * 0.5, 1));\n"
-                "    float3 H_ts = normalize(L_ts + V_ts);\n"
-                "    float nh = saturate(dot(pn, H_ts)), nv = saturate(dot(pn, V_ts)) + 1e-4, vh = saturate(dot(V_ts, H_ts));\n"
-                "    float a2 = rough * rough * rough * rough;\n"
-                "    float d = nh * nh * (a2 - 1) + 1;\n"
-                "    float D = a2 / (3.14159265 * d * d + 1e-6);\n"
-                "    float3 F0 = lerp(float3(0.04, 0.04, 0.04), max(outc.rgb, 0.04), metal);\n"
-                "    float3 F = F0 + (1 - F0) * pow(1 - vh, 5);\n"
-                "    float k_g = rough * rough * 0.5;\n"
-                "    float G = nl / (4 * (nl * (1 - k_g) + k_g) * (nv * (1 - k_g) + k_g) + 1e-5);\n"
-                "    float luma = dot(v0.rgb, float3(0.299, 0.587, 0.114));\n"
-                "    float3 spec = D * F * G * max(v0.rgb, float3(luma, luma, luma) * 0.5 + 0.15) * saturate(pbr.x);\n"
-                "    float3 lit = outc.rgb * pbr2.yzw * (relief * ao) * (1 - metal * 0.25) + spec * 0.35;\n"
-                "    outc.rgb = lerp(outc.rgb, lit, fogin.a);\n"
-                "}\n";
-    }
+    if (k.pbr && !k.car_paint) body += w ? kPbrWgsl : kPbrHlsl;
     if (k.alphatest) body += "alphatest(outc.a);\n";
-    body += "if (sblend.x != 0) {\n"
-            "    float4 sb = round(saturate(outc) * 255);\n"
-            "    float4 sv = (sb >= 128 ? sb - 256 : sb) / 255;\n"
-            "    outc = sblend.x == 1 ? max(sv, 0) : max(-sv, 0);\n"
-            "}\n"
-            // the game's screen effects, scaled by the graphics settings (D3D12Backend::ScaleScreenEffect)
-            "outc.a *= 1 + sblend.y;\n"
-            "outc *= 1 + sblend.z;\n"
-            // a source-alpha blended draw made brighter (D3D12Backend::ScaleTextureEffect): alpha up to 1 first, the
-            // rest of the factor into the colour, so colour times alpha grows by 1 + sblend.w. The colour grows only
-            // until its brightest channel reaches 1: past that the others would catch up and a coloured neon go white
-            "if (sblend.w != 0) {\n"
-            "    float sa = outc.a * (1 + sblend.w), na = saturate(sa);\n"
-            "    float peak = max(max(outc.r, outc.g), outc.b);\n"
-            "    outc.rgb *= na > 0 ? min(sa / na, peak > 0 ? 1 / peak : 1) : 0;\n"
-            "    outc.a = na;\n"
-            "}\n" + Hooks().Output() + "return outc;\n}\n";
+    body += w ? std::string(kPsTailWgsl) + "return outc;\n}\n" : kPsTailHlsl + Hooks().Output() + "return outc;\n}\n";
     s += body;
-    return k.quad ? QuadHlsl(std::move(s)) : s;
+    if (!k.quad) return s;
+    return w ? QuadWgsl(std::move(s)) : QuadHlsl(std::move(s));
 }
+
+}  // namespace
+
+std::string FixedVertexHlsl(uint16_t regs, bool pretransformed, uint64_t decode, const FixedKey& f) {
+    return FixedVertex(regs, pretransformed, decode, f, false);
+}
+std::string FixedVertexWgsl(uint16_t regs, bool pretransformed, uint64_t decode, const FixedKey& f) {
+    return FixedVertex(regs, pretransformed, decode, f, true);
+}
+std::string PixelHlsl(const PixelKey& k) { return Pixel(k, false); }
+// the browser has no backend extension: ShaderHooks' defaults, written out in WGSL
+std::string PixelWgsl(const PixelKey& k) { return Pixel(k, true); }
 
 // the vertex shader hands on the pixel position as drawn and as pulled (e), the pixel shader takes the stretch back out
 std::string QuadHlsl(std::string s) {
@@ -1303,6 +1575,26 @@ std::string QuadHlsl(std::string s) {
     sub("float4 main(VOut i, bool front", R"(float4 unstretch(float4 t, float4 e) {
     float2 d = e.zw - e.xy, g = float2(ddx(e.x), ddy(e.y));
     return t + (d.x ? d.x / g.x * ddx(t) : 0) + (d.y ? d.y / g.y * ddy(t) : 0);
+}
+)", "");
+    for (int i = 0; i < 4; i++) sub(F("i.tc%d", i).c_str(), "unstretch(", ", i.e)");
+    return s;
+}
+
+// QuadHlsl over the WGSL generators' text
+std::string QuadWgsl(std::string s) {
+    auto sub = [&](const char* at, const char* before, const char* after) {
+        size_t p = s.find(at);
+        if (p != std::string::npos) s.replace(p, std::strlen(at), std::string(before) + at + after);
+    };
+    sub("    @location(8) fogamt: f32,\n", "", "    @location(9) @interpolate(linear) e: vec4f,\n");
+    sub("    if (dc.surf.w == 0.0 && abs(p.x - (dc.surf.x - 0.5)) < 1e-3) { p.x = dc.surf.x; }\n", "    o.e = vec4f(p.xy, 0.0, 0.0);\n", "");
+    sub("    if (dc.surf.w == 0.0 && abs(p.y - (dc.surf.y - 0.5)) < 1e-3) { p.y = dc.surf.y; }\n", "", "    o.e = vec4f(o.e.xy, p.xy);\n");
+    sub("    o.pos = cp;\n", "    o.e = vec4f(sp, (vec2f(cp.x, -cp.y) / cp.w + 1.0) * 0.5 * dc.surf.xy);\n", "");
+    sub("@fragment\n", R"(fn unstretch(t: vec4f, e: vec4f) -> vec4f {
+    let d = e.zw - e.xy;
+    let g = vec2f(dpdx(e.x), dpdy(e.y));
+    return t + select(vec4f(0.0), d.x / g.x * dpdx(t), d.x != 0.0) + select(vec4f(0.0), d.y / g.y * dpdy(t), d.y != 0.0);
 }
 )", "");
     for (int i = 0; i < 4; i++) sub(F("i.tc%d", i).c_str(), "unstretch(", ", i.e)");
