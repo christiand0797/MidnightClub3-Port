@@ -23,6 +23,7 @@ def main():
     for old in SITE.glob("mc3.wasm*"):
         old.unlink()
     shutil.copyfile(Path(__file__).with_name("play.html"), SITE / "index.html")
+    shutil.copyfile(Path(__file__).with_name("gpu.js"), SITE / "gpu.js")
     shutil.copyfile(BUILD / "mc3.js", SITE / "mc3.js")
     data = (BUILD / "mc3.wasm").read_bytes()
     parts = []

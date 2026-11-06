@@ -26,6 +26,7 @@
   .error { color: #ff8a7a; }
   #screen { display: none; position: fixed; inset: 48px 0 0 0; background: #000; }
   canvas { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+  canvas[hidden] { display: none; }
   kbd { background: #222836; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-size: 12px; }
   .keys { color: var(--muted); font-size: 13px; margin-top: 12px; }
 </style>
@@ -52,11 +53,13 @@
       menus. A gamepad works directly.</div>
     <input type="file" id="file" accept=".iso" hidden>
   </section>
-  <div id="screen"><canvas id="canvas" width="720" height="480"></canvas></div>
+  <div id="screen"><canvas id="canvas" width="720" height="480"></canvas><canvas id="gpu" width="640" height="480" hidden></canvas></div>
 </main>
+<script src="gpu.js"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.search);
 const DISC = 'disc.iso';
 const status = text => { $('status').textContent = text; };
 const fail = text => { $('error').textContent = text; $('error').hidden = false; status('Stopped'); };
@@ -126,18 +129,29 @@ $('forget').onclick = async () => {
 $('play').onclick = () => start();
 
 // ---------- the game ----------
-let started = false;
-function start() {
+let started = false, gpuMode = false;
+async function start() {
   if (started || !crossOriginIsolated) return;
   started = true;
+  // WebGPU (step 4, in progress): ?gpu=1 draws through the page's WebGPU side; otherwise the CPU picture
+  if (params.has('gpu')) {
+    const problem = await MC3Gpu.init($('gpu'));
+    if (problem) console.warn('webgpu: ' + problem + ', using the CPU picture');
+    else { gpuMode = true; $('canvas').hidden = true; $('gpu').hidden = false; }
+  }
   $('setup').style.display = 'none';
   $('screen').style.display = 'block';
   status('Loading the game');
   window.Module = {
-    arguments: ['/opfs/' + DISC, '--env', 'REF=' + (new URLSearchParams(location.search).get('ref') || '2')],
+    arguments: ['/opfs/' + DISC, '--env', 'REF=' + (params.get('ref') || (gpuMode ? '0' : '2'))].concat(gpuMode ? ['--env', 'GPU=1'] : []),
     print: t => console.log(t),
     printErr: t => console.warn(t),
-    onRuntimeInitialized() { status('Running'); requestAnimationFrame(frame); setInterval(pad, 16); },
+    onRuntimeInitialized() {
+      status('Running');
+      if (gpuMode) MC3Gpu.attach(window.Module);
+      requestAnimationFrame(frame);
+      setInterval(pad, 16);
+    },
     onAbort(what) { fail('The game stopped: ' + what); },
   };
   loadWasm().then(binary => {
@@ -180,6 +194,11 @@ const canvas = $('canvas'), ctx2d = canvas.getContext('2d');
 let lastSeq = -1, image = null, shown = 0, fpsAt = performance.now();
 function frame() {
   requestAnimationFrame(frame);
+  if (gpuMode) {
+    shown += MC3Gpu.frame();
+    if (performance.now() - fpsAt > 1000) { status(`Running on WebGPU, ${shown} frames/s`); shown = 0; fpsAt = performance.now(); }
+    return;
+  }
   const M = window.Module;
   if (!M || !M._web_frame) return;
   const info = M._web_frame() >>> 2;

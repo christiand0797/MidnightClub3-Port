@@ -163,6 +163,15 @@ private:
 
 }  // namespace
 
+#ifdef XBE_WEB
+// browser page: GPU=1 records the frame for the page's WebGPU side (tools/web/webgpu_backend.cpp)
+std::unique_ptr<Backend> CreateGpuRecorder(std::unique_ptr<Backend> inner);
+std::unique_ptr<Backend> CreateBackend() {
+    if (harness::Env("GPU")) return CreateGpuRecorder(std::make_unique<NullBackend>());
+    return std::make_unique<NullBackend>();
+}
+#else
 std::unique_ptr<Backend> CreateBackend() { return std::make_unique<NullBackend>(); }
+#endif
 
 }  // namespace gpu

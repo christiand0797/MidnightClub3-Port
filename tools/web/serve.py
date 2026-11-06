@@ -26,7 +26,8 @@ def main():
     ap.add_argument("--dev-disc", help="testing: stream this disc image at /dev-disc (loopback only)")
     a = ap.parse_args()
     build = Path(a.build).resolve()
-    files = {"/": PAGE, "/index.html": PAGE, "/mc3.js": build / "mc3.js", "/mc3.wasm": build / "mc3.wasm"}
+    files = {"/": PAGE, "/index.html": PAGE, "/gpu.js": PAGE.with_name("gpu.js"), "/mc3.js": build / "mc3.js",
+             "/mc3.wasm": build / "mc3.wasm"}
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def send_isolation(self):

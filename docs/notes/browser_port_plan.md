@@ -79,6 +79,16 @@ In priority order:
   tools/multiplayer/browser/play/, the build in 20 MiB parts under Cloudflare's 25 MiB file limit, joined by the page
   and kept in the Cache API by version; `_headers` gives /play/* COOP/COEP). Runtime at -O2: ~24 game frames/s.
 
+- Step 4 started: WebGPU. The game's threads cannot own WebGPU (adapter and device are promises; those threads
+  block), so `tools/web/webgpu_backend.cpp` records each frame's commands into one of two shared buffers and
+  `tools/web/gpu.js` runs them on the page's main thread every animation frame, presenting to its own canvas
+  (`?gpu=1`, falls back to the CPU picture without WebGPU). First slice: clears and presents (verified: the game's
+  presents arrive, the canvas follows the 720x480 back buffer). Next: draws (vertex/index data into the frame
+  buffer, a WGSL twin of `runtime/gpu/shaders.cpp`, pipeline cache by PixelKey/FixedKey), textures (decode with
+  `runtime/gpu/texture.cpp`, upload once, track writes), render targets and read-backs (`Sync` waits for the page),
+  then the F1 menu (ImGui draw lists through the same path). The game waits for the page each frame, so a hidden
+  tab runs it at the browser's background rate.
+
 ## How nfsu2-web is built (github.com/th0mk/nfsu2-web, read 5 Nov 2026)
 
 - wasi-sdk, not Emscripten: `wasm32-wasip1-threads`, `-O3 -msimd128 -mbulk-memory -mnontrapping-fptoint -mtail-call`,

@@ -46,6 +46,7 @@ def sources(only):
     # the harness stand ins, with the browser entry point in place of its main
     src += [p for p in sorted(HARNESS.glob("*.cpp")) if p.name != "main_test.cpp"]
     src += [Path(__file__).with_name("web_main.cpp"), Path(__file__).with_name("web_stubs.cpp"),
+            Path(__file__).with_name("webgpu_backend.cpp"),
             GAME / "out/native/Game_xbe.cpp"]
     src += [DEPS / "imgui-src" / f for f in ("imgui.cpp", "imgui_draw.cpp", "imgui_tables.cpp", "imgui_widgets.cpp")]
     if only:
@@ -138,7 +139,7 @@ def main():
         # reads frames and writes the pad through these exports
         link += ["-sENVIRONMENT=web,worker", "-sPROXY_TO_PTHREAD=1", "-sWASMFS=1", "-sALLOW_MEMORY_GROWTH=0",
                  "-sINITIAL_MEMORY=2048MB", "-sPTHREAD_POOL_SIZE=24", "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32",
-                 "-sEXPORTED_FUNCTIONS=_main,_web_set_pad,_web_frame,_web_frame_lock,_malloc,_free"]
+                 "-sEXPORTED_FUNCTIONS=_main,_web_set_pad,_web_frame,_web_frame_lock,_web_gpu_ring,_malloc,_free"]
     if a.debug:
         link += ["-sASSERTIONS=2", "-g2", "-sSTACK_OVERFLOW_CHECK=1"]
     print("[wasm] link", flush=True)
