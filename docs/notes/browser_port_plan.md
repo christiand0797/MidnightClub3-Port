@@ -39,6 +39,17 @@ spans the GPU/audio code read) go through the same table; bulk spans stay valid 
 Alternative kept in reserve: memory64 (wasm64) keeps `base + a` unchanged and folds only the 0xF0000000 mirror, but
 needs a >4 GB linear memory and slower bounds checks; Safari has no memory64.
 
+## Status (2026-11-05)
+
+- Step 1 done (1d88b9e): packed guest memory, all generated code compiles with Emscripten 4.0.15.
+- Step 2 done: `tools/web/build_wasm.py` builds the whole game (harness stand ins + runtime + game sources + generated
+  code, 36 MB .wasm) and `node tools/web/run_node.cjs <disc image>` boots it from the player's disc: XBE checked
+  against the recompiled release, 22,465 functions dispatched, intro movies, legal screens and the title screen, about
+  24 frames/s with the CPU stand in renderer drawing nothing. `REF=400` saves frames drawn by
+  `harness/reference_renderer.cpp`: [first frames](browser_port_first_frames.png). Left out for now (Direct3D 12 /
+  WIC / Media Foundation enhancements): `gpu/pbr_*`, shader cache, texture packs, HD movies, draw evidence; stand ins
+  in `tools/web/web_stubs.cpp`.
+
 ## Milestones
 
 1. **Toolchain + compile spike.** Emscripten installed; one generated partition compiles with em++; the translation

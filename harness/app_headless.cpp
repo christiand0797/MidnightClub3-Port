@@ -22,7 +22,12 @@ float RenderScale(uint32_t) { return 1.0f; }
 bool Widescreen() { return true; }
 
 std::filesystem::path ExeDir() {
-    static const std::filesystem::path dir = std::filesystem::current_path();
+    // the browser build's file system may have no absolute working folder (Node on Windows): stay relative
+    static const std::filesystem::path dir = [] {
+        std::error_code ec;
+        auto p = std::filesystem::current_path(ec);
+        return ec ? std::filesystem::path(".") : p;
+    }();
     return dir;
 }
 int Instance() {

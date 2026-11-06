@@ -409,7 +409,7 @@ uint32_t AllocContiguous(uint32_t size, uint32_t lowest, uint32_t highest, uint3
         return 0;
     }
     Commit(a, size);
-    std::memset(g_base + a, 0, size);
+    std::memset(Host(a), 0, size);
     return a;
 }
 
@@ -427,7 +427,7 @@ uint32_t AllocSystem(uint32_t size, uint32_t align) {
     uint32_t a = g_system.Alloc(size, std::max<uint32_t>(align, 16), kSystemBase, kSystemBase + kSystemSize - 1, false);
     if (!a) return 0;
     Commit(a, size);
-    std::memset(g_base + a, 0, size);
+    std::memset(Host(a), 0, size);
     return a;
 }
 

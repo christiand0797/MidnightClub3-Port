@@ -146,7 +146,7 @@ WalletReason WalletContext(const WalletRefresh& wanted, uint32_t garage, Movies&
 }
 
 bool OriginalText(uint32_t address, const char* expected, uint32_t bytes) {
-    return Committed(address, bytes) && std::memcmp(kernel::g_base + address, expected, bytes) == 0;
+    return Committed(address, bytes) && std::memcmp(kernel::GuestHost(address), expected, bytes) == 0;
 }
 
 struct ScratchStack {
@@ -265,7 +265,7 @@ bool RefreshGarageWallet(X86Context& context, uint8_t* base, uint32_t garage) {
     char expected[32];
     const int bytes = std::snprintf(expected, sizeof(expected), "$%u.00", money);
     if (formatted != buffer || bytes < 0 || bytes >= int(sizeof(expected)) ||
-        std::memcmp(base + buffer, expected, size_t(bytes) + 1) != 0)
+        std::memcmp(X86_HOST(buffer), expected, size_t(bytes) + 1) != 0)
         return Deferred(wanted, WalletReason::FormattedText);
     // The original narrow setters store Fortune and set its updatemoney flag. Replaying a broad
     // preview/refund update here would change unrelated garage state or spending and is forbidden.

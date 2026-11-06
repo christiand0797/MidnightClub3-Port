@@ -10,10 +10,10 @@ X86_FUNC(sub_000869D0) {
     if (caller == 0xF7719u || caller == 0xF7D3Eu) {
         float angle;
         std::array<float, 6> rows;
-        std::memcpy(&angle, base + uint32_t(ctx.esp + 4), 4);
-        std::memcpy(rows.data(), base + ctx.ecx, sizeof(rows));
+        std::memcpy(&angle, X86_HOST(ctx.esp + 4), 4);
+        std::memcpy(rows.data(), X86_HOST(ctx.ecx), sizeof(rows));
         if (wheel_camber::Rotate(rows, angle)) {
-            std::memcpy(base + ctx.ecx, rows.data(), sizeof(rows));
+            std::memcpy(X86_HOST(ctx.ecx), rows.data(), sizeof(rows));
             ctx.esp += 8;  // return address and the angle
             return;
         }

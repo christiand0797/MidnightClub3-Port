@@ -9,16 +9,20 @@
 #include <sys/ioctl.h>
 constexpr long FIONREAD_POSIX = FIONREAD;
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 #include <cstdint>
 #include <thread>
 typedef int SOCKET; typedef int BOOL; typedef uint32_t DWORD; typedef unsigned long u_long; typedef uint16_t WORD;
 #define INVALID_SOCKET (-1)
+#ifndef SOCKET_ERROR
+#define SOCKET_ERROR (-1)
+#endif
 #define FALSE 0
 #define MAKEWORD(a, b) ((WORD)(((a) & 0xff) | (((b) & 0xff) << 8)))
 struct WSADATA { int x; };
 inline int WSAStartup(WORD, WSADATA*) { return 0; }
-enum { WSAEWOULDBLOCK = 10035, WSAECONNRESET = 10054, WSAEINVAL = 10022, WSAENOTSOCK = 10038, WSAEAFNOSUPPORT = 10047,
+enum { WSAVERNOTSUPPORTED = 10092, WSAEFAULT = 10014, WSAEWOULDBLOCK = 10035, WSAECONNRESET = 10054, WSAEINVAL = 10022, WSAENOTSOCK = 10038, WSAEAFNOSUPPORT = 10047,
        WSAESOCKTNOSUPPORT = 10044, WSAETIMEDOUT = 10060, WSAHOST_NOT_FOUND = 11001, WSA_IO_PENDING = 997,
        WSA_IO_INCOMPLETE = 996, WSA_OPERATION_ABORTED = 995, WSAEINPROGRESS = 10036, WSAENOTCONN = 10057,
        WSAECONNREFUSED = 10061, WSAEADDRINUSE = 10048, WSAEMSGSIZE = 10040 };

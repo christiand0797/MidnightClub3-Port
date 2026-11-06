@@ -145,12 +145,12 @@ bool Replay(X86Context& ctx, uint8_t* base, X86Func* setter, uint32_t object, fl
     if (ctx.esp < 128 || !Committed(ctx.esp - 128, 64)) return false;
     const uint32_t scratch = ctx.esp - 128;
     std::array<uint8_t, 64> saved;
-    std::memcpy(saved.data(), base + scratch, saved.size());
+    std::memcpy(saved.data(), X86_HOST(scratch), saved.size());
     X86Context call = ctx;
     call.ecx = object; call.esp = scratch + 48;
     W32(call.esp, 0); W32(call.esp + 4, Bits(value));
     setter(call, base);
-    std::memcpy(base + scratch, saved.data(), saved.size());
+    std::memcpy(X86_HOST(scratch), saved.data(), saved.size());
     return true;
 }
 }  // namespace

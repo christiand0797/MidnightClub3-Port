@@ -1,5 +1,6 @@
 #pragma once
 // harness only: the Win32 names portable runtime and game files touch
+#include <chrono>
 #include <cstdint>
 
 typedef long HRESULT;
@@ -25,9 +26,16 @@ enum : uint32_t {
     WM_LBUTTONUP = 0x0202,
 };
 enum { WA_INACTIVE = 0, HTCLIENT = 1 };
-enum { VK_RETURN = 0x0D, VK_ESCAPE = 0x1B, VK_F3 = 0x72, VK_F10 = 0x79, VK_OEM_3 = 0xC0 };
+enum { VK_RETURN = 0x0D, VK_ESCAPE = 0x1B, VK_LEFT = 0x25, VK_UP = 0x26, VK_RIGHT = 0x27, VK_DOWN = 0x28, VK_F3 = 0x72, VK_F10 = 0x79, VK_OEM_3 = 0xC0 };
 #define LOWORD(v) ((uint16_t)((uintptr_t)(v) & 0xFFFF))
 #define MAKEINTRESOURCEW(i) ((const wchar_t*)(uintptr_t)(uint16_t)(i))
 inline HCURSOR LoadCursorW(void*, const wchar_t*) { return nullptr; }
 inline HCURSOR SetCursor(HCURSOR) { return nullptr; }
 inline short GetAsyncKeyState(int) { return 0; }
+inline HWND GetForegroundWindow() { return nullptr; }
+inline uint64_t GetTickCount64() {
+    using namespace std::chrono;
+    return uint64_t(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
+}
+enum : UINT { MB_OK = 0, MB_ICONERROR = 0x10, MB_ICONWARNING = 0x30, MB_TOPMOST = 0x40000 };
+inline int MessageBoxW(HWND, const wchar_t*, const wchar_t*, UINT) { return 1; }

@@ -23,7 +23,7 @@
 
 #ifdef _WIN32
 #include <intrin.h>
-#else
+#elif !defined(__EMSCRIPTEN__)
 #include <x86intrin.h>
 #endif
 
