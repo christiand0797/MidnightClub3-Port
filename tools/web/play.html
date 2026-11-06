@@ -140,10 +140,39 @@ function start() {
     onRuntimeInitialized() { status('Running'); requestAnimationFrame(frame); setInterval(pad, 16); },
     onAbort(what) { fail('The game stopped: ' + what); },
   };
-  const s = document.createElement('script');
-  s.src = 'mc3.js';
-  s.onerror = () => fail('mc3.js could not be loaded (build it with tools/web/build_wasm.py --target web).');
-  document.body.appendChild(s);
+  loadWasm().then(binary => {
+    if (binary) window.Module.wasmBinary = binary;
+    const s = document.createElement('script');
+    s.src = 'mc3.js';
+    s.onerror = () => fail('mc3.js could not be loaded (build it with tools/web/build_wasm.py --target web).');
+    document.body.appendChild(s);
+  }).catch(e => fail('The game code could not be downloaded: ' + e.message));
+}
+
+// mc3.top serves the game code in parts (25 MiB per file at most, tools/web/stage_site.py): join them here, kept in
+// the browser's Cache API by version so a return visit starts without downloading it again. Locally (serve.py) there is
+// one mc3.wasm and Emscripten fetches it itself.
+async function loadWasm() {
+  const r = await fetch('mc3.wasm.json', { cache: 'no-cache' });
+  if (!r.ok) return null;
+  const { parts, size, version } = await r.json();
+  const cache = await caches.open('mc3-code');
+  const key = new Request('mc3-' + version + '.wasm');
+  const hit = await cache.match(key);
+  if (hit) return new Uint8Array(await hit.arrayBuffer());
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const name of parts) {
+    status(`Downloading the game code: ${Math.round(at / size * 100)}%`);
+    const part = await fetch(name);
+    if (!part.ok) throw new Error(name + ': ' + part.status);
+    const bytes = new Uint8Array(await part.arrayBuffer());
+    out.set(bytes, at);
+    at += bytes.length;
+  }
+  for (const old of await cache.keys()) await cache.delete(old);
+  await cache.put(key, new Response(out, { headers: { 'Content-Type': 'application/wasm' } }));
+  return out;
 }
 
 // frames: the game copies each frame drawn into a buffer; web_frame() -> {seq, w, h, rgba ptr}

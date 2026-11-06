@@ -1,0 +1,6 @@
+# Cloudflare Worker static assets: the browser build (/play/, tools/web/stage_site.py) runs the game's threads on
+# shared memory, which browsers allow only on cross-origin isolated pages.
+/play/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Resource-Policy: same-origin

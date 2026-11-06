@@ -75,6 +75,23 @@ In priority order:
 7. **Faster start**: stream disc reads on demand instead of copying the whole image first (OPFS copy stays as the cache).
 8. **Mobile**: lower resolution scale on phones, memory budget below 2 GB.
 
+- Live on mc3.top (5 Nov 2026): https://mc3.top/play/ (tools/web/stage_site.py stages the page and the build into
+  tools/multiplayer/browser/play/, the build in 20 MiB parts under Cloudflare's 25 MiB file limit, joined by the page
+  and kept in the Cache API by version; `_headers` gives /play/* COOP/COEP). Runtime at -O2: ~24 game frames/s.
+
+## How nfsu2-web is built (github.com/th0mk/nfsu2-web, read 5 Nov 2026)
+
+- wasi-sdk, not Emscripten: `wasm32-wasip1-threads`, `-O3 -msimd128 -mbulk-memory -mnontrapping-fptoint -mtail-call`,
+  wasm exceptions and setjmp (no Asyncify), `-fno-delete-null-pointer-checks` (guest address 0 is real memory),
+  wasm32 shared memory, 704 MB initial / 4 GB max, guest span below `--global-base` 0x28000000, own page host
+  running the game's threads as workers. Lifted code in content-hashed shards.
+- Direct3D 9 on WebGPU in `runtime/web/gpu_web.c` (+ `wgsl.h`, `vsemu_wgsl.inc`: vertex shader emulation in WGSL),
+  GPU commands marshalled to the WebGPU thread (`gpu_proto.h`); a software fallback at ~13 fps.
+- Data streams on demand, compressed, cached per PC; optional preload; service worker for offline start.
+- AudioWorklet sound with a latency setting; Gamepad API, wheels (G29/G920/G923, 270°), shifter, RC radios, touch
+  with tilt steering, rumble on Chrome; per-device resolution scale / frame rate / car cap with phone auto-tuning.
+- Rust server for the virtual LAN, free roam up to 16,000 with a queue; cloud saves end-to-end encrypted by passphrase.
+
 ## Milestones
 
 1. **Toolchain + compile spike.** Emscripten installed; one generated partition compiles with em++; the translation
