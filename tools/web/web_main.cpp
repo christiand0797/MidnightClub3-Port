@@ -18,6 +18,11 @@
 #include "kernel/disc.h"
 #include "kernel/kernel.h"
 
+#if defined(__EMSCRIPTEN__) && defined(MC3_WEB_PAGE)
+#include <emscripten/wasmfs.h>
+#include <unistd.h>
+#endif
+
 extern const char kImageSha1[];  // Game_xbe.cpp
 
 namespace {
@@ -36,6 +41,15 @@ std::string Sha1Hex(const std::vector<uint8_t>& data) {
 }  // namespace
 
 int main(int argc, char** argv) {
+#if defined(__EMSCRIPTEN__) && defined(MC3_WEB_PAGE)
+    // In a web page (tools/web/play.html) the game runs on a worker thread (PROXY_TO_PTHREAD) over WASMFS. The
+    // browser's private storage (OPFS) is mounted at /opfs and becomes the working folder: the page copied the
+    // player's disc there once (/opfs/disc.iso), and logs and saves (hdd) persist there between visits.
+    if (backend_t opfs = wasmfs_create_opfs_backend()) {
+        wasmfs_create_directory("/opfs", 0777, opfs);
+        chdir("/opfs");
+    }
+#endif
     std::string disc_path;
     for (int i = 1; i < argc; i++) {
         if (!std::strcmp(argv[i], "--instance") && i + 1 < argc) setenv("INSTANCE", argv[++i], 1);

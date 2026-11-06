@@ -1334,4 +1334,18 @@ bool WriteTga(const Surface& s, const char* path) {
     return true;
 }
 
+bool ReadRgba(const Surface& s, std::vector<uint8_t>& out, uint32_t& w, uint32_t& h) {
+    Plane p = OpenPlane(s);
+    if (!p.ok) return false;
+    w = p.w, h = p.h;
+    out.resize(size_t(w) * h * 4);
+    uint8_t* o = out.data();
+    for (uint32_t y = 0; y < h; y++)
+        for (uint32_t x = 0; x < w; x++, o += 4) {
+            Vec c = p.Load(x, y);
+            o[0] = uint8_t(Sat(c[0]) * 255), o[1] = uint8_t(Sat(c[1]) * 255), o[2] = uint8_t(Sat(c[2]) * 255), o[3] = 255;
+        }
+    return true;
+}
+
 }  // namespace reference

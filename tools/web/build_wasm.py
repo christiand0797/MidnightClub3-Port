@@ -78,6 +78,8 @@ def main():
     host_flags = base + ["-O1", "-g", "-Wno-everything", f"-I{GAME / 'src'}", f"-I{RT}", f"-I{GEN}", f"-I{HARNESS}",
                          f"-I{HARNESS / 'compat'}", f"-I{DEPS / 'tomlplusplus-src/include'}", f"-I{DEPS / 'imgui-src'}",
                          "-DXBE_RAW_VERTICES=0", "-DXBE_RENDER_THREAD=0", "-DXBE_WEB=1"]
+    if a.target == "web":
+        host_flags.append("-DMC3_WEB_PAGE=1")
     stamp = hashlib.md5(" ".join(host_flags).encode()).hexdigest()[:8]
     newest = newest_header()
 
@@ -125,12 +127,18 @@ def main():
 
     exe = out / ("mc3-node.cjs" if a.target == "node" else "mc3.js")
     link = em + base + ["-O2", "-o", str(exe), *map(str, host_objs), *map(str, sorted((out / "gen").glob("*.o"))),
-                        "-sALLOW_MEMORY_GROWTH=1", "-sINITIAL_MEMORY=1024MB", "-sMAXIMUM_MEMORY=4GB",
-                        "-sSTACK_SIZE=8MB", "-sDEFAULT_PTHREAD_STACK_SIZE=4MB", "-sPTHREAD_POOL_SIZE=32",
-                        "-sEXIT_RUNTIME=0", "-sENVIRONMENT=" + ("node" if a.target == "node" else "web,worker"),
-                        "-sEXPORTED_RUNTIME_METHODS=ENV,FS,HEAPU8", "-sEXPORTED_FUNCTIONS=_main,_web_set_pad,_malloc,_free"]
+                        "-sSTACK_SIZE=8MB", "-sDEFAULT_PTHREAD_STACK_SIZE=4MB", "-sEXIT_RUNTIME=0"]
     if a.target == "node":
-        link += ["-sNODERAWFS=1"]
+        link += ["-sENVIRONMENT=node", "-sNODERAWFS=1", "-sALLOW_MEMORY_GROWTH=1", "-sINITIAL_MEMORY=1024MB",
+                 "-sMAXIMUM_MEMORY=4GB", "-sPTHREAD_POOL_SIZE=32", "-sEXPORTED_RUNTIME_METHODS=ENV,FS,HEAPU8",
+                 "-sEXPORTED_FUNCTIONS=_main,_web_set_pad,_malloc,_free"]
+    else:
+        # the page (tools/web/play.html): main() on a worker so it may block; WASMFS with the browser's private
+        # storage (OPFS) for the disc copy and saves; fixed memory so the page's views of it never go stale; the page
+        # reads frames and writes the pad through these exports
+        link += ["-sENVIRONMENT=web,worker", "-sPROXY_TO_PTHREAD=1", "-sWASMFS=1", "-sALLOW_MEMORY_GROWTH=0",
+                 "-sINITIAL_MEMORY=2048MB", "-sPTHREAD_POOL_SIZE=24", "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32",
+                 "-sEXPORTED_FUNCTIONS=_main,_web_set_pad,_web_frame,_web_frame_lock,_malloc,_free"]
     if a.debug:
         link += ["-sASSERTIONS=2", "-g2", "-sSTACK_OVERFLOW_CHECK=1"]
     print("[wasm] link", flush=True)

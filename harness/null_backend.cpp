@@ -16,6 +16,29 @@
 #include "kernel/memory.h"
 #include "reference_renderer.h"
 
+#ifdef XBE_WEB
+#include <mutex>
+#include <vector>
+// Browser build: the last frame drawn, for the page's canvas (tools/web/play.html). web_frame() returns
+// {sequence, width, height, rgba pointer}; the page holds web_frame_lock(1) while it copies the pixels out.
+namespace {
+std::mutex g_web_lock;
+std::vector<uint8_t> g_web_pixels;
+uint32_t g_web_info[4];
+}  // namespace
+extern "C" __attribute__((used, visibility("default"))) const uint32_t* web_frame() {
+    g_web_info[3] = uint32_t(uintptr_t(g_web_pixels.data()));
+    return g_web_info;
+}
+extern "C" __attribute__((used, visibility("default"))) int web_frame_lock(int lock) {
+    if (!lock) {
+        g_web_lock.unlock();
+        return 1;
+    }
+    return g_web_lock.try_lock() ? 1 : 0;  // the page never blocks its own thread
+}
+#endif
+
 namespace gpu {
 
 namespace {
@@ -46,7 +69,15 @@ public:
         }
         if (draws_ == last_draws_) empty_++;
         last_draws_ = draws_;
+#ifdef XBE_WEB
+        if (drawing_) {
+            uint32_t w = 0, h = 0;
+            std::lock_guard lock(g_web_lock);
+            if (reference::ReadRgba(front, g_web_pixels, w, h)) g_web_info[0]++, g_web_info[1] = w, g_web_info[2] = h;
+        }
+#else
         if (drawing_ && !snap_) reference::WriteTga(front, File("cap/ref_%05llu.tga", frames_).c_str());
+#endif
         // snap asks for the next two frames drawn
         std::string snap = (app::ExeDir() / "snap").string();
         if (snap_ == 2) {

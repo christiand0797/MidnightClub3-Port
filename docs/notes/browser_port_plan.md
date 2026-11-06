@@ -50,6 +50,31 @@ needs a >4 GB linear memory and slower bounds checks; Safari has no memory64.
   WIC / Media Foundation enhancements): `gpu/pbr_*`, shader cache, texture packs, HD movies, draw evidence; stand ins
   in `tools/web/web_stubs.cpp`.
 
+- Step 3 done: `tools/web/play.html` + `tools/web/serve.py`. The page asks for the disc once, streams it into the
+  browser's private storage (OPFS, ~1.5 min for 4.5 GB), then runs the game on a worker thread (PROXY_TO_PTHREAD,
+  WASMFS with OPFS mounted at /opfs: the disc copy, logs and hdd saves persist there). Frames from the CPU renderer
+  (every 2nd frame, `?ref=N` changes it) go to a canvas; keyboard and Gamepad API into `web_set_pad` (a tap counts as
+  held 250 ms). Tested in the Claude app's Chromium and in Firefox: intros, title screen, menus reached with Enter,
+  about 9-10 frames drawn per second (the game itself ~20). `serve.py --dev-disc` + `?devdisc` is a loopback-only
+  test path that copies the disc without the file picker and starts the game.
+
+## What Underground 2 Revived (nfsu2.xyz) has that this needs (docs/notes/online_lobbies.md)
+
+In priority order:
+1. **WebGPU renderer** (step 4): the reason it runs at 60-120 fps; ours draws on the CPU at ~10.
+2. **Controllers**: Gamepad API is in (standard mapping, sticks, triggers as analog). Still to do: rumble
+   (`vibrationActuator`), button remapping, wheels (G29/G920/G923 axes), touch controls on phones, split screen.
+3. **Audio** (step 5): AudioWorklet mixer; the radio with your own music folder.
+4. **Settings tab** on the start page: frame cap 30/60/120/240, widescreen, resolution scale, full screen, HUD,
+   language; editable settings file; reset.
+5. **Saves**: zip backup / restore of the hdd folder (and import from a PC install); optional cloud saves through
+   mc3.top accounts (`/api/cloud`).
+6. **Online in the page** (step 6): the Online Lobbies window (native `runtime/app/lobby_menu.cpp`) as page UI, the
+   built-in link over a page WebSocket; free roam with nearby players; queue when full; live counts; quick chat,
+   friends, block list.
+7. **Faster start**: stream disc reads on demand instead of copying the whole image first (OPFS copy stays as the cache).
+8. **Mobile**: lower resolution scale on phones, memory budget below 2 GB.
+
 ## Milestones
 
 1. **Toolchain + compile spike.** Emscripten installed; one generated partition compiles with em++; the translation

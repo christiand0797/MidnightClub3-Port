@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MC3 Browser</title>
+<!-- Browser port (docs/notes/browser_port_plan.md): the game runs here from the player's own disc image. The disc is
+     copied once into this site's private browser storage (OPFS) and never leaves this computer. Needs a server that
+     sends Cross-Origin-Opener-Policy / Cross-Origin-Embedder-Policy (tools/web/serve.py), for threads. -->
+<style>
+  :root { --bg: #0b0d12; --panel: #141821; --line: #262c3a; --text: #e6e9ef; --muted: #8b93a7; --accent: #ff4d3d; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  header .status { margin-left: auto; color: var(--muted); font-size: 13px; }
+  main { display: grid; place-items: center; height: calc(100% - 48px); padding: 16px; }
+  .card { width: min(560px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px; }
+  .card h2 { margin: 0 0 6px; font-size: 18px; }
+  .card p { margin: 6px 0 14px; color: var(--muted); }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 650; cursor: pointer; font-size: 15px; }
+  button.secondary { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  progress { width: 100%; height: 10px; accent-color: var(--accent); }
+  .error { color: #ff8a7a; }
+  #screen { display: none; position: fixed; inset: 48px 0 0 0; background: #000; }
+  canvas { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+  kbd { background: #222836; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-size: 12px; }
+  .keys { color: var(--muted); font-size: 13px; margin-top: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Midnight Club 3: DUB Edition Remix</h1>
+  <span class="status" id="status">Starting</span>
+</header>
+<main>
+  <section class="card" id="setup">
+    <h2>Play in your browser</h2>
+    <p id="intro">Pick your original Xbox disc image of Midnight Club 3: DUB Edition Remix (USA). It is copied once into
+      this browser's private storage and stays on this computer. Next time the game starts straight away.</p>
+    <div class="row">
+      <button id="pick">Choose disc image</button>
+      <button id="play" hidden>Play</button>
+      <button id="forget" class="secondary" hidden>Use a different disc</button>
+    </div>
+    <div id="copy" hidden><p id="copytext">Copying</p><progress id="bar" max="1" value="0"></progress></div>
+    <p id="error" class="error" hidden></p>
+    <div class="keys">Keyboard: <kbd>W</kbd>/<kbd>S</kbd> gas and brake, <kbd>A</kbd>/<kbd>D</kbd> steer, <kbd>Space</kbd> A,
+      <kbd>Backspace</kbd> B, <kbd>Q</kbd>/<kbd>E</kbd> X and Y, <kbd>Enter</kbd> Start, <kbd>Esc</kbd> Back, arrows for
+      menus. A gamepad works directly.</div>
+    <input type="file" id="file" accept=".iso" hidden>
+  </section>
+  <div id="screen"><canvas id="canvas" width="720" height="480"></canvas></div>
+</main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const DISC = 'disc.iso';
+const status = text => { $('status').textContent = text; };
+const fail = text => { $('error').textContent = text; $('error').hidden = false; status('Stopped'); };
+
+if (!crossOriginIsolated) {
+  fail('This page needs cross-origin isolation for threads. Open it through tools/web/serve.py (or a server that sends COOP/COEP headers).');
+}
+
+async function storedDisc() {
+  try {
+    const root = await navigator.storage.getDirectory();
+    const handle = await root.getFileHandle(DISC);
+    const file = await handle.getFile();
+    return file.size > 0 ? file : null;
+  } catch { return null; }
+}
+
+// stream the picked image into OPFS, with progress; the game reads it from there (WASMFS /opfs/disc.iso)
+async function copyDisc(file) {
+  return copyStream(file.stream(), file.size);
+}
+async function copyStream(stream, size) {
+  const file = { size };
+  $('copy').hidden = false; $('pick').disabled = true;
+  const root = await navigator.storage.getDirectory();
+  try { await navigator.storage.persist?.(); } catch {}
+  const handle = await root.getFileHandle(DISC, { create: true });
+  const out = await handle.createWritable();
+  const reader = stream.getReader();
+  let done = 0, last = 0;
+  for (;;) {
+    const { value, done: end } = await reader.read();
+    if (end) break;
+    await out.write(value);
+    done += value.byteLength;
+    if (performance.now() - last > 150) {
+      last = performance.now();
+      $('bar').value = done / file.size;
+      $('copytext').textContent = `Copying your disc into browser storage: ${(done / 2 ** 30).toFixed(2)} of ${(file.size / 2 ** 30).toFixed(2)} GB`;
+    }
+  }
+  await out.close();
+  $('copy').hidden = true; $('pick').disabled = false;
+}
+
+async function refresh() {
+  const have = await storedDisc();
+  $('play').hidden = !have; $('forget').hidden = !have;
+  $('pick').hidden = !!have;
+  if (have) $('intro').textContent = `Your disc image is stored in this browser (${(have.size / 2 ** 30).toFixed(2)} GB).`;
+  status(have ? 'Ready' : 'No disc yet');
+}
+
+$('pick').onclick = () => $('file').click();
+$('file').onchange = async () => {
+  const file = $('file').files[0];
+  if (!file) return;
+  $('error').hidden = true;
+  try { await copyDisc(file); await refresh(); start(); }
+  catch (e) { fail('Could not store the disc: ' + e.message); $('pick').disabled = false; }
+};
+$('forget').onclick = async () => {
+  const root = await navigator.storage.getDirectory();
+  try { await root.removeEntry(DISC); } catch {}
+  refresh();
+};
+$('play').onclick = () => start();
+
+// ---------- the game ----------
+let started = false;
+function start() {
+  if (started || !crossOriginIsolated) return;
+  started = true;
+  $('setup').style.display = 'none';
+  $('screen').style.display = 'block';
+  status('Loading the game');
+  window.Module = {
+    arguments: ['/opfs/' + DISC, '--env', 'REF=' + (new URLSearchParams(location.search).get('ref') || '2')],
+    print: t => console.log(t),
+    printErr: t => console.warn(t),
+    onRuntimeInitialized() { status('Running'); requestAnimationFrame(frame); setInterval(pad, 16); },
+    onAbort(what) { fail('The game stopped: ' + what); },
+  };
+  const s = document.createElement('script');
+  s.src = 'mc3.js';
+  s.onerror = () => fail('mc3.js could not be loaded (build it with tools/web/build_wasm.py --target web).');
+  document.body.appendChild(s);
+}
+
+// frames: the game copies each frame drawn into a buffer; web_frame() -> {seq, w, h, rgba ptr}
+const canvas = $('canvas'), ctx2d = canvas.getContext('2d');
+let lastSeq = -1, image = null, shown = 0, fpsAt = performance.now();
+function frame() {
+  requestAnimationFrame(frame);
+  const M = window.Module;
+  if (!M || !M._web_frame) return;
+  const info = M._web_frame() >>> 2;
+  const seq = M.HEAPU32[info], w = M.HEAPU32[info + 1], h = M.HEAPU32[info + 2];
+  if (!w || !h || seq === lastSeq || !M._web_frame_lock(1)) return;
+  try {
+    const ptr = M.HEAPU32[info + 3];
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; image = null; }
+    image ??= ctx2d.createImageData(w, h);
+    image.data.set(M.HEAPU8.subarray(ptr, ptr + w * h * 4));
+    lastSeq = seq;
+  } finally { M._web_frame_lock(0); }
+  ctx2d.putImageData(image, 0, 0);
+  shown++;
+  if (performance.now() - fpsAt > 1000) { status(`Running, ${shown} frames/s drawn`); shown = 0; fpsAt = performance.now(); }
+}
+
+// input: player 1's pad (input::Pad, tools/web/web_stubs.cpp)
+const keys = new Set(), taps = new Map();  // a tap counts as held for 250 ms: the game reads input once per frame
+addEventListener('keydown', e => { if (!started) return; keys.add(e.code); taps.set(e.code, performance.now()); e.preventDefault(); });
+addEventListener('keyup', e => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+const B = { up: 1, down: 2, left: 4, right: 8, start: 16, back: 32, ls: 64, rs: 128 };
+let analogPtr = 0;
+function pad() {
+  const M = window.Module;
+  if (!M || !M._web_set_pad) return;
+  if (!analogPtr) analogPtr = M._malloc(8);
+  let buttons = 0, lx = 0, ly = 0, rx = 0, ry = 0;
+  const a = new Uint8Array(8);
+  const gp = [...(navigator.getGamepads?.() || [])].find(p => p && p.connected);
+  if (gp) {
+    const v = i => gp.buttons[i] ? (gp.buttons[i].value || (gp.buttons[i].pressed ? 1 : 0)) : 0;
+    const dz = x => Math.abs(x) < 0.15 ? 0 : x;
+    [0, 1, 2, 3, 5, 4, 6, 7].forEach((i, k) => { a[k] = Math.round(v(i) * 255); });
+    [[12, B.up], [13, B.down], [14, B.left], [15, B.right], [9, B.start], [8, B.back], [10, B.ls], [11, B.rs]]
+      .forEach(([i, bit]) => { if (v(i)) buttons |= bit; });
+    const ax = x => Math.max(-32768, Math.min(32767, Math.round(x * 32767)));
+    lx = ax(dz(gp.axes[0] || 0)); ly = ax(-dz(gp.axes[1] || 0)); rx = ax(dz(gp.axes[2] || 0)); ry = ax(-dz(gp.axes[3] || 0));
+  }
+  const now = performance.now();
+  for (const [c, t] of taps) if (now - t > 250) taps.delete(c);
+  const k = c => keys.has(c) || taps.has(c);
+  if (k('KeyW')) a[7] = 255;
+  if (k('KeyS')) a[6] = 255;
+  if (k('KeyA') !== k('KeyD')) lx = k('KeyA') ? -32768 : 32767;
+  if (k('Space')) a[0] = 255;
+  if (k('Backspace')) a[1] = 255;
+  if (k('KeyQ')) a[2] = 255;
+  if (k('KeyE')) a[3] = 255;
+  if (k('Enter')) buttons |= B.start;
+  if (k('Escape')) buttons |= B.back;
+  if (k('ArrowUp')) buttons |= B.up;
+  if (k('ArrowDown')) buttons |= B.down;
+  if (k('ArrowLeft')) buttons |= B.left;
+  if (k('ArrowRight')) buttons |= B.right;
+  M.HEAPU8.set(a, analogPtr);
+  M._web_set_pad(1, buttons, analogPtr, lx, ly, rx, ry);
+}
+
+// testing only: tools/web/serve.py --dev-disc streams a disc image from this computer (no file picker)
+(async () => {
+  await refresh();
+  if (!new URLSearchParams(location.search).has('devdisc')) return;
+  if (!await storedDisc()) {
+    const r = await fetch('/dev-disc');
+    if (!r.ok) return fail('No /dev-disc: start serve.py with --dev-disc');
+    await copyStream(r.body, Number(r.headers.get('Content-Length')));
+    await refresh();
+  }
+  start();  // automated tests: straight into the game
+})();
+</script>
+</body>
+</html>
