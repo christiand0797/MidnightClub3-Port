@@ -50,5 +50,14 @@ web/src/gpu/encoder.ts, read 6 Nov 2026)
    packs, PBR, HD movies.
 5. **Performance**: pipeline warm-up list, frame handoff on claim, 2 frames in flight, per-frame arenas.
 
+### Progress
+
+- Step 1, vertex programs (6 Nov 2026): `VertexProgramWgsl` in `shaders.cpp` uses the same microcode decoding (`Tok`,
+  `Src`) as `VertexProgramHlsl`. `tests/wgsl_vertex_test` covers every MAC/ILU opcode, mask, output, relative constant,
+  missing input and decode. `tools/web/vs_from_hlsl.py` rebuilds the game's programs from D3D12 captures (26 distinct).
+  Their regenerated HLSL matches the captures exactly, and all 34 WGSL modules compile and build pipelines in
+  Chromium's WebGPU (`tools/web/wgsl_check.html`). Firefox not checked yet: its WebGPU device would not open during the
+  run. Next: `FixedVertexHlsl`, `PixelHlsl` (combiners), `QuadHlsl`, then the hooks.
+
 Milestone order: 1 (vertex programs first: most draws), then 2's draw path for the menus, then 3D scenes, then targets
 and effects, then 4.

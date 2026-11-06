@@ -1,0 +1,43 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WGSL check</title>
+<!-- Compiles every module in list.txt (beside this page, or ?dir=) with the browser's WebGPU compiler (Tint in Chromium,
+     Naga in Firefox) and builds a vertex-only pipeline from each, which checks the entry point and bindings as well.
+     tests/wgsl_vertex_test writes the modules; serve the folder over http://localhost. Result in #out and window.result. -->
+<pre id="out">running</pre>
+<script type="module">
+const out = document.getElementById('out');
+const dir = new URLSearchParams(location.search).get('dir') || '.';
+const result = { ok: 0, failed: [] };
+try {
+  const adapter = await navigator.gpu.requestAdapter();
+  const device = await adapter.requestDevice();
+  const fragment = device.createShaderModule({ code: '@fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }' });
+  const names =(await (await fetch(`${dir}/list.txt`, { cache: 'no-store' })).text()).split(/\s+/).filter(Boolean);
+  for (const name of names) {
+    const code = await (await fetch(`${dir}/${name}`, { cache: 'no-store' })).text();
+    device.pushErrorScope('validation');
+    const module = device.createShaderModule({ code });
+    const info = await module.getCompilationInfo();
+    const errors = info.messages.filter(m => m.type === 'error')
+      .map(m => `${m.lineNum}:${m.linePos} ${m.message} | ${code.split('\n')[m.lineNum - 1]?.trim()}`);
+    if (!errors.length) {
+      // one buffer per input, in the format its declared type takes
+      const formats = { vec4f: 'float32x4', vec4i: 'sint32x4', u32: 'uint32' };
+      const buffers = [...code.matchAll(/@location\((\d+)\) v\d+: (vec4f|vec4i|u32),/g)].map(m => ({ arrayStride: 16, attributes: [{ shaderLocation: +m[1], offset: 0, format: formats[m[2]] }] }));
+      device.createRenderPipeline({
+        layout: 'auto', vertex: { module, entryPoint: 'main', buffers }, primitive: { topology: 'triangle-list' },
+        fragment: { module: fragment, entryPoint: 'fs', targets: [{ format: 'rgba8unorm' }] },
+      });
+    }
+    const scope = await device.popErrorScope();
+    if (scope) errors.push(scope.message);
+    if (errors.length) result.failed.push({ name, errors }); else result.ok++;
+  }
+  out.textContent = `${result.ok}/${names.length} compile\n` + result.failed.map(f => `${f.name}\n  ${f.errors.join('\n  ')}`).join('\n');
+} catch (e) {
+  result.error = String(e);
+  out.textContent = 'error: ' + e;
+}
+window.result = result;
+</script>

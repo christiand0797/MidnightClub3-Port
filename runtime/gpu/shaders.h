@@ -47,6 +47,8 @@ PixelKey MakePixelKey(const State& s, const TexInfo tex[4]);
 // decode: VertexDecode per register, 4 bits each, for elements the input assembler hands over raw
 std::string VertexProgramHlsl(const std::vector<uint32_t>& program, uint16_t regs, uint64_t decode = 0,
                               bool velocity = false);  // velocity: adds PrevPos (VelocityVertexHlsl)
+// the same program as WGSL for WebGPU (the browser build): VC at @group(0) @binding(0), DC at @binding(1)
+std::string VertexProgramWgsl(const std::vector<uint32_t>& program, uint16_t regs, uint64_t decode = 0);
 // the program reads c-37, the viewport offset that carries the XDK's half pixel screen space offset
 bool ReadsViewportOffset(const std::vector<uint32_t>& program);
 // fixed function vertex state a shader is built for

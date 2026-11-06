@@ -122,7 +122,7 @@ const char* kLanes[5] = {"", "x", "xy", "xyz", "xyzw"};  // oFog takes one lane 
 const char* kOut[16] = {"oPos", "", "", "oD0", "oD1", "oFog", "oPts", "oB0", "oB1", "oT0", "oT1", "oT2", "oT3", "", "", ""};
 
 // operand A 0, B 1, C 2
-std::string Src(const Tok& k, int which, uint16_t regs) {
+std::string Src(const Tok& k, int which, uint16_t regs, bool wgsl = false) {
     uint32_t neg, sw[4], reg, mux;
     if (which == 0) {
         neg = k.f(1, 8, 1);
@@ -145,7 +145,7 @@ std::string Src(const Tok& k, int which, uint16_t regs) {
         base = reg == 12 ? "oPos" : F("R%u", reg);
     } else if (mux == 2) {
         uint32_t v = k.f(1, 9, 4);
-        base = (regs >> v) & 1 ? F("i.v%u", v) : F("vattr[%u]", v);  // the inline value, as the console reads it
+        base = (regs >> v) & 1 ? F("i.v%u", v) : F(wgsl ? "dc.vattr[%u]" : "vattr[%u]", v);  // the inline value, as the console reads it
     } else {
         uint32_t cr = k.f(1, 13, 8);
         base = k.f(3, 1, 1) ? F("c[clamp(a0 + %u, 0, 191)]", cr) : F("c[%u]", cr);
@@ -735,6 +735,252 @@ std::string VertexProgramHlsl(const std::vector<uint32_t>& prog, uint16_t regs, 
         s.insert(s.find(inputs) + inputs.find("VOut main("), fn);
     }
     s += kVsEpilogue;
+    return s;
+}
+
+// WGSL for WebGPU (the browser build): the same decoding of the microcode as VertexProgramHlsl, spelled for WGSL. No
+// multi-lane swizzle writes (one lane at a time), no scalar swizzles (vec4f(x)), select for vector conditions, infinity
+// by bitcast; @invariant on the position stands for precise. VC is c (binding 0), DC is dc (binding 1), same layout.
+// DC's matrices are only declared here: HLSL's column_major float4x4 and WGSL's mat4x4f index the other way round.
+namespace {
+
+const char* kWgslCommon = R"(
+struct VOut {
+    @invariant @builtin(position) pos: vec4f,
+    @location(0) d0: vec4f,
+    @location(1) d1: vec4f,
+    @location(2) b0: vec4f,
+    @location(3) b1: vec4f,
+    @location(4) tc0: vec4f,
+    @location(5) tc1: vec4f,
+    @location(6) tc2: vec4f,
+    @location(7) tc3: vec4f,
+    @location(8) fogamt: f32,
+};
+struct DC {
+    surf: vec4f,
+    fogp: vec4f,
+    fogcolor: vec4f,
+    misc: vec4f,
+    pc: array<vec4f, 18>,
+    tfactor: vec4f,
+    texsize: array<vec4f, 4>,
+    bumpmat: array<vec4f, 4>,
+    bumplum: array<vec4f, 4>,
+    wvp: mat4x4f,
+    ext: vec4f,
+    spread: array<vec4f, 4>,
+    wv: mat4x4f,
+    wvn: mat4x4f,
+    tm: array<mat4x4f, 4>,
+    mat: array<vec4f, 5>,
+    amb: vec4f,
+    lt: array<vec4f, 56>,
+    rtshift: vec4f,
+    vattr: array<vec4f, 16>,
+    sblend: vec4f,
+    bwvp: array<mat4x4f, 4>,
+    bwv: array<mat4x4f, 4>,
+    bwvn: array<mat4x4f, 4>,
+    carpaint: vec4f,
+    pbr: vec4f,
+    pbr2: vec4f,
+    zparams: vec4f,
+    taa: vec4f,
+};
+@group(0) @binding(0) var<uniform> c: array<vec4f, 192>;
+@group(0) @binding(1) var<uniform> dc: DC;
+)";
+
+const char* kWgslVsHelpers = R"(
+fn inf() -> f32 { var bits = 0x7f800000u; return bitcast<f32>(bits); }
+fn mac_mul(a: vec4f, b: vec4f) -> vec4f { return select(a * b, vec4f(0.0), (a == vec4f(0.0)) | (b == vec4f(0.0))); }
+fn mac_arl(v: f32) -> i32 { return i32(floor(v + 1e-3)); }
+// magnitude clamped between 1 / 2^64 and 2^64, sign kept
+fn magclamp(v: f32) -> f32 { let m = clamp(abs(v), 5.42101e-20, 1.84467e+19); return select(m, -m, v < 0.0); }
+fn ilu_rcp(v: f32) -> vec4f { return vec4f(1.0 / v); }
+fn ilu_rcc(v: f32) -> vec4f { return vec4f(magclamp(1.0 / v)); }
+fn ilu_rsq(v: f32) -> vec4f {
+    if (v == 0.0) { return vec4f(inf()); }
+    return vec4f(inverseSqrt(abs(v)));
+}
+// 2^floor(v), fraction, 2^v
+fn ilu_exp(v: f32) -> vec4f {
+    let whole = floor(v);
+    return vec4f(exp2(whole), v - whole, exp2(v), 1.0);
+}
+// exponent, mantissa, log2 of |v|; zero logs to negative infinity
+fn ilu_log(v: f32) -> vec4f {
+    let mag = abs(v);
+    if (mag == 0.0) { return vec4f(-inf(), 1.0, -inf(), 1.0); }
+    let l2 = log2(mag);
+    let ex = floor(l2);
+    return vec4f(ex, mag / exp2(ex), l2, 1.0);
+}
+// power clamped to 128 less 1/256
+fn ilu_lit(s: vec4f) -> vec4f {
+    let cap = 127.99609375;
+    let diffuse = max(s.x, 0.0);
+    let spec = exp2(clamp(s.w, -cap, cap) * log2(max(s.y, 0.0)));
+    return vec4f(1.0, diffuse, select(0.0, spec, diffuse > 0.0), 1.0);
+}
+fn fogfactor(d: f32) -> f32 {
+    if (dc.fogp.w == 3.0) { return (dc.fogp.y - d) / (dc.fogp.y - dc.fogp.x); }
+    if (dc.fogp.w == 1.0) { return exp(-d * dc.fogp.z); }
+    if (dc.fogp.w == 2.0) { return exp(-(d * dc.fogp.z) * (d * dc.fogp.z)); }
+    return 1.0;
+}
+)";
+
+const char* kWgslVsPrologue = R"(
+    var a0: i32 = 0;
+    var R0 = vec4f(0.0); var R1 = vec4f(0.0); var R2 = vec4f(0.0); var R3 = vec4f(0.0);
+    var R4 = vec4f(0.0); var R5 = vec4f(0.0); var R6 = vec4f(0.0); var R7 = vec4f(0.0);
+    var R8 = vec4f(0.0); var R9 = vec4f(0.0); var R10 = vec4f(0.0); var R11 = vec4f(0.0);
+    var oPos = vec4f(0.0);
+    var oD0 = vec4f(0.0, 0.0, 0.0, 1.0); var oD1 = vec4f(0.0); var oB0 = vec4f(0.0, 0.0, 0.0, 1.0); var oB1 = vec4f(0.0);
+    var oFog = vec4f(0.0); var oPts = vec4f(1.0);
+    var oT0 = vec4f(0.0, 0.0, 0.0, 1.0); var oT1 = vec4f(0.0, 0.0, 0.0, 1.0);
+    var oT2 = vec4f(0.0, 0.0, 0.0, 1.0); var oT3 = vec4f(0.0, 0.0, 0.0, 1.0);
+)";
+
+const char* kWgslVsEpilogue = R"(
+    var o: VOut;
+    var p = oPos;
+    p.w = magclamp(p.w);
+    // full screen passes drawn half a pixel up-left stop half a pixel short of the far edges (kVsEpilogue)
+    if (dc.surf.w == 0.0 && abs(p.x - (dc.surf.x - 0.5)) < 1e-3) { p.x = dc.surf.x; }
+    if (dc.surf.w == 0.0 && abs(p.y - (dc.surf.y - 0.5)) < 1e-3) { p.y = dc.surf.y; }
+    var q: vec4f;
+    q.x = p.x * 2.0 / dc.surf.x - 1.0;
+    q.y = 1.0 - p.y * 2.0 / dc.surf.y;
+    q.z = p.z * dc.surf.z;
+    o.pos = vec4f(q.xyz * p.w, p.w);
+    o.d0 = saturate(oD0);
+    o.d1 = saturate(oD1);
+    o.b0 = saturate(oB0);
+    o.b1 = saturate(oB1);
+    o.tc0 = oT0;
+    o.tc1 = oT1;
+    o.tc2 = oT2;
+    o.tc3 = oT3;
+    o.fogamt = fogfactor(oFog.x);
+    return o;
+}
+)";
+
+std::string MacWgsl(uint32_t op, const std::string& a, const std::string& b, const std::string& c) {
+    switch (op) {
+        case 1: return a;
+        case 2: return "mac_mul(" + a + ", " + b + ")";
+        case 3: return "(" + a + " + " + c + ")";
+        case 4: return "(mac_mul(" + a + ", " + b + ") + " + c + ")";
+        case 5: return "vec4f(dot(" + a + ".xyz, " + b + ".xyz))";
+        case 6: return "vec4f(dot(vec4f(" + a + ".xyz, 1.0), " + b + "))";
+        case 7: return "vec4f(dot(" + a + ", " + b + "))";
+        case 8: return "vec4f(1.0, " + a + ".y * " + b + ".y, " + a + ".z, " + b + ".w)";
+        case 9: return "min(" + a + ", " + b + ")";
+        case 10: return "max(" + a + ", " + b + ")";
+        case 11: return "select(vec4f(0.0), vec4f(1.0), " + a + " < " + b + ")";
+        case 12: return "select(vec4f(0.0), vec4f(1.0), " + a + " >= " + b + ")";
+        case 13: return a;
+        default: return "vec4f(0.0)";
+    }
+}
+
+std::string IluWgsl(uint32_t op, const std::string& c) {
+    switch (op) {
+        case 1: return c;
+        case 2: return "ilu_rcp(" + c + ".x)";
+        case 3: return "ilu_rcc(" + c + ".x)";
+        case 4: return "ilu_rsq(" + c + ".x)";
+        case 5: return "ilu_exp(" + c + ".x)";
+        case 6: return "ilu_log(" + c + ".x)";
+        case 7: return "ilu_lit(" + c + ")";
+        default: return "vec4f(0.0)";
+    }
+}
+
+// dest.lanes = src.lanes, one lane at a time
+std::string LaneWrites(const std::string& dest, const char* lanes, const char* src) {
+    std::string s;
+    for (const char* l = lanes; *l; l++) s += F("        %s.%c = %s.%c;\n", dest.c_str(), *l, src, *l);
+    return s;
+}
+
+std::string WgslVsInputs(uint16_t regs, uint64_t decode) {
+    if (!regs) return "struct VIn {\n    @builtin(vertex_index) id: u32,\n};\n@vertex\nfn main(i: VIn) -> VOut {\n";
+    if (!decode) {
+        std::string s = "struct VIn {\n";
+        for (int r = 0; r < 16; r++)
+            if ((regs >> r) & 1) s += F("    @location(%d) v%d: vec4f,\n", r, r);
+        return s + "};\n@vertex\nfn main(i: VIn) -> VOut {\n";
+    }
+    std::string raw = "struct VRaw {\n", in = "struct VIn {\n", body;
+    bool packed = false;
+    for (int r = 0; r < 16; r++) {
+        if (!((regs >> r) & 1)) continue;
+        uint32_t d = uint32_t(decode >> (r * 4)) & 15;
+        const char* type = d == kDecodeInt || d == kDecodeIntW1 ? "vec4i" : d == kDecodePacked ? "u32" : "vec4f";
+        raw += F("    @location(%d) v%d: %s,\n", r, r, type);
+        in += F("    v%d: vec4f,\n", r);
+        packed |= d == kDecodePacked;
+        switch (d) {
+            case kDecodeW1: body += F("    i.v%d = vec4f(ri.v%d.xyz, 1.0);\n", r, r); break;
+            case kDecodeInt: body += F("    i.v%d = vec4f(ri.v%d);\n", r, r); break;
+            case kDecodeIntW1: body += F("    i.v%d = vec4f(vec3f(ri.v%d.xyz), 1.0);\n", r, r); break;
+            case kDecodePacked: body += F("    i.v%d = UnpackNp3(ri.v%d);\n", r, r); break;
+            case kDecodeFloat2H: body += F("    i.v%d = vec4f(ri.v%d.xy, 0.0, ri.v%d.z);\n", r, r, r); break;
+            default: body += F("    i.v%d = ri.v%d;\n", r, r); break;
+        }
+    }
+    std::string s = raw + "};\n" + in + "};\n";
+    if (packed)
+        s += "fn UnpackNp3(u: u32) -> vec4f {\n"
+             "    let v = vec3i(i32(u << 21u) >> 21u, i32(u << 10u) >> 21u, i32(u) >> 22u);\n"
+             "    return vec4f(max(vec3f(v) / vec3f(1023.0, 1023.0, 511.0), vec3f(-1.0)), 1.0);\n"
+             "}\n";
+    return s + "@vertex\nfn main(ri: VRaw) -> VOut {\n    var i: VIn;\n" + body;
+}
+
+}  // namespace
+
+std::string VertexProgramWgsl(const std::vector<uint32_t>& prog, uint16_t regs, uint64_t decode) {
+    std::string s = kWgslCommon;
+    s += kWgslVsHelpers;
+    s += WgslVsInputs(regs, decode);
+    s += kWgslVsPrologue;
+    for (size_t n = 0; n + 4 <= prog.size(); n += 4) {
+        Tok k{&prog[n]};
+        uint32_t mac = k.f(1, 21, 4), ilu = k.f(1, 25, 3);
+        if (mac || ilu) {
+            std::string a = Src(k, 0, regs, true), b = Src(k, 1, regs, true), c = Src(k, 2, regs, true);
+            s += "    {\n";
+            if (mac) s += "        let mr = " + MacWgsl(mac, a, b, c) + ";\n";
+            if (ilu) s += "        let ir = " + IluWgsl(ilu, c) + ";\n";
+            uint32_t r = k.f(3, 20, 4), omask = k.f(3, 12, 4);
+            if (mac == 13) {
+                s += "        a0 = mac_arl(mr.x);\n";
+            } else if (mac) {
+                uint32_t m = k.f(3, 24, 4);
+                if (ilu && r == 1) m = 0;
+                if (m && r <= 12) s += LaneWrites(RegDest(r), kMask[m], "mr");
+            }
+            if (ilu) {
+                uint32_t m = k.f(3, 16, 4), ir = mac ? 1 : r;
+                if (m && ir <= 12) s += LaneWrites(RegDest(ir), kMask[m], "ir");
+            }
+            bool use_ilu = k.f(3, 2, 1) == 1;
+            if (omask && k.f(3, 11, 1) && ((use_ilu && ilu) || (!use_ilu && mac && mac != 13))) {
+                uint32_t o = k.f(3, 3, 8) & 0xF;
+                if (kOut[o][0])
+                    s += LaneWrites(kOut[o], o == 5 ? kLanes[std::popcount(omask)] : kMask[omask], use_ilu ? "ir" : "mr");
+            }
+            s += "    }\n";
+        }
+        if (k.f(3, 0, 1)) break;  // last instruction
+    }
+    s += kWgslVsEpilogue;
     return s;
 }
 
