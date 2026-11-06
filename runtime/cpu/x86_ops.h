@@ -13,13 +13,22 @@ typedef uint64_t __attribute__((aligned(1), may_alias)) x86_u64u;
 typedef float __attribute__((aligned(1), may_alias)) x86_f32u;
 typedef double __attribute__((aligned(1), may_alias)) x86_f64u;
 
-#define X86_MEM8(a) (*(uint8_t*)(base + (uint32_t)(a)))
-#define X86_MEM16(a) (*(x86_u16u*)(base + (uint32_t)(a)))
-#define X86_MEM32(a) (*(x86_u32u*)(base + (uint32_t)(a)))
-#define X86_MEM64(a) (*(x86_u64u*)(base + (uint32_t)(a)))
-#define X86_MEMF32(a) (*(x86_f32u*)(base + (uint32_t)(a)))
-#define X86_MEMF64(a) (*(x86_f64u*)(base + (uint32_t)(a)))
-#define X86_PTR(T, a) ((T*)(base + (uint32_t)(a)))
+#ifdef __EMSCRIPTEN__
+// Browser build: one wasm linear memory, no page aliasing and no 4 GB reservation. The guest regions (user, physical
+// RAM and its write-combined mirror, system pool, stacks, MCPX) are packed into one block; each guest address moves by
+// the offset for its top byte (kernel/memory.cpp fills the table). docs/notes/browser_port_plan.md
+extern "C" int32_t x86_xlate[256];
+#define X86_HOST(a) (base + (uint32_t)(a) + x86_xlate[(uint32_t)(a) >> 24])
+#else
+#define X86_HOST(a) (base + (uint32_t)(a))
+#endif
+#define X86_MEM8(a) (*(uint8_t*)X86_HOST(a))
+#define X86_MEM16(a) (*(x86_u16u*)X86_HOST(a))
+#define X86_MEM32(a) (*(x86_u32u*)X86_HOST(a))
+#define X86_MEM64(a) (*(x86_u64u*)X86_HOST(a))
+#define X86_MEMF32(a) (*(x86_f32u*)X86_HOST(a))
+#define X86_MEMF64(a) (*(x86_f64u*)X86_HOST(a))
+#define X86_PTR(T, a) ((T*)X86_HOST(a))
 
 // The recompiled code is built on the player's PC into a DLL beside the executable (app/game_code.cpp). The executable
 // exports the runtime and its overrides, which the DLL imports; a function with no override links to its body.
@@ -231,7 +240,7 @@ inline void x86_rep_movs(X86Context& ctx, uint8_t* base, uint32_t w) {
     if (!n) return;
     uint32_t bytes = n * w;
     if (!ctx.df && (ctx.edi - ctx.esi >= bytes || ctx.edi <= ctx.esi)) {
-        std::memmove(base + ctx.edi, base + ctx.esi, bytes);
+        std::memmove(X86_HOST(ctx.edi), X86_HOST(ctx.esi), bytes);
         ctx.esi += bytes;
         ctx.edi += bytes;
         ctx.ecx = 0;
@@ -239,7 +248,7 @@ inline void x86_rep_movs(X86Context& ctx, uint8_t* base, uint32_t w) {
     }
     int32_t d = ctx.df ? -int32_t(w) : int32_t(w);
     for (; n; n--) {
-        std::memcpy(base + ctx.edi, base + ctx.esi, w);
+        std::memcpy(X86_HOST(ctx.edi), X86_HOST(ctx.esi), w);
         ctx.esi += d;
         ctx.edi += d;
     }
@@ -250,7 +259,7 @@ inline void x86_rep_stos(X86Context& ctx, uint8_t* base, uint32_t w) {
     uint32_t n = ctx.ecx;
     if (!n) return;
     if (!ctx.df && w == 1) {
-        std::memset(base + ctx.edi, uint8_t(ctx.eax), n);
+        std::memset(X86_HOST(ctx.edi), uint8_t(ctx.eax), n);
         ctx.edi += n;
         ctx.ecx = 0;
         return;
@@ -258,7 +267,7 @@ inline void x86_rep_stos(X86Context& ctx, uint8_t* base, uint32_t w) {
     int32_t d = ctx.df ? -int32_t(w) : int32_t(w);
     uint32_t v = ctx.eax;
     for (; n; n--) {
-        std::memcpy(base + ctx.edi, &v, w);
+        std::memcpy(X86_HOST(ctx.edi), &v, w);
         ctx.edi += d;
     }
     ctx.ecx = 0;

@@ -56,30 +56,36 @@ enum : uint32_t {
 };
 
 extern uint8_t* g_base;
+#ifdef __EMSCRIPTEN__
+extern "C" int32_t x86_xlate[256];  // kernel/memory.cpp: the browser build packs the guest regions
+inline uint8_t* GuestHost(uint32_t va) { return g_base + uint32_t(va + uint32_t(x86_xlate[va >> 24])); }
+#else
+inline uint8_t* GuestHost(uint32_t va) { return g_base + va; }
+#endif
 
 template <typename T>
 inline T& G(uint32_t va) {
-    return *reinterpret_cast<T*>(g_base + va);
+    return *reinterpret_cast<T*>(GuestHost(va));
 }
 inline uint32_t R32(uint32_t va) {
     uint32_t v;
-    std::memcpy(&v, g_base + va, 4);
+    std::memcpy(&v, GuestHost(va), 4);
     return v;
 }
-inline void W32(uint32_t va, uint32_t v) { std::memcpy(g_base + va, &v, 4); }
+inline void W32(uint32_t va, uint32_t v) { std::memcpy(GuestHost(va), &v, 4); }
 inline uint16_t R16(uint32_t va) {
     uint16_t v;
-    std::memcpy(&v, g_base + va, 2);
+    std::memcpy(&v, GuestHost(va), 2);
     return v;
 }
-inline void W16(uint32_t va, uint16_t v) { std::memcpy(g_base + va, &v, 2); }
+inline void W16(uint32_t va, uint16_t v) { std::memcpy(GuestHost(va), &v, 2); }
 inline uint64_t R64(uint32_t va) {
     uint64_t v;
-    std::memcpy(&v, g_base + va, 8);
+    std::memcpy(&v, GuestHost(va), 8);
     return v;
 }
-inline void W64(uint32_t va, uint64_t v) { std::memcpy(g_base + va, &v, 8); }
-inline void* HostPtr(uint32_t va) { return g_base + va; }
+inline void W64(uint32_t va, uint64_t v) { std::memcpy(GuestHost(va), &v, 8); }
+inline void* HostPtr(uint32_t va) { return GuestHost(va); }
 
 // ANSI_STRING / OBJECT_STRING: USHORT Length, USHORT MaximumLength, PCHAR Buffer
 std::string ReadAnsiString(uint32_t str);

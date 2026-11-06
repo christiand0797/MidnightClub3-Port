@@ -11,8 +11,11 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#else
+#elif !defined(__EMSCRIPTEN__)
 #include <sys/mman.h>
+#endif
+#ifdef __EMSCRIPTEN__
+#include <cstdlib>
 #endif
 
 namespace mem {
@@ -22,6 +25,30 @@ static std::recursive_mutex g_lock;
 
 uint8_t* Base() { return g_base; }
 
+#ifdef __EMSCRIPTEN__
+// Browser build. WebAssembly has one linear memory: no 4 GB reservation and no aliased views. Each guest region gets
+// a place in one block; x86_xlate[top byte] moves a guest address there (X86_HOST in cpu/x86_ops.h). The physical RAM
+// and its write-combined view share one copy. Any other address lands in a scratch area instead of corrupting a region.
+extern "C" int32_t x86_xlate[256] = {};
+namespace {
+struct Place {
+    uint32_t guest, size, block;
+};
+constexpr Place kPlaces[] = {
+    {0x00000000, kUserHigh, 0x00000000},
+    {kContiguousBase, kPhysicalSize, 0x10000000},
+    {kWriteCombineBase, kPhysicalSize, 0x10000000},
+    {kSystemBase, kSystemSize, 0x14000000},
+    {kStackBase, kStackSize, 0x18000000},
+    {kMcpXBase, kMcpXSize, 0x1C000000},
+};
+constexpr uint32_t kScratch = 0x1D000000, kBlockSize = 0x1E000000;
+}  // namespace
+uint8_t* Host(uint32_t va) { return g_base + uint32_t(va + uint32_t(x86_xlate[va >> 24])); }
+#else
+uint8_t* Host(uint32_t va) { return g_base + va; }
+#endif
+
 // physical memory shows at 0x80000000 and again at 0xF0000000 (write combined view)
 static bool InPhysical(uint32_t va) {
     return (va >= kContiguousBase && va < kContiguousBase + kPhysicalSize) ||
@@ -30,8 +57,18 @@ static bool InPhysical(uint32_t va) {
 }
 
 bool Init() {
+#ifdef __EMSCRIPTEN__
+    for (uint32_t t = 0; t < 256; t++) x86_xlate[t] = int32_t(kScratch - (t << 24));
+    for (const Place& p : kPlaces)
+        for (uint32_t t = p.guest >> 24; t < (p.guest + p.size - 1) / 0x1000000 + 1; t++)
+            x86_xlate[t] = int32_t(p.block - p.guest);
+    g_base = static_cast<uint8_t*>(std::aligned_alloc(0x10000, kBlockSize));
+    if (g_base) std::memset(g_base, 0, kBlockSize);
+#else
     const uint64_t size = 1ull << 32;
-#ifdef _WIN32
+#endif
+#ifdef __EMSCRIPTEN__
+#elif defined(_WIN32)
     HANDLE ram = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, kPhysicalSize, nullptr);
     // a fixed base keeps crash dumps comparable between runs
     for (uint64_t hint : {0x100000000ull, 0x200000000ull, 0x300000000ull, 0ull}) {
@@ -92,6 +129,12 @@ bool Commit(uint32_t va, uint32_t size) {
         LOGE("memory: commit %08X+%X failed", first, uint32_t(end - first));
         return false;
     }
+#elif defined(__EMSCRIPTEN__)
+    // the block is always backed; a region boundary inside the range would split it
+    if (Host(first) + (end - first) != Host(uint32_t(end - 1)) + 1) {
+        LOGE("memory: commit %08X+%X crosses a region", first, uint32_t(end - first));
+        return false;
+    }
 #else
     if (mprotect(g_base + first, size_t(end - first), PROT_READ | PROT_WRITE)) {
         LOGE("memory: commit %08X+%X failed", first, uint32_t(end - first));
@@ -109,6 +152,8 @@ void Decommit(uint32_t va, uint32_t size) {
     std::lock_guard<std::recursive_mutex> lock(g_lock);
 #ifdef _WIN32
     VirtualFree(g_base + first, size_t(end - first), MEM_DECOMMIT);
+#elif defined(__EMSCRIPTEN__)
+    std::memset(Host(first), 0, size_t(end - first));  // a later commit reads zeros, as after a real decommit
 #else
     madvise(g_base + first, size_t(end - first), MADV_DONTNEED);
     mprotect(g_base + first, size_t(end - first), PROT_NONE);
