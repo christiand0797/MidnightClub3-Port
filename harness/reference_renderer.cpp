@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "core/log.h"
+#include "gpu/fast_hash.h"
 #include "gpu/shaders.h"
 #include "gpu/texture.h"
 #include "gpu/vertex.h"
@@ -1058,6 +1059,43 @@ void Copy(const Surface& src, const Surface& dst, uint32_t count, uint32_t rects
     Written(b.data, b.End());
 }
 
+namespace {
+GpuSink g_gpu_sink = nullptr;
+std::map<uint32_t, uint32_t> g_gpu_targets;  // render target addresses the GPU has drawn -> width
+
+// a texture's level 0 as RGBA8 for the GPU, decoded again only when its guest bytes change
+struct GpuImage {
+    uint64_t guest_hash = 0;
+    std::vector<uint8_t> rgba;
+    uint32_t w = 0, h = 0;
+    uint64_t hash = 0;
+};
+std::map<uint32_t, GpuImage> g_gpu_images;
+
+const GpuImage* GpuImageFor(uint32_t header) {
+    TextureDesc d;
+    if (!header || !Describe(header, d) || Format(d.format).depth) return nullptr;
+    uint32_t size = d.cube ? FaceSize(d) : TotalSize(d);
+    const uint8_t* guest = static_cast<const uint8_t*>(kernel::HostPtr(d.data));
+    uint64_t gh = FastHash(guest, size, uint64_t(d.format) << 32 ^ uint64_t(d.width) << 16 ^ d.height);
+    GpuImage& gi = g_gpu_images[header];
+    if (gi.guest_hash == gh && !gi.rgba.empty()) return &gi;
+    g_images.clear();  // the decoded copy may be stale too
+    std::shared_ptr<Image> img = FindImage(header);
+    if (!img) return nullptr;
+    gi.guest_hash = gh;
+    gi.w = img->w, gi.h = img->h;
+    gi.rgba.resize(size_t(gi.w) * gi.h * 4);
+    const std::vector<Vec>& t = img->texels[0];
+    for (size_t i = 0; i < t.size() && i * 4 + 3 < gi.rgba.size(); i++)
+        for (int j = 0; j < 4; j++) gi.rgba[i * 4 + j] = uint8_t(std::lround(Sat(t[i][j]) * 255));
+    gi.hash = FastHash(gi.rgba.data(), gi.rgba.size(), 7);
+    return &gi;
+}
+}  // namespace
+
+void SetGpuSink(GpuSink sink) { g_gpu_sink = sink; }
+
 void Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) {
     uint32_t draw = g_draws++;
     Assembled as;
@@ -1153,6 +1191,64 @@ void Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const u
         for (int a : {kD0, kD1, kB0, kB1})
             for (int j = 0; j < 4; j++) o.attr[a][j] = Sat(o.attr[a][j]);
         if (!s.rs[kRsSpecularEnable]) o.attr[kD1] = o.attr[kB1] = V(0, 0, 0, 1);
+    }
+
+    if (g_gpu_sink) {
+        GpuDraw g;
+        g.rt = rt.ok ? s.rt.data : 0;
+        g.rt_w = gw, g.rt_h = gh;
+        g.zs = zs.ok && (s.rs[kRsZEnable] || s.rs[kRsStencilEnable]) ? s.zs.data : 0;
+        g.zscale = s.zscale;
+        int l = int(s.viewport.x), t = int(s.viewport.y), r = l + int(s.viewport.w), b = t + int(s.viewport.h);
+        if (s.scissor_count) {
+            l = std::max(l, int(s.scissors[0])), t = std::max(t, int(s.scissors[1]));
+            r = std::min(r, int(s.scissors[2])), b = std::min(b, int(s.scissors[3]));
+        }
+        g.left = std::max(l, 0), g.top = std::max(t, 0), g.right = std::min(r, int(gw)), g.bottom = std::min(b, int(gh));
+        std::vector<float> vf(size_t(as.vertex_count) * kVertexFloats, 0.f);
+        for (uint32_t vi = 0; vi < as.vertex_count; vi++) {
+            float* o = &vf[size_t(vi) * kVertexFloats];
+            const Shaded& v = verts[vi];
+            for (int j = 0; j < 4; j++) o[j] = v.pos[j];
+            for (int j = 0; j < 4; j++) o[4 + j] = v.attr[kD0][j], o[8 + j] = v.attr[kD1][j];
+            for (int tt = 0; tt < 4; tt++)
+                for (int j = 0; j < 4; j++) o[12 + tt * 4 + j] = v.attr[kT0 + tt][j];
+            o[28] = v.attr[kFog][0];
+        }
+        g.verts = vf.data();
+        g.vertex_count = as.vertex_count;
+        g.indices = as.indices.data();
+        g.index_count = uint32_t(as.indices.size());
+        g.blend = simple(kMBlendEnable), g.src = simple(kMSrcBlend), g.dst = simple(kMDestBlend), g.op = simple(kMBlendOp);
+        g.blend_color = simple(kMBlendColor), g.color_mask = simple(kMColorWriteEnable);
+        g.ztest = g.zs && s.rs[kRsZEnable], g.zwrite = g.ztest && simple(kMZWriteEnable), g.zfunc = simple(kMZFunc);
+        g.cull = s.rs[kRsCullMode], g.front = s.rs[kRsFrontFace];
+        g.atest = simple(kMAlphaTestEnable), g.afunc = simple(kMAlphaFunc), g.aref = simple(kMAlphaRef) & 0xFF;
+        g.alphakill = mat.key.alphakill, g.programmable = mat.key.programmable, g.flat = simple(kMShadeMode) == 0x1D00;
+        std::memcpy(g.ff, mat.key.ff, sizeof g.ff);
+        g.tfactor = s.rs[kRsTextureFactor], g.fog_color = s.rs[kRsFogColor];
+        if (g.rt) g_gpu_targets[g.rt] = gw;
+        for (int i = 0; i < 4; i++) {
+            if (!s.textures[size_t(i)] || !mat.info[i].kind) continue;
+            GpuTexture& gt = g.tex[i];
+            TextureDesc td;
+            if (Describe(s.textures[size_t(i)], td) && g_gpu_targets.count(td.data)) {
+                // rendered on the GPU earlier: its pixels live there, not in guest memory
+                gt.key = td.data, gt.w = td.width, gt.h = td.height, gt.target = 1;
+                gt.kind = mat.info[i].kind, gt.rect = mat.info[i].rect;
+                gt.address_u = mat.unit[i].address_u, gt.address_v = mat.unit[i].address_v;
+                gt.linear = mat.unit[i].mag >= 2 || mat.unit[i].min >= 2;
+                continue;
+            }
+            const GpuImage* gi = GpuImageFor(s.textures[size_t(i)]);
+            if (!gi) continue;
+            gt.key = s.textures[size_t(i)], gt.w = gi->w, gt.h = gi->h, gt.hash = gi->hash, gt.rgba = gi->rgba.data();
+            gt.kind = mat.info[i].kind, gt.rect = mat.info[i].rect;
+            gt.address_u = mat.unit[i].address_u, gt.address_v = mat.unit[i].address_v;
+            gt.linear = mat.unit[i].mag >= 2 || mat.unit[i].min >= 2;
+        }
+        g_gpu_sink(g);
+        return;
     }
 
     // raster and output state

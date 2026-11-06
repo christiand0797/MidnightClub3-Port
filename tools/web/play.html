@@ -150,6 +150,7 @@ async function start() {
       status('Running');
       if (gpuMode) MC3Gpu.attach(window.Module);
       requestAnimationFrame(frame);
+      if (document.hidden) wake.port2.postMessage(0);
       setInterval(pad, 16);
     },
     onAbort(what) { fail('The game stopped: ' + what); },
@@ -192,8 +193,21 @@ async function loadWasm() {
 // frames: the game copies each frame drawn into a buffer; web_frame() -> {seq, w, h, rgba ptr}
 const canvas = $('canvas'), ctx2d = canvas.getContext('2d');
 let lastSeq = -1, image = null, shown = 0, fpsAt = performance.now();
+// a hidden page gets no animation frames, but the game waits for the page each frame (and online play must not
+// stall): while hidden, a message loop runs the frames instead, at most every 16 ms
+const wake = new MessageChannel();
+let lastHidden = 0;
+wake.port1.onmessage = () => {
+  if (!document.hidden) return;
+  if (performance.now() - lastHidden >= 16) { lastHidden = performance.now(); tick(); }
+  wake.port2.postMessage(0);
+};
+document.addEventListener('visibilitychange', () => { if (document.hidden && started) wake.port2.postMessage(0); });
 function frame() {
   requestAnimationFrame(frame);
+  tick();
+}
+function tick() {
   if (gpuMode) {
     shown += MC3Gpu.frame();
     if (performance.now() - fpsAt > 1000) { status(`Running on WebGPU, ${shown} frames/s`); shown = 0; fpsAt = performance.now(); }

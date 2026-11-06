@@ -6,21 +6,28 @@
 //
 //   game threads --(gpu::Backend calls)--> GpuRecorder --(frame command buffer, shared memory)--> gpu.js --> WebGPU
 //
-// Two command buffers alternate by frame. Present publishes the frame's buffer and waits while the page is still
-// running the one before (at most one frame in flight). Commands are little-endian u32 words: op, word count of the
-// payload, payload. The recorder wraps the CPU stand in (harness/null_backend.cpp), which keeps the console-memory
-// effects (copies into guest memory, the optional CPU frames) until the WebGPU side does them.
+// Draws run the reference renderer's vertex stage on the CPU (harness/reference_renderer.cpp: vertex programs, fixed
+// function transform and lighting, fog) and hand the transformed triangles to the GPU, which rasterizes, samples,
+// combines the texture stages and blends. Textures go up decoded to RGBA8 when their contents change.
 //
-// This first slice records clears and presents only; draws, textures and shaders follow.
+// Two command buffers alternate by frame. Present publishes the frame's buffer and waits while the page is still
+// running the one before. Commands are u32 words: op, payload word count, payload:
+//   1 clear:   flags, color (ARGB), z (float bits), stencil, rt, zs, rt width, rt height, rect count, rects (4 x i32)
+//   2 present: front buffer (guest address), width, height
+//   3 texture: key, width, height, then width * height RGBA8 texels
+//   4 draw:    kDrawHeader words (see Draw), vertices (reference::kVertexFloats floats each), u32 indices
+// The recorder wraps the CPU stand in (harness/null_backend.cpp) for copies and the console-memory effects.
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <thread>
 #include <vector>
 
 #include "core/log.h"
 #include "gpu/backend.h"
+#include "reference_renderer.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -30,24 +37,27 @@
 
 namespace {
 
-enum Op : uint32_t {
-    kOpClear = 1,    // flags (D3DCLEAR), color (D3DCOLOR ARGB), z (float bits), stencil, rect count, rects (4 x i32 each)
-    kOpPresent = 2,  // width, height of the console back buffer
-};
-
-constexpr uint32_t kBufferWords = 1u << 20;  // 4 MiB per frame buffer
+enum Op : uint32_t { kOpClear = 1, kOpPresent = 2, kOpTexture = 3, kOpDraw = 4 };
+constexpr uint32_t kDrawHeader = 98;
+constexpr uint32_t kBufferWords = 8u << 20;  // 32 MiB per frame buffer
 
 // Shared with gpu.js; the layout is part of the protocol (web_gpu_ring returns its address)
 struct Ring {
     std::atomic<uint32_t> published{0};  // last frame whose buffer is complete
     std::atomic<uint32_t> consumed{0};   // last frame the page has run
     uint32_t words[2] = {0, 0};          // length of each buffer, in words
-    uint32_t overflow = 0;               // frames dropped for exceeding a buffer
+    uint32_t overflow = 0;               // frames cut short for exceeding a buffer
     uint32_t reserved[3] = {};
     uint32_t* buffers[2] = {nullptr, nullptr};
 };
 Ring g_ring;
 std::vector<uint32_t> g_store[2];
+
+uint32_t Bits(float f) {
+    uint32_t u;
+    std::memcpy(&u, &f, 4);
+    return u;
+}
 
 }  // namespace
 
@@ -57,6 +67,9 @@ namespace gpu {
 
 namespace {
 
+class GpuRecorder;
+GpuRecorder* g_recorder = nullptr;
+
 class GpuRecorder final : public Backend {
 public:
     explicit GpuRecorder(std::unique_ptr<Backend> inner) : inner_(std::move(inner)) {
@@ -64,6 +77,8 @@ public:
             g_store[i].assign(kBufferWords, 0);
             g_ring.buffers[i] = g_store[i].data();
         }
+        g_recorder = this;
+        reference::SetGpuSink(&Sink);
     }
 
     bool Init(uint32_t w, uint32_t h) override {
@@ -73,34 +88,34 @@ public:
     }
     void Clear(const State& s, uint32_t n, const uint8_t* rects, uint32_t flags, uint32_t color, float z,
                uint32_t stencil) override {
-        uint32_t zbits;
-        std::memcpy(&zbits, &z, 4);
-        std::vector<uint32_t> payload{flags, color, zbits, stencil, rects ? n : 0};
+        std::vector<uint32_t> p{flags, color, Bits(z), stencil, s.rt.data, s.zs.data, width_, height_, rects ? n : 0};
         if (rects)
             for (uint32_t i = 0; i < n * 4; i++) {
                 uint32_t v;
                 std::memcpy(&v, rects + i * 4, 4);
-                payload.push_back(v);
+                p.push_back(v);
             }
-        Put(kOpClear, payload.data(), uint32_t(payload.size()));
-        inner_->Clear(s, n, rects, flags, color, z, stencil);
+        Put(kOpClear, {{p.data(), uint32_t(p.size())}});
     }
     void Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) override {
-        inner_->Draw(s, prim, start, count, indices);
+        reference::Draw(s, prim, start, count, indices);  // its vertex stage, then Sink
     }
     void Copy(const Surface& src, const Surface& dst, uint32_t n, uint32_t rects, uint32_t points) override {
         inner_->Copy(src, dst, n, rects, points);
     }
     void Present(const Surface& front) override {
-        uint32_t size[2] = {width_, height_};
-        Put(kOpPresent, size, 2);
+        uint32_t p[3] = {front.data, width_, height_};
+        Put(kOpPresent, {{p, 3}});
         inner_->Present(front);
-        // publish this frame, then wait while the page still runs the previous one
         uint32_t frame = frame_ + 1;
         g_ring.words[frame & 1] = used_;
         g_ring.published.store(frame, std::memory_order_release);
         while (g_ring.consumed.load(std::memory_order_acquire) + 1 < frame)
             std::this_thread::sleep_for(std::chrono::microseconds(500));
+        if (overflowed_) {
+            uploaded_.clear();  // what this frame meant to upload may not have reached the page
+            g_ring.overflow++;
+        }
         frame_ = frame;
         used_ = 0;
         overflowed_ = false;
@@ -111,24 +126,59 @@ public:
     void SetGamma(const uint8_t* ramp) override { inner_->SetGamma(ramp); }
 
 private:
-    // append one command to the buffer of the frame being recorded (frame_ + 1)
-    void Put(uint32_t op, const uint32_t* payload, uint32_t words) {
-        uint32_t* buf = g_ring.buffers[(frame_ + 1) & 1];
+    struct Span {
+        const void* data;
+        uint32_t words;
+    };
+
+    // append one command made of spans to the buffer of the frame being recorded (frame_ + 1)
+    bool Put(uint32_t op, std::initializer_list<Span> spans) {
+        uint32_t words = 0;
+        for (const Span& s : spans) words += s.words;
         if (overflowed_ || used_ + 2 + words > kBufferWords) {
-            if (!overflowed_) g_ring.overflow++;
             overflowed_ = true;
-            return;
+            return false;
         }
+        uint32_t* buf = g_ring.buffers[(frame_ + 1) & 1];
         buf[used_++] = op;
         buf[used_++] = words;
-        std::memcpy(buf + used_, payload, words * 4);
-        used_ += words;
+        for (const Span& s : spans) {
+            std::memcpy(buf + used_, s.data, size_t(s.words) * 4);
+            used_ += s.words;
+        }
+        return true;
+    }
+
+    static void Sink(const reference::GpuDraw& d) { g_recorder->RecordDraw(d); }
+
+    void RecordDraw(const reference::GpuDraw& d) {
+        if (!d.rt || !d.index_count) return;
+        for (const reference::GpuTexture& t : d.tex) {
+            if (!t.key || !t.rgba || t.target) continue;
+            auto it = uploaded_.find(t.key);
+            if (it != uploaded_.end() && it->second == t.hash) continue;
+            uint32_t head[3] = {t.key, t.w, t.h};
+            if (Put(kOpTexture, {{head, 3}, {t.rgba, t.w * t.h}})) uploaded_[t.key] = t.hash;
+        }
+        uint32_t h[kDrawHeader] = {d.rt, d.rt_w, d.rt_h, d.zs, Bits(d.zscale), uint32_t(d.left), uint32_t(d.top),
+                                   uint32_t(d.right), uint32_t(d.bottom), d.vertex_count, d.index_count, d.blend, d.src,
+                                   d.dst, d.op, d.blend_color, d.color_mask, d.ztest, d.zwrite, d.zfunc, d.cull, d.front,
+                                   d.atest, d.afunc, d.aref, d.alphakill, d.programmable, d.flat, d.tfactor, d.fog_color};
+        std::memcpy(&h[30], d.ff, sizeof d.ff);  // 36 words
+        for (int i = 0; i < 4; i++) {
+            const reference::GpuTexture& t = d.tex[i];
+            uint32_t* o = &h[66 + i * 8];
+            o[0] = t.rgba || t.target ? t.key : 0, o[1] = t.w, o[2] = t.h, o[3] = t.kind, o[4] = t.rect, o[5] = t.address_u,
+            o[6] = t.address_v, o[7] = t.linear | t.target << 1;  // bit 1: a GPU render target, bound by address
+        }
+        Put(kOpDraw, {{h, kDrawHeader}, {d.verts, d.vertex_count * reference::kVertexFloats}, {d.indices, d.index_count}});
     }
 
     std::unique_ptr<Backend> inner_;
     uint32_t width_ = 640, height_ = 480;
     uint32_t frame_ = 0, used_ = 0;
     bool overflowed_ = false;
+    std::map<uint32_t, uint64_t> uploaded_;  // texture key -> hash of what the page has
 };
 
 }  // namespace

@@ -89,6 +89,16 @@ In priority order:
   then the F1 menu (ImGui draw lists through the same path). The game waits for the page each frame, so a hidden
   tab runs it at the browser's background rate.
 
+- Step 4, slice 2 (draws): the reference renderer's vertex stage runs on the CPU (vertex programs, fixed function
+  transform and lighting, fog) and hands transformed triangles to the page (`reference::SetGpuSink`), with textures
+  decoded to RGBA8 only when their guest bytes change and render targets sampled straight from their GPU textures.
+  `gpu.js` rasterizes into one texture per game render target with a WGSL port of `ShadeStages` (four fixed function
+  stages, alpha kill and test, specular, fog), pipelines cached by blend/depth/cull/mask, and shows the presented
+  target. A hidden page keeps running frames through a message loop. Verified: intro movies, title screen and attract
+  movie draw correctly at 22-31 frames/s (CPU picture: ~10). Known: 3D scenes (menu city) come out washed out white
+  although no texture is missing (fixed function path: blend/fog/depth mapping to compare draw by draw against the CPU
+  renderer); pixel shader combiners use a stand in (stage 0 texture x diffuse); `MC3Gpu.snapshot()` reads back black.
+
 ## How nfsu2-web is built (github.com/th0mk/nfsu2-web, read 5 Nov 2026)
 
 - wasi-sdk, not Emscripten: `wasm32-wasip1-threads`, `-O3 -msimd128 -mbulk-memory -mnontrapping-fptoint -mtail-call`,
