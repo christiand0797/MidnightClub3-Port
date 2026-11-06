@@ -35,7 +35,7 @@ test('actual HTTP/WS server contains malformed inputs, preserves room ownership 
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mc3-relay-security-'));
   const port = await unusedPort(), base = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, [path.join(__dirname, 'server.js')], { cwd: __dirname, windowsHide: true,
-    env: { ...process.env, RELAY_PORT: String(port), DATA_DIR: directory, JWT_SECRET: 'synthetic-transport-test-key-not-a-live-service-secret', NODE_ENV: 'production', CORS_ORIGIN: 'https://ui.example' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    env: { ...process.env, RELAY_PORT: String(port), RELAY_HOST: '127.0.0.1', DATA_DIR: directory, JWT_SECRET: 'synthetic-transport-test-key-not-a-live-service-secret', NODE_ENV: 'production', CORS_ORIGIN: 'https://ui.example', PUBLIC_ORIGIN: 'https://ui.example' }, stdio: ['ignore', 'pipe', 'pipe'] });
   const sockets = []; let logs = '';
   child.stdout.on('data', data => { logs = (logs + data.toString()).slice(-4096); });
   child.stderr.on('data', data => { logs = (logs + data.toString()).slice(-4096); });
@@ -53,6 +53,7 @@ test('actual HTTP/WS server contains malformed inputs, preserves room ownership 
   const json = async (route, body, token, method = 'POST') => fetch(base + route, { method,
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: JSON.stringify(body) });
   const response = await fetch(base + '/api/games');
+  assert.deepEqual(await (await fetch(base + '/healthz')).json(), { service: 'mc3-relay', protocol: 1, status: 'ok' });
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(response.headers.get('x-frame-options'), 'DENY');
   assert.equal(response.headers.has('x-powered-by'), false);
@@ -65,6 +66,9 @@ test('actual HTTP/WS server contains malformed inputs, preserves room ownership 
   assert.equal((await json('/api/register', { username: {}, password: 'fixture-password' })).status, 400);
   const registered = await json('/api/register', { username: 'transport_fixture_a', password: 'fixture-password-a' });
   assert.equal(registered.status, 201); const first = await registered.json();
+  const cookie = registered.headers.get('set-cookie').split(';')[0];
+  assert.equal((await fetch(base + '/api/cloud', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{bad json' })).status, 401);
+  assert.equal((await fetch(base + '/api/cloud', { method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://ui.example', Authorization: 'Bearer invalid' }, body: '{bad json' })).status, 401);
   const secondResponse = await json('/api/register', { username: 'transport_fixture_b', password: 'fixture-password-b' });
   assert.equal(secondResponse.status, 201); const second = await secondResponse.json();
   const open = async () => {
@@ -102,5 +106,14 @@ test('actual HTTP/WS server contains malformed inputs, preserves room ownership 
   assert.equal((await json('/api/saves', { slot: '1x', save_data: {} }, first.token)).status, 400);
   assert.equal((await json('/api/car-setups', { car_name: {}, setup_data: {} }, first.token)).status, 400);
   for (let i = 0; i < 2; i++) assert.equal((await fetch(base + '/api/career', { headers: { Authorization: 'Bearer ' + first.token } })).status, 200);
+  assert.equal((await json('/api/saves', { slot: 1, save_data: {} }, first.token)).status, 200);
+  const reported = await (await json('/api/saves/1/ack', {}, first.token)).json();
+  assert.equal(reported.client_reported_loaded, true); assert.equal(reported.native_ack, false); assert.equal(reported.verified_native_load, false);
+  const signedOut = once(player.ws, 'close');
+  assert.equal((await fetch(base + '/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://ui.example' }, body: '{}' })).status, 200);
+  assert.equal((await signedOut)[0], 1008);
+  assert.equal((await fetch(base + '/api/cloud', { headers: { Authorization: 'Bearer ' + first.token } })).status, 401);
+  assert.equal((await fetch(base + '/api/cloud', { headers: { Authorization: 'Bearer ' + second.token } })).status, 200);
+  assert.equal((await fetch(base + '/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: 'https://ui.example' }, body: '{}' })).status, 401);
   assert.equal(child.exitCode, null);
 });

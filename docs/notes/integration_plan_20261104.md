@@ -1,95 +1,89 @@
 # MC3 Network Menu + Native Save Import — Integration Plan
 
-This document is the concrete, address-level plan for connecting the native
-`mc3.exe` to the relay/proxy stack. All addresses are from the original USA Remix
-XBE (`0b3d81a02834e57864a601d473d5296cc0a2463e4b837373d91030f751fa51a3`),
-cited via generated `x86_recomp.N.cpp` instruction comments in
-`docs/notes/career_save_network_trace_20261104.md`. None of this requires
-launching mc3.exe; it is the exact hook list for when a native build is available.
+This records the original-game interfaces and proposed cloud bridge, with static
+evidence kept separate from adapter tests and native acceptance. Original-image
+addresses refer to USA Remix XBE SHA-256
+`0b3d81a02834e57864a601d473d5296cc0a2463e4b837373d91030f751fa51a3`.
+The detailed caller chains are in
+[career/save/network trace](career_save_network_trace_20261104.md).
 
-No C++ compiler is present on this host (no `cl.exe`, `g++`), so the host XNet
-layer (`runtime/xdk/xnet.cpp`) changes below are **syntax-reviewed only** — they
-cannot be compiled here. The proxy/relay stack (Python/Node) is fully tested
-(12/12 + 12/12 + 1/1).
+A C++ toolchain **is available on this host**. Root's native builds are recorded
+under `.local/continuation-20261104-r1/native-build-r2.log` and later numbered
+logs. Build success does not by itself prove native network/save/PBR behavior.
+The Python/Node results below describe the particular adapter tests reported by
+that workstream; they are separate from launching two original-game peers.
 
 ---
 
-## 1. Native save import (bug #11 remainder)
+## 1. Opaque cloud snapshot and original load boundary
 
-### What exists today (server side)
-- `POST /api/saves` — stores caller-supplied `save_data` (opaque JSON), sets
-  `native_ack = false`, returns `native_ack` in the response.
-- `POST /api/saves/:slot/ack` — sets `native_ack = true` and
-  `native_acked_at`. The native game (or stream proxy) calls this after
-  successfully importing a cloud save. HTTP 200 on `/api/saves` means DB write
-  only; `native_ack == true` means the game loaded it.
-- `GET /api/saves` / `GET /api/saves/:slot` — return `native_ack` so the browser
-  can show "loaded by game" vs "pending".
+### Current server and adapter facts
 
-### What mc3.exe must do (new native code)
+`/api/cloud` stores account-scoped opaque original files with canonical base64,
+SHA-256 and optimistic `base_revision`. This is distinct from legacy
+`/api/saves`, whose `save_data` is caller-supplied JSON. Neither response proves
+a game loaded the bytes.
 
-**Step A — Read the cloud save from the relay**
-The browser sends `load_save` over the stream WebSocket → stream proxy forwards
-as a UDP datagram to mc3.exe's bound game port (MC3P 8-byte header + JSON
-payload). mc3.exe's `xnet.cpp` `Recv()` already reads datagrams into guest
-buffers. The game must:
+The current `POST /api/saves/:slot/ack` handler accepts an authenticated client
+claim and writes `native_ack=true`. It has no original-loader observer, pinned
+snapshot digest, native process identity or challenge binding. Its value is
+therefore a **client-reported acknowledgment**, not evidence of native load
+acceptance. Likewise a proxy forwarding a `load_save` datagram establishes
+transport delivery only.
 
-1. Intercept `recvfrom`/`WSARecvFrom` on the game's UDP socket (already HLE'd by
-   `xnet.cpp`).
-2. Detect the `MC3P` magic (bytes 0–3) in the received datagram.
-3. Parse bytes 8+ as JSON: `{slot, save_name, save_data (base64), t}`.
-4. Base64-decode `save_data` → original save bytes.
+The host `MC3P` envelope belongs to the local opaque game-datagram tunnel. Its
+header length is a versioned adapter detail. An arbitrary JSON cloud-save
+command sent to an original gameplay UDP socket has no established original
+message decoder or save-import caller chain. Copying it into a guest receive
+buffer does not load a career.
 
-**Step B — Import into career memory**
-Using the traced original offsets
-(`docs/notes/career_save_network_trace_20261104.md`):
+### Source-backed file and loader boundaries
 
-| Item | Original offset | Size | Notes |
-|------|----------------|------|-------|
-| Career manager singleton | `[0x557F0C]` | 4-byte pointer | Runtime singleton |
-| Career data object | manager `+0x0C` | `0xCC8` bytes | |
-| Money (wallet) | career data `+0xACC` | int32 | Read `0x148A76`/`0x152746`, write `0x1527DE` |
-| Current city | career data `+0x50` | — | |
-| Owned car count | global `0x53F80C` | uint8, max 30 | |
-| Owned car selected | global `0x53F80D` | uint8 | |
-| Owned roster | profile `+0x504` count, `+0x505` selection, first CarCfg `+0x508` | stride `0x108` | CarCfg vtable `0x4483DC` |
-| CarCfg RideHeight | `+0x16`/`+0x17` | 2 bytes | per axle |
-| CarCfg TireWidth | `+0x18`/`+0x19` | 2 bytes | per axle |
-| CarCfg RimSize | `+0x1A`/`+0x1B` | 2 bytes | per axle |
-| CarCfg TireProfile | `+0x1C`/`+0x1D` | 2 bytes | per axle |
-| Dirty byte | manager `+0x20` | uint8 | Set when career data changes |
+The original save is a complete serialized profile/career image with additional
+tail data and a 20-byte signature; money/city/roster offsets describe **live
+objects**, not a complete interchangeable save representation.
 
-The native import must:
-- Write money to career data `+0xACC`.
-- Write city to career data `+0x50`.
-- Write owned cars into the roster (profile `+0x504` count, CarCfg stride
-  `0x108`, fields at `+0x16`/`+0x18`/`+0x1A`/`+0x1C` per axle).
-- Set the dirty byte at manager `+0x20` so the original save writer picks it up.
-- Set car `+0x5E = 0` for human-owned cars (AI writes 1).
+- Save preparation `0x1A550` copies the profile into a buffer, then calls
+  `0x22040 -> 0x193F0`. The outer writer emits the full ordered spans and
+  signature. `0x22040` then calls original buffered stream close `0x1A2630`.
+  Individual write/flush failures are not all checked by its success return.
+- Original read wrapper `0x22310 -> 0x19EC0` reads the complete spans, compares
+  the total consumed bytes to file length, and compares the stored 20-byte
+  signature to its calculation before returning success.
+- `0x19560` applies a successfully read profile to `0x53F308`, invokes the
+  original profile normalization, and passes the career blob through
+  `0x277E20`. Observing this successful path is stronger evidence than an HTTP
+  response or an echoed datagram.
+- `kernel::Shutdown` currently calls `std::_Exit`, so process exit alone does
+  not imply C stdio buffers/destructors were flushed. An exited process plus
+  stable file hashes identifies the collected bytes and a no-writer boundary;
+  it is not physical-disk durability or original signature acceptance.
 
-**Step C — Acknowledge via the relay**
-After the import succeeds, mc3.exe (or its stream proxy) calls:
-```
-POST /api/saves/:slot/ack  (Authorization: Bearer <token>)
-```
-This sets `native_ack = true` on the server. The browser's `sendLoadSave()`
-waits for the `load_save_ack` WebSocket message with `ok: true`, then shows
-"Game acknowledged save: <name>".
+Writing selected money/city/roster fields or a car's ownership byte would skip
+the original profile/career load logic, signature checks, registries and
+per-car sidecar lineage. Such writes are not the proposed cloud restore path.
 
-If the import fails (invalid save format, wrong slot, etc.), mc3.exe does **not**
-call `/ack`, and the browser shows an error after the 8s timeout.
+### Concrete bridge design and present implementation scope
 
-### Native code locations to add (when building mc3.exe)
-- `runtime/xdk/xnet.cpp`: In `Recv()`, after copying datagram bytes into guest
-  buffers, check for `MC3P` magic at bytes 0–3. If present, parse bytes 8+ as
-  JSON and enqueue a save-import work item on the game thread (do not block the
-  recv pump).
-- A new save-import module (e.g. `runtime/app/save_import.cpp`) that:
-  1. Parses the JSON payload.
-  2. Writes career fields using the offsets above.
-  3. Sets the dirty byte.
-  4. Calls `POST /api/saves/:slot/ack` via WinHTTP (or delegates to the stream
-     proxy, which already has HTTP to the relay).
+The new CPU reader `tools/multiplayer/cloud_snapshot.py` collects **explicitly
+selected** original save/metadata files and optional known preference files.
+It checks an actual process handle, executable path, creation identity and
+`--instance`, waits for that same process to exit, and maps its physical
+`hddN` to virtual `hdd`. Two stable file passes retain opaque bytes and hashes.
+Its output is an exclusive offline proposal, not an upload or restore.
+
+A future restore boundary can use the authenticated opaque snapshot, its exact
+revision/digests, an independently preserved local baseline and the selected
+closed installation/instance. Once the restored bytes have been installed and
+hash-checked, the **original** profile selection/load path determines whether
+the game accepts them. No restore writer or native-load observer is implemented
+by the reader. Original-loader acceptance remains a separate status with the
+exact snapshot digest and process/build context; a caller's `/ack` claim
+does not establish it.
+
+This preserves the original save format and normal loader behavior. Shared
+career reward/ownership policy is a separate feature, not an automatic merger
+of unrelated opaque careers.
 
 ---
 
@@ -142,8 +136,10 @@ them as opaque. This gives two independent peers discovery + unicast through the
 tunnel (verified 12/12 in `test_two_peer.py`).
 
 **Phase 2 — Message schema discovery (native RE)**
-Trace each branch of `sub_001AFBB0` / jump table `0x1AFD10` to determine field
-offsets and lengths for at least:
+The branches of `sub_001AFBB0` / jump table `0x1AFD10` return diagnostic
+names; they do not serialize payload fields or prove a message-type byte's wire
+offset. Actual send/receive caller chains remain the source for schemas. The
+names identify candidate concepts for further tracing:
 - `0x40` INPUT — steer, gas, brake, handbrake
 - `0x41` PLAYER / `0x42` PLAYER_AND_INPUT — position, rotation, health
 - `0x44` MCNET_PLAYER_CAR_CONFIG — CarCfg fields (ride height `+0x16`, tire
@@ -196,9 +192,9 @@ window title to contain "Midnight Club 3").
 
 | # | Task | What's needed |
 |---|------|---------------|
-| 1 | Build mc3.exe | Visual Studio with VC tools; `Build-MC3.ps1 -Jobs 8`. No compiler on this host. |
-| 2 | Native save import | xnet.cpp `MC3P` detection in `Recv()`; save-import module writing career `+0xACC`, `+0x50`, roster `+0x504`/stride `0x108`; dirty byte `+0x20`; `POST /api/saves/:slot/ack`. |
-| 3 | Network menu integration | Hook `MenuNetworkHostJoin` (`0x45BB44`/`0x16CC20`) to create/join games via relay; message schema discovery for `sub_001AFBB0` branches. |
+| 1 | Exact native candidate | Native builds exist; bind later acceptance to an exact source/runtime hash. |
+| 2 | Opaque snapshot/restore and load evidence | Closed selected instance, preserved baseline, opaque exact bytes; original `0x22310/0x19EC0 -> 0x19560` acceptance observed separately from client claims. |
+| 3 | Network menu integration | Hook `MenuNetworkHostJoin` (`0x45BB44`/`0x16CC20`) to create/join games via relay; message serializers/dispatchers traced from actual I/O callers. |
 | 4 | Remote actor | Car factory/remote controller chain; transform interpolation; collision authority. |
 | 5 | End-to-end test | Launch two `mc3.exe --instance N` instances; verify discovery + unicast + save load through the tunnel. |
 

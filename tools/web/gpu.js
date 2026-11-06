@@ -3,12 +3,14 @@
 //
 // Ring (web_gpu_ring(), u32 words): 0 published frame, 1 consumed frame, 2-3 words in buffer 0/1, 4 overflowed
 // frames, 5-7 reserved, 8-9 buffer 0/1 addresses. Commands: op, payload word count, payload.
-// Draws arrive as transformed triangles (screen x y, z, w, colours, four texture coordinates, fog); this side
-// rasterizes them into one texture per game render target, runs the fixed function texture stages in WGSL, alpha tests
-// and blends, then shows the target the game presents.
+// Draws take the local build's path: OP_SHADER brings each WGSL module the D3D12 generator wrote (gpu/shaders.cpp),
+// OP_IMAGE textures as gpu/texture.cpp decodes them, OP_DRAW2 the raw vertices, the vertex constants, DrawConstants
+// and the pipeline state of each draw (webgpu_backend.cpp DrawShared). The older OP_DRAW (RENDERER=reference) brings
+// transformed triangles that this side's stand in shader colours. One texture per game render target, one depth
+// texture per depth surface; the presented target is shown.
 'use strict';
 window.MC3Gpu = (() => {
-  const OP_CLEAR = 1, OP_PRESENT = 2, OP_TEXTURE = 3, OP_DRAW = 4, OP_COPY = 5;
+  const OP_CLEAR = 1, OP_PRESENT = 2, OP_TEXTURE = 3, OP_DRAW = 4, OP_COPY = 5, OP_SHADER = 6, OP_IMAGE = 7, OP_DRAW2 = 8;
   const DRAW_HEADER = 98, VERTEX_FLOATS = 32, UNIFORM_STRIDE = 512, MAX_DRAWS = 16384;
 
   const SHADER = /* wgsl */ `
@@ -174,7 +176,7 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     0x206: 'greater-equal', 0x207: 'always' };
   const ADDRESS = { 1: 'repeat', 2: 'mirror-repeat' };
 
-  let device, context, canvasFormat, M = null, ring = 0;
+  let device, context, canvasFormat, M = null, ring = 0, features = 0;
   let module, blitModule, layout, pipelineLayout, blitPipeline, white;
   const pipelines = new Map(), samplers = new Map(), textures = new Map(), targets = new Map(), groups = new Map();
   let vbuf = null, ibuf = null, ubuf = null, vcap = 0, icap = 0;
@@ -185,7 +187,10 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     if (!navigator.gpu) return 'This browser has no WebGPU';
     const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
     if (!adapter) return 'No WebGPU adapter';
-    device = await adapter.requestDevice();
+    const wanted = ['texture-compression-bc', 'float32-filterable'].filter(f => adapter.features.has(f));
+    device = await adapter.requestDevice({ requiredFeatures: wanted });
+    features = (device.features.has('texture-compression-bc') ? 1 : 0);
+    if (!(features & 1)) console.warn('webgpu: no texture-compression-bc: compressed textures will be missing');
     device.lost.then(info => console.warn('webgpu: device lost:', info.message));
     device.addEventListener?.('uncapturederror', e => console.warn('webgpu:', e.error.message));
     canvasFormat = navigator.gpu.getPreferredCanvasFormat();
@@ -206,10 +211,12 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     white = device.createTexture({ size: [1, 1], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     device.queue.writeTexture({ texture: white }, new Uint8Array([255, 255, 255, 255]), { bytesPerRow: 4 }, [1, 1]);
     ubuf = device.createBuffer({ size: UNIFORM_STRIDE * MAX_DRAWS, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    const ub = { type: 'uniform', hasDynamicOffset: true }, vf = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
+    layout0 = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: vf, buffer: ub }, { binding: 1, visibility: vf, buffer: ub }] });
     return null;
   }
 
-  function attach(module_) { M = module_; ring = M._web_gpu_ring() >>> 2; }
+  function attach(module_) { M = module_; ring = M._web_gpu_ring() >>> 2; M.HEAPU32[ring + 5] = features; }
 
   function sampler(u, v, linear) {
     const key = `${u}|${v}|${linear}`;
@@ -225,11 +232,10 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
   function target(key, w, h) {
     let t = targets.get(key);
     if (!t || t.w !== w || t.h !== h) {
-      t?.color.destroy(); t?.depth.destroy();
+      t?.color.destroy();
       t = { w, h,
-        color: device.createTexture({ size: [w, h], format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST }),
-        depth: device.createTexture({ size: [w, h], format: 'depth24plus-stencil8', usage: GPUTextureUsage.RENDER_ATTACHMENT }) };
-      t.view = t.color.createView(); t.dview = t.depth.createView();
+        color: device.createTexture({ size: [w, h], format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST }) };
+      t.view = t.color.createView();
       targets.set(key, t);
     }
     return t;
@@ -304,11 +310,187 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     return g;
   }
 
+
+  // ---- the local build's draw path (OP_SHADER, OP_IMAGE, OP_DRAW2; webgpu_backend.cpp DrawShared) ----
+  // DXGI vertex formats gpu/vertex.cpp hands over (D3DCOLOR's bytes arrive already turned to R G B A)
+  const VFORMAT = { 2: 'float32x4', 6: 'float32x3', 13: 'snorm16x4', 14: 'sint16x4', 16: 'float32x2', 28: 'unorm8x4',
+    37: 'snorm16x2', 38: 'sint16x2', 41: 'float32', 42: 'uint32', 49: 'unorm8x2', 58: 'snorm16', 59: 'sint16', 61: 'unorm8',
+    87: 'unorm8x4' };
+  // gpu::Host
+  const HOST = ['bgra8unorm', 'bc1-rgba-unorm', 'bc2-rgba-unorm', 'bc3-rgba-unorm', 'r32float', 'r32float'];
+  const STENCIL_OP = { 0: 'zero', 0x1E00: 'keep', 0x1E01: 'replace', 0x1E02: 'increment-clamp', 0x1E03: 'decrement-clamp',
+    0x150A: 'invert', 0x8507: 'increment-wrap', 0x8508: 'decrement-wrap' };
+  const CMP_INDEX = ['never', 'less', 'equal', 'less-equal', 'greater', 'not-equal', 'greater-equal', 'always'];
+  // the console tests texel OP r, WebGPU r OP texel: the same test with the sides swapped
+  const CMP_SWAPPED = ['never', 'greater', 'equal', 'greater-equal', 'less', 'not-equal', 'less-equal', 'always'];
+  const DRAW2_HEADER = 96;
+  const shaders = new Map(), images = new Map(), layouts1 = new Map(), pipelines2 = new Map(), groups1 = new Map();
+  const depths = new Map(), dummies = {};
+  let layout0 = null, group0 = null, group0Buf = null, ucap = 0, ugpu = null, acap = 0, agpu = null;
+  const decoder = new TextDecoder();
+  let dcBytes = 0;
+
+  const idOf = (lo, hi) => `${hi.toString(16)}:${lo.toString(16)}`;
+
+  function shaderModule(id, stage, text) {
+    const module = device.createShaderModule({ code: text, label: id });
+    module.getCompilationInfo().then(info => {
+      for (const m of info.messages) if (m.type === 'error') console.warn(`webgpu: shader ${id}: ${m.lineNum}:${m.linePos} ${m.message}`);
+    });
+    shaders.set(id, { module, stage });
+    stats.shaders = (stats.shaders || 0) + 1;
+  }
+
+  function image(u32, p) {
+    const id = idOf(u32[p], u32[p + 1]);
+    let w = u32[p + 2], h = u32[p + 3], depth = u32[p + 4];
+    const levels = u32[p + 5], kind = u32[p + 6], format = HOST[u32[p + 7]] || 'bgra8unorm';
+    const bc = format.startsWith('bc');
+    const W = bc ? Math.ceil(w / 4) * 4 : w, H = bc ? Math.ceil(h / 4) * 4 : h;
+    const layers = kind === 3 ? 6 : kind === 2 ? depth : 1;
+    let t = images.get(id);
+    if (!t || t.w !== W || t.h !== H || t.layers !== layers || t.levels !== levels || t.format !== format || t.kind !== kind) {
+      t?.tex.destroy();
+      t = { w: W, h: H, layers, levels, format, kind,
+        tex: device.createTexture({ size: [W, H, layers], format, mipLevelCount: levels, dimension: kind === 2 ? '3d' : '2d',
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST }) };
+      t.view = t.tex.createView({ dimension: kind === 3 ? 'cube' : kind === 2 ? '3d' : '2d' });
+      t.gen = (images.get(id)?.gen || 0) + 1;
+      images.set(id, t);
+    }
+    let at = p + 8;
+    const faces = kind === 3 ? 6 : 1;
+    for (let f = 0; f < faces; f++) {
+      for (let l = 0; l < levels; l++) {
+        const pitch = u32[at], bytes = u32[at + 1];
+        const lw = Math.max(1, W >> l), lh = Math.max(1, H >> l), ld = kind === 2 ? Math.max(1, depth >> l) : 1;
+        const cw = bc ? Math.ceil(lw / 4) * 4 : lw, ch = bc ? Math.ceil(lh / 4) * 4 : lh;
+        const rows = bc ? ch / 4 : ch;
+        if (bytes && pitch && bytes >= pitch * rows * ld)
+          device.queue.writeTexture({ texture: t.tex, mipLevel: l, origin: [0, 0, kind === 3 ? f : 0] },
+            new Uint8Array(u32.buffer, (at + 2) * 4, bytes).slice(), { bytesPerRow: pitch, rowsPerImage: rows }, [cw, ch, ld]);
+        at += 2 + Math.ceil(bytes / 4);
+      }
+    }
+    stats.textures++;
+  }
+
+  // what PixelWgsl declares for a stage: (kind, shadow) -> texture and sampler binding layouts
+  function stageKind(flags) {
+    const bound = flags & 1, kind = bound ? (flags >>> 4) & 15 : 1, shadow = bound ? (flags >>> 8) & 3 : 0;
+    return shadow ? 'depth' : kind === 2 ? '3d' : kind === 3 ? 'cube' : '2d';
+  }
+
+  function layout1(kinds) {
+    const key = kinds.join(',');
+    let l = layouts1.get(key);
+    if (!l) {
+      const entries = [];
+      kinds.forEach((k, i) => {
+        entries.push({ binding: i * 2, visibility: GPUShaderStage.FRAGMENT, texture: k === 'depth'
+          ? { sampleType: 'depth', viewDimension: '2d' } : { sampleType: 'float', viewDimension: k } });
+        entries.push({ binding: i * 2 + 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: k === 'depth' ? 'comparison' : 'filtering' } });
+      });
+      entries.push({ binding: 8, visibility: GPUShaderStage.FRAGMENT, texture: {} });
+      entries.push({ binding: 9, visibility: GPUShaderStage.FRAGMENT, texture: {} });
+      l = device.createBindGroupLayout({ entries });
+      layouts1.set(key, l);
+    }
+    return l;
+  }
+
+  function dummy(kind) {
+    if (dummies[kind]) return dummies[kind];
+    let tex;
+    if (kind === 'depth') tex = device.createTexture({ size: [1, 1], format: 'depth32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT });
+    else {
+      tex = device.createTexture({ size: [1, 1, kind === 'cube' ? 6 : 1], dimension: kind === '3d' ? '3d' : '2d', format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+      for (let f = 0; f < (kind === 'cube' ? 6 : 1); f++)
+        device.queue.writeTexture({ texture: tex, origin: [0, 0, f] }, new Uint8Array([255, 255, 255, 255]), { bytesPerRow: 4 }, [1, 1, 1]);
+    }
+    dummies[kind] = tex.createView({ dimension: kind === 'depth' ? '2d' : kind });
+    return dummies[kind];
+  }
+
+  function sampler2(word, shadow, levels) {
+    const key = `${word}|${shadow}|${levels > 1}`;
+    let s = samplers.get(key);
+    if (!s) {
+      const addr = a => a === 1 ? 'repeat' : a === 2 ? 'mirror-repeat' : 'clamp-to-edge';
+      const min = (word >>> 9) & 3, mag = (word >>> 11) & 3, mip = (word >>> 13) & 3, aniso = (word >>> 15) & 31, maxmip = (word >>> 20) & 15;
+      const d = { addressModeU: addr(word & 7), addressModeV: addr((word >>> 3) & 7), addressModeW: addr((word >>> 6) & 7),
+        minFilter: min >= 2 ? 'linear' : 'nearest', magFilter: mag >= 2 ? 'linear' : 'nearest', mipmapFilter: mip === 2 ? 'linear' : 'nearest',
+        lodMinClamp: maxmip, lodMaxClamp: mip ? 32 : maxmip };
+      if (d.lodMaxClamp < d.lodMinClamp) d.lodMaxClamp = d.lodMinClamp;
+      if (aniso > 1 && d.minFilter === 'linear' && d.magFilter === 'linear' && d.mipmapFilter === 'linear') d.maxAnisotropy = aniso;
+      if (shadow) { d.compare = CMP_SWAPPED[(word >>> 24) & 7]; d.maxAnisotropy = 1; }
+      s = device.createSampler(d);
+      samplers.set(key, s);
+    }
+    return s;
+  }
+
+  function depthTarget(key, w, h) {
+    const k = `${key}:${w}x${h}`;
+    let d = depths.get(k);
+    if (!d) {
+      d = { tex: device.createTexture({ size: [w, h], format: 'depth24plus-stencil8', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING }) };
+      d.view = d.tex.createView();
+      d.depthOnly = d.tex.createView({ aspect: 'depth-only' });
+      depths.set(k, d);
+      depths.set(`latest:${key}`, d);
+    }
+    return d;
+  }
+
+  function pipeline2(h, vs, ps, kinds) {
+    const fields = [h[0], h[1], h[2], h[3], h[4] ? 1 : 0, h[7] ? 1 : 0, ...h.subarray(10, 20), h[19] ? h.subarray(20, 26).join('.') : '',
+      h[26], h[27], h[28], h[35], h[36], (h[10] >>> 8) & 1 ? h[38] : '', ...h.subarray(41, 73)];
+    const key = fields.join(',') + '|' + kinds.join(',');
+    let p = pipelines2.get(key);
+    if (p) return p;
+    const regs = h[35], nb = h[36], topo = h[10] & 0xFF, strip = (h[10] >>> 8) & 1;
+    const buffers = [];
+    for (let b = 0; b < nb; b++) buffers.push({ arrayStride: h[57 + b], attributes: [] });
+    for (let r = 0; r < 16; r++) {
+      if (!((regs >>> r) & 1)) continue;
+      const e = h[41 + r], fmt = VFORMAT[e & 0xFF], b = (e >>> 8) & 0xFF;
+      if (!fmt || !buffers[b]) { console.warn(`webgpu: vertex format ${e & 0xFF} for v${r}`); continue; }
+      buffers[b].attributes.push({ shaderLocation: r, offset: e >>> 16, format: fmt });
+    }
+    const blend = h[11], src = h[12], dst = h[13], bop = h[14];
+    let blendState;
+    if (blend) {
+      const operation = BLEND_OP[bop] || 'add', minmax = operation === 'min' || operation === 'max';
+      const c = { operation, srcFactor: minmax ? 'one' : (FACTOR[src] || 'one'), dstFactor: minmax ? 'one' : (FACTOR[dst] || 'zero') };
+      blendState = { color: c, alpha: c };
+    }
+    const primitive = { topology: topo === 0 ? 'point-list' : topo === 1 ? (strip ? 'line-strip' : 'line-list') : (strip ? 'triangle-strip' : 'triangle-list') };
+    if (strip && h[37]) primitive.stripIndexFormat = h[38] ? 'uint16' : 'uint32';
+    if (h[26]) { primitive.cullMode = 'back'; primitive.frontFace = h[27] ? 'ccw' : 'cw'; }
+    const zen = h[16], sten = h[19];
+    const face = { compare: sten ? CMP_INDEX[(h[20] - 0x200) & 7] : 'always', failOp: STENCIL_OP[h[23]] || 'keep',
+      depthFailOp: STENCIL_OP[h[24]] || 'keep', passOp: STENCIL_OP[h[25]] || 'keep' };
+    const desc = {
+      layout: device.createPipelineLayout({ bindGroupLayouts: [layout0, layout1(kinds)] }),
+      vertex: { module: vs, entryPoint: 'main', buffers },
+      fragment: { module: ps, entryPoint: 'main', targets: [{ format: 'rgba8unorm', blend: blendState, writeMask: h[15] }] },
+      primitive,
+      depthStencil: { format: 'depth24plus-stencil8', depthWriteEnabled: !!(zen && h[17]),
+        depthCompare: zen ? (CMP_INDEX[(h[18] - 0x200) & 7] || 'always') : 'always',
+        stencilFront: face, stencilBack: face, stencilReadMask: sten ? h[21] : 0xFF, stencilWriteMask: sten ? h[22] : 0 },
+    };
+    try { p = device.createRenderPipeline(desc); } catch (e) { console.warn('webgpu: pipeline', e.message); p = null; }
+    pipelines2.set(key, p);
+    return p;
+  }
+
   // one frame's commands: uploads first (queued before the submit), then the passes
   function run(u32, start, count, present) {
     const f32 = new Float32Array(u32.buffer);
     const draws = [], clears = [];
-    let vfloats = 0, iwords = 0;
+    let vfloats = 0, iwords = 0, ubytes = 0, abytes = 0;
     // pass 1: textures, and the sizes of the vertex and index data
     for (let at = start, end = start + count; at + 2 <= end;) {
       const op = u32[at], n = u32[at + 1], p = at + 2;
@@ -317,26 +499,59 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
         texture(u32[p], w, h, new Uint8Array(u32.buffer, (p + 3) * 4, w * h * 4).slice());
       } else if (op === OP_DRAW) {
         vfloats += u32[p + 9] * VERTEX_FLOATS; iwords += u32[p + 10];
+      } else if (op === OP_SHADER) {
+        shaderModule(idOf(u32[p], u32[p + 1]), u32[p + 2], decoder.decode(new Uint8Array(u32.buffer, (p + 4) * 4, u32[p + 3]).slice()));
+      } else if (op === OP_IMAGE) {
+        image(u32, p);
+      } else if (op === OP_DRAW2) {
+        const fl = u32[p + 89], dcw = u32[p + 92];
+        dcBytes = dcw * 4;
+        if (fl & 1) ubytes += 3072;
+        if (fl & 2) ubytes += Math.ceil(dcBytes / 256) * 256;
+        let q = p + DRAW2_HEADER + (fl & 1 ? 768 : 0) + (fl & 2 ? dcw : 0);
+        const lens = [];
+        for (let b = 0, nb = u32[p + 36]; b <= nb; b++) { lens.push(u32[q]); abytes += Math.ceil(u32[q] / 4) * 4 + 4; q += 1 + Math.ceil(u32[q] / 4); }
+        stats.lastDraw2 = { n, fl, dcw, nb: u32[p + 36], lens, abytes, ubytes };
+        if (q !== p + n) stats.badDraw2 = { n, used: q - p, fl, dcw, nb: u32[p + 36], lens };
       }
       at = p + n;
     }
+    // the frame's uniform blocks (256 aligned) and vertex and index bytes, staged here and written before the submit
+    if (!ugpu || ubytes > ucap) {
+      ugpu?.destroy(); ucap = Math.max(ubytes, 1 << 20) * 2;
+      ugpu = device.createBuffer({ size: ucap, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+      group0 = null;
+    }
+    if (!agpu || abytes > acap) {
+      agpu?.destroy(); acap = Math.max(abytes, 4 << 20) * 2;
+      agpu = device.createBuffer({ size: acap, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
+    }
+    if (dcBytes && (!group0 || group0Buf !== ugpu)) {
+      group0 = device.createBindGroup({ layout: layout0, entries: [{ binding: 0, resource: { buffer: ugpu, size: 3072 } },
+        { binding: 1, resource: { buffer: ugpu, size: dcBytes } }] });
+      group0Buf = ugpu;
+    }
+    const ustage = new Uint8Array(Math.max(ubytes, 4)), astage = new Uint8Array(Math.max(abytes, 4));
+    let uat = 0, aat = 0, vcOff = 0, dcOff = 0;
     const verts = new Float32Array(vfloats), idx = new Uint32Array(iwords), uni = new ArrayBuffer(UNIFORM_STRIDE * MAX_DRAWS);
     const uniU = new Uint32Array(uni), uniF = new Float32Array(uni);
     let vat = 0, iat = 0, nd = 0;
     const encoder = device.createCommandEncoder();
-    let pass = null, passKey = 0;
-    const begin = (key, w, h, clearColor, clearDepth) => {
+    let pass = null, passKey = 0, passZs = 0;
+    const begin = (key, w, h, clearColor, clearDepth, zs = 0) => {
       pass?.end();
-      const t = target(key, w, h);
+      const t = target(key || `depthonly:${zs}`, w, h);
+      const d = depthTarget(zs || `own:${key}`, t.w, t.h);
       pass = encoder.beginRenderPass({
         colorAttachments: [{ view: t.view, loadOp: clearColor ? 'clear' : 'load', storeOp: 'store', clearValue: clearColor || [0, 0, 0, 0] }],
-        depthStencilAttachment: { view: t.dview, depthLoadOp: clearDepth ? 'clear' : 'load', depthStoreOp: 'store',
+        depthStencilAttachment: { view: d.view, depthLoadOp: clearDepth ? 'clear' : 'load', depthStoreOp: 'store',
           depthClearValue: clearDepth ? clearDepth.z : 1, stencilLoadOp: clearDepth ? 'clear' : 'load', stencilStoreOp: 'store',
           stencilClearValue: clearDepth ? clearDepth.s : 0 },
       });
       pass.setVertexBuffer(0, vbuf);
       pass.setIndexBuffer(ibuf, 'uint32');
       passKey = key;
+      passZs = zs;
       return t;
     };
     // the frame's vertex and index data go up before the passes run
@@ -352,13 +567,14 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
         const c = (flags & 0xF0) ? [((color >>> 16) & 255) / 255, ((color >>> 8) & 255) / 255, (color & 255) / 255, ((color >>> 24) & 255) / 255] : null;
         const zf = f32[p + 2];
         const d = (flags & 3) ? { z: Math.min(1, Math.max(0, zf > 1 ? 1 : zf)), s: u32[p + 3] & 255 } : null;
-        if (rt && (c || d)) begin(rt, w, h, c, d);
+        const zs = u32[p + 5];
+        if ((rt || zs) && (c || d)) begin(rt, w, h, c, d, d ? zs : (passKey === rt ? passZs : 0));
       } else if (op === OP_DRAW && nd < MAX_DRAWS) {
         const h = u32.subarray(p, p + DRAW_HEADER);
         const rt = h[0], tw = h[1], th = h[2], vc = h[9], ic = h[10];
         const left = h[5] | 0, top = h[6] | 0, right = h[7] | 0, bottom = h[8] | 0;
         if (rt && ic && right > left && bottom > top) {
-          if (!pass || passKey !== rt || targets.get(rt)?.w !== tw) begin(rt, tw, th, null, null);
+          if (!pass || passKey !== rt || passZs !== h[3] || targets.get(rt)?.w !== tw) begin(rt, tw, th, null, null, h[3]);
           // a texture that is the target being drawn cannot be sampled in the same pass: leave it unbound
           for (let i = 0; i < 4; i++) if ((h[66 + i * 8 + 7] & 2) && h[66 + i * 8] === rt) h[66 + i * 8] = 0;
           verts.set(f32.subarray(p + DRAW_HEADER, p + DRAW_HEADER + vc * VERTEX_FLOATS), vat);
@@ -385,6 +601,79 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
           vat += vc * VERTEX_FLOATS; iat += ic; nd++;
           stats.draws++;
         }
+      } else if (op === OP_DRAW2) {
+        const h = u32.subarray(p, p + DRAW2_HEADER);
+        const fl = h[89], dcw = h[92];
+        let q = p + DRAW2_HEADER;
+        if (fl & 1) { vcOff = uat; ustage.set(new Uint8Array(u32.buffer, q * 4, 3072), uat); uat += 3072; q += 768; }
+        if (fl & 2) { dcOff = uat; ustage.set(new Uint8Array(u32.buffer, q * 4, dcw * 4), uat); uat += Math.ceil(dcw * 4 / 256) * 256; q += dcw; }
+        const nb = h[36], vb = [];
+        for (let b = 0; b <= nb; b++) {
+          const bytes = u32[q];
+          vb.push({ off: aat, bytes });
+          astage.set(new Uint8Array(u32.buffer, (q + 1) * 4, bytes), aat);
+          aat += Math.ceil(bytes / 4) * 4 + 4;
+          q += 1 + Math.ceil(bytes / 4);
+        }
+        const vs = shaders.get(idOf(h[0], h[1])), ps = shaders.get(idOf(h[2], h[3]));
+        const rt = h[4], zs = h[7], tw = rt ? h[5] : h[8], th = rt ? h[6] : h[9];
+        const x0 = h[31], y0 = h[32], x1 = Math.min(h[33], tw), y1 = Math.min(h[34], th);
+        if (!vs || !ps) { stats.missing++; at = p + n; continue; }
+        if (x1 <= x0 || y1 <= y0) { at = p + n; continue; }
+        if (!pass || passKey !== rt || passZs !== zs || (rt && targets.get(rt)?.w !== tw)) begin(rt, tw, th, null, null, zs);
+        const kinds = [], views = [], samps = [];
+        let gkey = '';
+        for (let i = 0; i < 4; i++) {
+          const f = h[75 + i * 3], kind = stageKind(f);
+          kinds.push(kind);
+          let view = null, levels = 1;
+          if (f & 1) {
+            if (f & 2) {
+              const key = h[73 + i * 3];
+              if (key !== rt && key !== zs) {
+                if (kind === 'depth') view = depths.get(`latest:${key}`)?.depthOnly;
+                else view = targets.get(key)?.view;
+              }
+              gkey += `t${key}:${targets.get(key)?.w},`;
+            } else {
+              const t = images.get(idOf(h[73 + i * 3], h[74 + i * 3]));
+              if (t) { view = t.view; levels = t.levels; gkey += `${h[73 + i * 3]}.${h[74 + i * 3]}:${t.gen},`; }
+            }
+            if (!view) stats.missing++;
+          }
+          if (!view) { view = dummy(kind); gkey += `-${kind},`; }
+          views.push(view);
+          samps.push(sampler2(h[85 + i], kind === 'depth', levels));
+          gkey += `${h[85 + i]}|${levels > 1};`;
+        }
+        const pl = pipeline2(h, vs.module, ps.module, kinds);
+        if (!pl) { at = p + n; continue; }
+        let g1 = groups1.get(gkey + kinds.join());
+        if (!g1) {
+          const entries = [];
+          for (let i = 0; i < 4; i++) { entries.push({ binding: i * 2, resource: views[i] }); entries.push({ binding: i * 2 + 1, resource: samps[i] }); }
+          entries.push({ binding: 8, resource: dummy('2d') }, { binding: 9, resource: dummy('2d') });
+          g1 = device.createBindGroup({ layout: layout1(kinds), entries });
+          if (groups1.size > 8192) groups1.clear();
+          groups1.set(gkey + kinds.join(), g1);
+        }
+        pass.setPipeline(pl);
+        pass.setBindGroup(0, group0, [vcOff, dcOff]);
+        pass.setBindGroup(1, g1);
+        for (let b = 0; b < nb; b++) if (vb[b].bytes) pass.setVertexBuffer(b, agpu, vb[b].off, vb[b].bytes);
+        const bc = h[29];
+        pass.setBlendConstant([((bc >>> 16) & 255) / 255, ((bc >>> 8) & 255) / 255, (bc & 255) / 255, ((bc >>> 24) & 255) / 255]);
+        pass.setStencilReference(h[30]);
+        pass.setScissorRect(x0, y0, x1 - x0, y1 - y0);
+        if (h[37]) {
+          const ix = vb[nb];
+          pass.setIndexBuffer(agpu, h[38] ? 'uint16' : 'uint32', ix.off, ix.bytes);
+          pass.drawIndexed(h[37], 1, 0, h[40] | 0);
+        } else if (h[39]) {
+          pass.draw(h[39], 1, 0, 0);
+        }
+        stats.draws++;
+        if (!(h[75] & 1) || h[0]) stats.draws2 = (stats.draws2 || 0) + 1;
       } else if (op === OP_COPY) {
         // CopyRects between targets, outside any pass
         const src = targets.get(u32[p]);
@@ -413,6 +702,8 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     if (vat) device.queue.writeBuffer(vbuf, 0, verts, 0, vat);
     if (iat) device.queue.writeBuffer(ibuf, 0, idx, 0, iat);
     if (nd) device.queue.writeBuffer(ubuf, 0, uni, 0, nd * UNIFORM_STRIDE);
+    if (uat) device.queue.writeBuffer(ugpu, 0, ustage, 0, uat);
+    if (aat) device.queue.writeBuffer(agpu, 0, astage, 0, aat);
     if (present && front) {
       const t = targets.get(front);
       if (t) {

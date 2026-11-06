@@ -141,7 +141,7 @@ function connect() {
       show('data:image/png;base64,' + m.data);
     }
   };
-  ws.onclose = () => { overlay('Disconnected. Your career is saved. Reload to play again.'); ws = null; };
+  ws.onclose = () => { overlay('Disconnected. The host retains files written by the game; unsaved progress may be lost.'); ws = null; };
 }
 
 function overlay(text) { $('overlay').textContent = text; $('overlay').style.display = text ? 'flex' : 'none'; }

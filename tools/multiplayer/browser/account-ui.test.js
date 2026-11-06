@@ -14,9 +14,11 @@ function empty(id = A, revision = 0) { return { schema: 1, account_id: id, revis
 
 test('credential API origin is independent of untrusted relay query', () => {
   const endpoints = resolveEndpoints('https://game.example/play?relay=wss://evil.example/grab&stream=ws://evil.example:8766');
-  assert.equal(endpoints.api, 'https://game.example'); assert.equal(endpoints.relay, 'wss://game.example'); assert.equal(endpoints.stream, 'wss://game.example:8766');
-  assert.equal(resolveEndpoints('http://localhost:8080/?relay=ws://127.0.0.1:9000').relay, 'ws://127.0.0.1:9000/');
-  assert.equal(resolveEndpoints('https://game.example/?relay=wss://name:password@game.example').relay, 'wss://game.example');
+  assert.equal(endpoints.api, 'https://game.example'); assert.equal(endpoints.relay, 'wss://game.example/ws'); assert.equal(endpoints.stream, 'wss://game.example:8766');
+  assert.equal(resolveEndpoints('http://localhost:8080/?relay=ws://127.0.0.1:9000').relay, 'ws://127.0.0.1:9000/ws');
+  assert.equal(resolveEndpoints('https://game.example/?relay=wss://name:password@game.example').relay, 'wss://game.example/ws');
+  assert.equal(resolveEndpoints('http://localhost:8080/').relay, 'ws://localhost:8080/ws');
+  assert.equal(resolveEndpoints('https://game.example/?relay=wss://game.example/custom/ws').relay, 'wss://game.example/custom/ws');
   assert.equal(resolveEndpoints('file:///C:/MC3/index.html').api, 'http://localhost:8080');
 });
 test('portable save/config paths reject traversal, devices and alternate streams', () => {

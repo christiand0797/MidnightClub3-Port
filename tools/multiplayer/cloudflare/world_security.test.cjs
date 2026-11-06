@@ -72,3 +72,9 @@ test('room capacity and outgoing queues are bounded',async()=>{
   a.bufferedAmount=2*1024*1024;f.world.send(a,{type:'ping'});assert.equal(a.closed.at(-1).code,1009);
   const b=f.add();f.world.send(b,{text:'é'.repeat(70000)});assert.equal(b.closed.at(-1).code,1009);
 });
+test('close callback replies to the handshake and releases guest activity',async()=>{
+  const f=await fixture(),a=f.add({id:'a',userId:'guest-a',username:'a'});
+  f.world.social.player(a.info);assert.equal(f.world.social.guests.size,1);
+  await f.world.webSocketClose(a,1000);assert.equal(a.closed.at(-1).code,1000);assert.equal(f.world.social.guests.size,0);
+  const b=f.add();await f.world.webSocketClose(b,1006);assert.equal(b.closed.at(-1).code,1000);
+});

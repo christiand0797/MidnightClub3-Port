@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MC3 Browser Multiplayer — Stream Proxy (GPU-optimized)
+MC3 Browser Multiplayer — paired lossless PNG stream
 
 Captures the mc3.exe game window and streams frames to browser clients
 over WebSocket, while forwarding browser input back to the game via
@@ -9,30 +9,30 @@ UDP proxy + WebSocket relay.
 Architecture:
   Browser (WebSocket) ←→ StreamProxy (WebSocket + capture + HW encode) ←→ Game (UDP via proxy)
 
-Two capture/encode paths:
+Capture paths:
 
-1. Monitor capture (PNG, CPU, fallback): whole-monitor mss capture → PNG → base64 → JSON frame.
-   Existing behaviour; usable where ffmpeg / a hardware encoder is unavailable.
+1. Game-window capture (default): exact mc3.exe path/process/instance validation,
+   typed Win32 client-area capture → lossless PNG → base64 JSON frame.
 
-2. Game-window capture + HW encode (H.264, GPU): enumerate Win32 windows, match the MC3 game
-   window by title, capture its client rect, pipe raw BGR frames to an ffmpeg subprocess using a
-   hardware encoder (h264_nvenc / h264_qsv / h264_amf). H.264 Annex-B bytes are broadcast as
-   WebSocket *binary* frames — no base64, no per-frame JSON. The browser decodes via WebCodecs
-   VideoDecoder or a <video> element. This is the recommended path for hardware-accelerated,
-   game-window-only video in Firefox/Chromium.
+2. Explicit monitor sharing: mss capture → lossless PNG. A missing game window
+   never activates monitor capture. One bounded worker keeps capture off the
+   controller/WebSocket event loop. H.264 is unavailable until complete framed
+   access units and decoder configuration are implemented; no ffmpeg is started.
 
 Requirements:
     pip install mss websockets
-    ffmpeg (winget Gyan.FFmpeg) for the hardware-encode path
+    Pillow only when selecting a scale other than native 1.0
 """
 
 import asyncio
+import argparse
 import base64
 import ctypes
 import ctypes.wintypes
 import io
 import json
 import os
+from pathlib import Path
 import shutil
 import socket
 import struct
@@ -41,6 +41,8 @@ import sys
 import threading
 import time
 import websockets
+import capture_backend
+from stream_security import Pairing, Budget, decode_message, MAX_MESSAGE
 
 try:
     import mss
@@ -64,159 +66,36 @@ WS_VISIBLE = 0x10000000
 WS_CHILD = 0x40000000
 
 
-def _find_mc3_window(partial_title="Midnight Club 3"):
-    """Return (hwnd, width, height) for the first visible top-level window whose
-    title contains `partial_title` (case-insensitive), or None if not found."""
-    if not ctypes:
-        return None
-    user32 = ctypes.windll.user32
-    gdi32 = ctypes.windll.gdi32
-
-    found = {}
-
-    @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
-    def enum_proc(hwnd, lparam):
-        if not user32.IsWindowVisible(hwnd):
-            return True
-        length = user32.GetWindowTextLengthW(hwnd)
-        if length == 0:
-            return True
-        buf = ctypes.create_unicode_buffer(length + 1)
-        user32.GetWindowTextW(hwnd, buf, length + 1)
-        title = buf.value
-        if partial_title.lower() in title.lower():
-            style = user32.GetWindowLongW(hwnd, GWL_STYLE)
-            if style & WS_CHILD:
-                return True
-            rect = ctypes.wintypes.RECT()
-            if user32.GetClientRect(hwnd, ctypes.byref(rect)):
-                found['hwnd'] = hwnd
-                found['width'] = rect.right - rect.left
-                found['height'] = rect.bottom - rect.top
-                found['title'] = title
-                return False  # stop enumeration
-        return True
-
-    user32.EnumWindows(enum_proc, 0)
-    return found or None
+def _find_mc3_window(partial_title="Midnight Club 3", instance=0, executable=None, pid=None):
+    return capture_backend.find_window(partial_title, instance, expected_executable=executable, expected_pid=pid)
 
 
 class FFmpegEncoder:
-    """Subprocess ffmpeg that consumes raw BGR24 frames on stdin and emits
-    H.264 Annex-B bytes on stdout via a hardware encoder."""
+    """H.264 stays unavailable until complete access-unit framing exists.
 
+    Capture uses lossless PNG; no encoder/GPU subprocess is started. The old
+    blocking pipe reader could neither keep input responsive nor delimit frames.
+    """
     def __init__(self, width, height, fps, encoder_preference=None):
-        self.width = width
-        self.height = height
-        self.fps = fps
-        self.proc = None
-        self.encoder = None
-        self._start(encoder_preference)
-
-    def _detect_encoder(self, preference):
-        """Pick the first available hardware encoder; fall back to none."""
-        candidates = []
-        if preference:
-            candidates.append(preference)
-        # NVIDIA NVENC, Intel QuickSync, AMD AMF, then software libx264 last resort
-        candidates += ['h264_nvenc', 'h264_qsv', 'h264_amf', 'libx264']
-        ffmpeg = shutil.which('ffmpeg')
-        if not ffmpeg:
-            return None, None
-        for enc in candidates:
-            if enc == 'libx264':
-                return 'libx264', ffmpeg  # software fallback always acceptable
-            # Probe encoder availability
-            try:
-                out = subprocess.run(
-                    [ffmpeg, '-hide_banner', '-encoders'],
-                    capture_output=True, text=True, timeout=10
-                )
-                if enc in out.stdout:
-                    return enc, ffmpeg
-            except Exception:
-                pass
-        return None, None
-
-    def _start(self, preference):
-        self.encoder, ffmpeg = self._detect_encoder(preference)
-        if not self.encoder:
-            print(f"[stream] no ffmpeg hardware encoder available; HW-encode path disabled")
-            return
-        # Build ffmpeg command: raw BGR24 → H.264 Annex-B, low latency, tune for streaming
-        cmd = [
-            ffmpeg,
-            '-hide_banner', '-loglevel', 'error',
-            '-f', 'rawvideo',
-            '-pixel_format', 'bgr24',
-            '-video_size', f'{self.width}x{self.height}',
-            '-framerate', str(self.fps),
-            '-i', '-',
-            '-c:v', self.encoder,
-            '-preset', 'p1' if self.encoder == 'h264_nvenc' else 'medium',
-            '-tune', 'hq',
-            '-rc', 'vbr' if self.encoder == 'h264_nvenc' else '',
-            '-rc-lookahead', '0',
-            '-f', 'h264',
-            '-an',
-            '-',
-        ]
-        cmd = [c for c in cmd if c != '']
-        try:
-            self.proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-            )
-            print(f"[stream] ffmpeg HW encoder started: {self.encoder} "
-                  f"{self.width}x{self.height}@{self.fps}fps")
-        except Exception as e:
-            print(f"[stream] ffmpeg start failed: {e}")
-            self.proc = None
+        self.width, self.height, self.fps = width, height, fps
+        self.proc = self.encoder = None
+        self.disabled_reason = "Framed H.264 is unavailable; lossless PNG capture is active."
 
     def encode(self, bgr_bytes):
-        """Feed one raw BGR24 frame; return H.264 bytes available now (may be b'')."""
-        if not self.proc or not self.proc.stdin:
-            return b''
-        try:
-            self.proc.stdin.write(bgr_bytes)
-            self.proc.stdin.flush()
-        except (BrokenPipeError, OSError):
-            self.proc = None
-            return b''
-        # Drain available output without blocking
-        out = b''
-        try:
-            while True:
-                chunk = self.proc.stdout.read1(65536)
-                if not chunk:
-                    break
-                out += chunk
-        except (BlockingIOError, OSError):
-            pass
-        return out
+        return b''
 
     def close(self):
-        try:
-            if self.proc and self.proc.stdin:
-                self.proc.stdin.close()
-        except Exception:
-            pass
-        try:
-            if self.proc:
-                self.proc.terminate()
-                self.proc.wait(timeout=3)
-        except Exception:
-            try:
-                self.proc.kill()
-            except Exception:
-                pass
+        pass
 
 
 class StreamProxy:
     def __init__(self, relay_url, listen_port, fps=60, quality=75, scale=1.0,
-                 capture_monitor=1, capture_window=False, hw_encoder=None, instance=0):
+                 capture_monitor=1, capture_window=True, hw_encoder=None, instance=0,
+                 pairing_token=None, allowed_origins=None, allow_control=False,
+                 game_executable=None, game_pid=None):
+        self.pairing = Pairing(pairing_token or os.environ.get('MC3_STREAM_PAIRING_TOKEN', ''),
+                               allowed_origins or ['http://localhost:8080', 'http://127.0.0.1:8080'])
+        self.allow_control = allow_control
         self.relay_url = relay_url
         # Browser controllers go to the game's remote controller listener (runtime/core/remote_pad.h), never
         # into its network socket. Port 0 stays the host's own controller; browsers take ports 1-3.
@@ -231,6 +110,9 @@ class StreamProxy:
         self.capture_monitor = capture_monitor  # which monitor to capture (PNG path)
         self.capture_window = capture_window    # True → match MC3 window by title (HW path)
         self.hw_encoder = hw_encoder            # preferred ffmpeg encoder name
+        self.game_executable = (Path(game_executable) if game_executable is not None else
+                                Path(__file__).resolve().parents[3] / 'templates/game/out/native/mc3.exe')
+        self.game_pid = game_pid
 
         self.running = False
         self.ws_clients = set()                 # browser websocket clients
@@ -254,127 +136,70 @@ class StreamProxy:
 
     # ---- Screen capture ----
     def setup_capture(self):
+        self.stream_codec = 'png'
         if self.capture_window:
-            win = _find_mc3_window("Midnight Club 3")
-            if win:
-                self.enc_width = win['width']
-                self.enc_height = win['height']
-                self.mc3_hwnd = win['hwnd']
-                self.mc3_title = win.get('title', 'MC3')
-                print(f"[stream] window capture: '{self.mc3_title}' "
-                      f"{self.enc_width}x{self.enc_height} (hwnd={win['hwnd']})")
-                self._start_encoder()
-                return True
-            print("[stream] MC3 window not found by title; falling back to monitor capture")
-
+            try:
+                capture_backend.target_path(self.game_executable)
+                if not self.game_executable.is_file():
+                    raise capture_backend.CaptureError("Selected mc3.exe is unavailable.")
+                win = _find_mc3_window("Midnight Club 3", self.pad_addr[1] - PAD_PORT,
+                                       self.game_executable, self.game_pid)
+            except (OSError, capture_backend.CaptureError) as error:
+                print(f"[stream] game capture target rejected: {error}")
+                return False
+            if not win:
+                print("[stream] Selected MC3 process/window not found; capture was not started")
+                return False
+            self.enc_width, self.enc_height = win['width'], win['height']
+            self.mc3_hwnd, self.mc3_pid = win['hwnd'], win['pid']
+            self.mc3_creation = win['creation']
+            self.mc3_title = win.get('title', 'MC3')
+            print(f"[stream] window-only lossless PNG: '{self.mc3_title}' "
+                  f"{self.enc_width}x{self.enc_height}")
+            self._start_encoder()
+            return True
         if not HAVE_MSS:
-            print("[stream] ERROR: mss not installed. Run: pip install mss websockets")
+            print("[stream] ERROR: mss is needed for explicitly selected monitor capture")
             return False
         try:
-            self.sct = mss.mss()
-            monitors = self.sct.monitors
-            if self.capture_monitor < len(monitors):
-                self.monitor = monitors[self.capture_monitor]
-            else:
-                self.monitor = monitors[1] if len(monitors) > 1 else monitors[0]
-            print(f"[stream] capture monitor {self.capture_monitor}: "
-                  f"{self.monitor['width']}x{self.monitor['height']}")
+            # MSS GDI contexts are thread-local; capture opens its own context.
+            with mss.mss() as screen:
+                if not 0 <= self.capture_monitor < len(screen.monitors):
+                    raise capture_backend.CaptureError("The selected monitor does not exist.")
+                self.monitor = dict(screen.monitors[self.capture_monitor])
+            capture_backend.dimensions(self.monitor['width'], self.monitor['height'])
+            self.enc_width, self.enc_height = self.monitor['width'], self.monitor['height']
+            print(f"[stream] explicitly selected monitor {self.capture_monitor}: "
+                  f"{self.enc_width}x{self.enc_height}, lossless PNG")
             return True
-        except Exception as e:
-            print(f"[stream] capture setup failed: {e}")
+        except Exception as error:
+            print(f"[stream] capture setup failed: {error}")
             return False
 
     def _start_encoder(self):
-        if self.encoder:
-            return  # already running
-        self.encoder = FFmpegEncoder(self.enc_width, self.enc_height, self.fps, self.hw_encoder)
+        self.encoder = None
+        self.stream_codec = 'png'
+        if self.hw_encoder:
+            print("[stream] H.264 access-unit framing is unfinished; using CPU lossless PNG")
 
     def capture_frame(self):
-        """Capture one frame. Returns (kind, bytes) where kind is 'png' or 'h264', or None."""
+        """One complete PNG; all capture resources remain scoped to this worker."""
         if self.capture_window and hasattr(self, 'mc3_hwnd'):
             return self._capture_window_frame()
-        if not self.sct or not self.monitor:
+        if not self.monitor or not HAVE_MSS:
             return None
-        try:
-            img = self.sct.grab(self.monitor)
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            png_bytes = buf.getvalue()
-            if self.scale < 1.0:
-                from PIL import Image  # only needed for scaling
-                pil_img = Image.open(io.BytesIO(png_bytes))
-                new_w = max(320, int(pil_img.width * self.scale))
-                new_h = max(240, int(pil_img.height * self.scale))
-                pil_img = pil_img.resize((new_w, new_h), Image.LANCZOS)
-                buf2 = io.BytesIO()
-                pil_img.save(buf2, format="PNG")
-                png_bytes = buf2.getvalue()
-            return ('png', png_bytes)
-        except Exception as e:
-            print(f"[stream] capture error: {e}")
-            return None
+        with mss.mss() as screen:
+            image = screen.grab(self.monitor)
+            width, height = image.size
+            rgb = image.rgb
+        return ('png', capture_backend.encode_png(width, height, rgb, self.scale))
 
     def _capture_window_frame(self):
-        """Capture the MC3 client rect via PrintWindow, encode via ffmpeg HW encoder."""
-        try:
-            user32 = ctypes.windll.user32
-            gdi32 = ctypes.windll.gdi32
-
-            hwnd = self.mc3_hwnd
-            rect = ctypes.wintypes.RECT()
-            if not user32.GetClientRect(hwnd, ctypes.byref(rect)):
-                return None
-            width = rect.right - rect.left
-            height = rect.bottom - rect.top
-            if width <= 0 or height <= 0:
-                return None
-
-            hwnd_dc = user32.GetDC(hwnd)
-            mem_dc = gdi32.CreateCompatibleDC(hwnd_dc)
-            bmp = gdi32.CreateCompatibleBitmap(hwnd_dc, width, height)
-            gdi32.SelectObject(mem_dc, bmp)
-            # PrintWindow copies the window's client area (PW_CLIENTONLY = 1)
-            res = user32.PrintWindow(hwnd, mem_dc, 1)
-            if res == 0:
-                gdi32.DeleteObject(bmp)
-                gdi32.DeleteDC(mem_dc)
-                user32.ReleaseDC(hwnd, hwnd_dc)
-                return None
-
-            bmi = ctypes.wintypes.BITMAPINFO()
-            bmi.bmiHeader.biSize = ctypes.sizeof(ctypes.wintypes.BITMAPINFOHEADER)
-            bmi.bmiHeader.biWidth = width
-            bmi.bmiHeader.biHeight = -height  # top-down DIB
-            bmi.bmiHeader.biPlanes = 1
-            bmi.bmiHeader.biBitCount = 24
-            bmi.bmiHeader.biCompression = 0  # BI_RGB
-
-            buf_size = width * height * 3
-            buf = ctypes.create_string_buffer(buf_size)
-            gdi32.GetDIBits(mem_dc, bmp, 0, height, buf, ctypes.byref(bmi), 0)  # DIB_RGB_COLORS=0
-
-            gdi32.DeleteObject(bmp)
-            gdi32.DeleteDC(mem_dc)
-            user32.ReleaseDC(hwnd, hwnd_dc)
-
-            if res == 0:
-                return None
-
-            # Re-encode if dimensions changed (e.g. window resized)
-            if width != self.enc_width or height != self.enc_height:
-                self.enc_width, self.enc_height = width, height
-                self._start_encoder()
-
-            if not self.encoder or not self.encoder.proc:
-                return None
-
-            h264 = self.encoder.encode(buf.raw)
-            if h264:
-                return ('h264', h264)
-            return None
-        except Exception as e:
-            print(f"[stream] window capture error: {e}")
-            return None
+        width, height, rgb = capture_backend.capture_window(
+            self.mc3_hwnd, self.mc3_pid, expected_executable=self.game_executable,
+            expected_creation=self.mc3_creation)
+        self.enc_width, self.enc_height = width, height
+        return ('png', capture_backend.encode_png(width, height, rgb, self.scale))
 
     # ---- Network helpers ----
     def make_header(self, src_port, dst_port=0):
@@ -393,33 +218,60 @@ class StreamProxy:
 
     # ---- Browser WebSocket handler ----
     async def browser_handler(self, websocket):
-        """Handle browser client connections."""
-        print(f"[stream] browser connected: {websocket.remote_address}")
-        self.ws_clients.add(websocket)
+        """Pair before exposing frames or accepting input. Account credentials aren't accepted here."""
+        request = getattr(websocket, 'request', None)
+        headers = request.headers if request else getattr(websocket, 'request_headers', {})
         try:
+            origin = headers.get('Origin')
+        except Exception:
+            origin = None
+        if not self.pairing.admit(websocket, origin):
+            await websocket.close(1008, 'Host pairing unavailable')
+            return
+        try:
+            try:
+                raw = await asyncio.wait_for(websocket.recv(), timeout=3)
+            except asyncio.TimeoutError:
+                await websocket.close(1008, 'Host pairing timed out')
+                return
+            except websockets.exceptions.ConnectionClosed:
+                return
+            if not self.pairing.authenticate(websocket, raw):
+                await websocket.close(1008, 'Host pairing failed')
+                return
+            self.ws_clients.add(websocket)
+            budget = Budget()
             # Send welcome with stream params
             await websocket.send(json.dumps({
                 "type": "hello",
+                "paired": True,
+                "control": self.allow_control,
                 "fps": self.fps,
                 "quality": self.quality,
                 "scale": self.scale,
                 "width": self.enc_width or (self.monitor['width'] if self.monitor else 0),
                 "height": self.enc_height or (self.monitor['height'] if self.monitor else 0),
-                "codec": "h264" if (self.capture_window and self.encoder) else "png",
+                "codec": "png",  # H.264 stays unavailable until complete access-unit framing is verified.
             }))
 
             async for message in websocket:
+                size = len(message) if isinstance(message, bytes) else len(message.encode('utf-8'))
+                if not budget.take(size):
+                    await websocket.close(1008, 'Stream message limit reached')
+                    break
                 if isinstance(message, bytes):
                     self.forward_pad_report(websocket, message)
                 else:
                     try:
-                        msg = json.loads(message)
-                    except json.JSONDecodeError:
-                        continue
-                    await self.handle_browser_msg(websocket, msg)
+                        msg = decode_message(message)
+                        await self.handle_browser_msg(websocket, msg)
+                    except (ValueError, TypeError, OverflowError, RecursionError):
+                        await websocket.close(1008, 'Invalid stream message')
+                        break
         finally:
             self.release_pad(websocket)
             self.ws_clients.discard(websocket)
+            self.pairing.release(websocket)
             print(f"[stream] browser disconnected")
 
     async def handle_browser_msg(self, websocket, msg):
@@ -493,6 +345,8 @@ class StreamProxy:
 
     def forward_pad_report(self, websocket, data):
         """A browser's 24-byte controller report -> the game's remote controller port for that browser."""
+        if not self.allow_control or websocket not in self.pairing.paired:
+            return
         if len(data) != PAD_REPORT_SIZE or data[:4] != PAD_MAGIC:
             return
         port = self.pad_ports.get(websocket)
@@ -571,6 +425,23 @@ class StreamProxy:
             })
 
     # ---- Broadcast ----
+    async def _send_browser(self, ws, message):
+        if ws not in self.pairing.paired:
+            return
+        try:
+            await asyncio.wait_for(ws.send(message), 0.25)
+        except Exception:
+            # A stalled viewer loses its input lease and pairing slot immediately.
+            self.release_pad(ws)
+            self.ws_clients.discard(ws)
+            self.pairing.release(ws)
+            try:
+                await asyncio.wait_for(ws.close(1008, 'Stream client is too slow'), 0.5)
+            except Exception:
+                transport = getattr(ws, 'transport', None)
+                if transport:
+                    transport.abort()
+
     async def broadcast_frame(self, kind, frame_bytes):
         """Send a frame to all connected browser clients.
 
@@ -585,63 +456,49 @@ class StreamProxy:
                 "data": base64.b64encode(frame_bytes).decode('ascii'),
                 "ts": time.time() * 1000,
             })
-            dead = set()
-            for ws in list(self.ws_clients):
-                try:
-                    await ws.send(msg)
-                except Exception:
-                    dead.add(ws)
-            self.ws_clients -= dead
+            await asyncio.gather(*(self._send_browser(ws, msg) for ws in list(self.ws_clients)))
         elif kind == 'h264':
-            dead = set()
-            for ws in list(self.ws_clients):
-                try:
-                    await ws.send(frame_bytes)  # binary frame
-                except Exception:
-                    dead.add(ws)
-            self.ws_clients -= dead
+            await asyncio.gather(*(self._send_browser(ws, frame_bytes) for ws in list(self.ws_clients)))
 
     async def broadcast_to_browsers(self, msg_dict):
         """Send a JSON message to all browser clients."""
         if not self.ws_clients:
             return
         msg = json.dumps(msg_dict)
-        dead = set()
-        for ws in list(self.ws_clients):
-            try:
-                await ws.send(msg)
-            except Exception:
-                dead.add(ws)
-        self.ws_clients -= dead
+        await asyncio.gather(*(self._send_browser(ws, msg) for ws in list(self.ws_clients)))
 
     # ---- Loops ----
     async def capture_loop(self):
-        """Capture frames and broadcast at target FPS."""
-        mode = "window+HW" if self.capture_window else "monitor+PNG"
-        print(f"[stream] capture loop starting ({mode}, {self.fps} fps, "
-              f"scale={self.scale})")
-        while self.running:
-            now = time.time()
-            if now - self.last_frame_time < self.frame_interval:
-                await asyncio.sleep(0.002)
-                continue
-            if not self.ws_clients:
-                # No browsers — don't waste CPU capturing
-                await asyncio.sleep(0.1)
-                continue
-            result = self.capture_frame()
-            if result:
-                kind, frame_bytes = result
-                self.last_frame_time = now
-                self.frame_count += 1
-                self.bytes_sent += len(frame_bytes)
-                await self.broadcast_frame(kind, frame_bytes)
-            await asyncio.sleep(0)
+        """One bounded worker; slow capture cannot stall pad/WebSocket handling."""
+        mode = "window-only+PNG" if self.capture_window else "explicit-monitor+PNG"
+        print(f"[stream] capture loop starting ({mode}, target {self.fps} fps, scale={self.scale})")
+        worker = capture_backend.CaptureWorker(self.capture_frame)
+        next_error_log = 0.0
+        try:
+            while self.running:
+                now = time.monotonic()
+                completed = worker.poll()
+                if completed is not None:
+                    ok, result = completed
+                    if ok and result and self.ws_clients:
+                        kind, frame_bytes = result
+                        self.frame_count += 1
+                        self.bytes_sent += len(frame_bytes)
+                        await self.broadcast_frame(kind, frame_bytes)
+                    elif not ok and now >= next_error_log:
+                        print(f"[stream] capture failed: {result}")
+                        next_error_log = now + 5.0
+                if self.ws_clients and now - self.last_frame_time >= self.frame_interval:
+                    if worker.request():
+                        self.last_frame_time = now
+                await asyncio.sleep(0.002 if self.ws_clients else 0.1)
+        finally:
+            worker.close()
 
     async def udp_reader(self):
         """Read UDP packets from the game proxy and forward to relay."""
         loop = asyncio.get_event_loop()
-        print(f"[stream] UDP listener on 0.0.0.0:{self.listen_port}")
+        print(f"[stream] UDP listener on 127.0.0.1:{self.listen_port}")
         while self.running:
             try:
                 data, addr = await loop.sock_recvfrom(self.udp_sock, 65535)
@@ -678,26 +535,24 @@ class StreamProxy:
         if not self.setup_capture():
             return
 
-        # UDP socket for game <-> proxy
-        self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.udp_sock.setblocking(False)
-        self.udp_sock.bind(('0.0.0.0', self.listen_port))
-
-        # WebSocket server for browsers
+        # The native MC3R packet tunnel belongs to proxy.py. A stream host never
+        # forwards relay-selected UDP destinations or impersonates a game peer.
         ws_server = await websockets.serve(
             self.browser_handler,
-            "0.0.0.0",
+            "127.0.0.1",
             self.ws_port,
+            origins=list(self.pairing.origins),
+            max_size=MAX_MESSAGE, max_queue=4, write_limit=65536,
+            compression=None, open_timeout=3, ping_interval=20, ping_timeout=10, close_timeout=1,
         )
-        print(f"[stream] browser WebSocket on ws://0.0.0.0:{self.ws_port}")
-        print(f"[stream] UDP game port on 0.0.0.0:{self.listen_port}")
+        print(f"[stream] paired browser WebSocket on ws://127.0.0.1:{self.ws_port}")
 
-        await asyncio.gather(
-            self.capture_loop(),
-            self.udp_reader(),
-            self.relay_handler(),
-        )
+        try:
+            await self.capture_loop()
+        finally:
+            ws_server.close()
+            await ws_server.wait_closed()
+            self.stop()
 
     def stop(self):
         self.running = False
@@ -705,6 +560,9 @@ class StreamProxy:
             self.encoder.close()
         if self.udp_sock:
             self.udp_sock.close()
+        self.pad_sock.close()
+        if self.sct:
+            self.sct.close()
 
 
 def main():
@@ -714,20 +572,31 @@ def main():
     parser.add_argument('--fps', type=int, default=60, help='Target capture FPS')
     parser.add_argument('--quality', type=int, default=75, help='PNG quality hint 1-100')
     parser.add_argument('--scale', type=float, default=1.0, help='Render scale 0.25-1.0')
-    parser.add_argument('--monitor', type=int, default=1, help='Monitor index to capture (fallback path)')
+    parser.add_argument('--monitor', type=int, default=None, help='Explicitly share a whole monitor instead of only the game window')
     parser.add_argument('--capture-window', action='store_true',
                         help='Capture the MC3 game window by title instead of a monitor')
     parser.add_argument('--instance', type=int, default=0, help='game instance (mc3.exe --instance N)')
+    parser.add_argument('--game-executable', type=Path, default=None,
+                        help='Absolute existing mc3.exe to capture; default is the canonical workspace executable, never launched')
+    parser.add_argument('--game-pid', type=int, default=None,
+                        help='Optional existing native process ID to narrow the capture target')
+    parser.add_argument('--origin', action='append', help='Exact browser origin allowed to pair (repeatable)')
+    parser.add_argument('--allow-control', action='store_true', help='Let paired viewers use additional controller ports; off by default')
     parser.add_argument('--hw-encoder', default=None,
-                        help='Preferred ffmpeg encoder: h264_nvenc, h264_qsv, h264_amf')
+                        help='Reserved for framed H.264; currently uses CPU lossless PNG without starting ffmpeg')
     args = parser.parse_args()
 
-    if not HAVE_MSS and not args.capture_window:
+    if not (1 <= args.port <= 65534 and 0 <= args.instance <= 8 and 1 <= args.fps <= 60 and
+            10 <= args.quality <= 100 and 0.25 <= args.scale <= 1.0):
+        parser.error('Port, instance, FPS, quality or scale is outside its supported range')
+    if not HAVE_MSS and args.monitor is not None:
         print("[stream] ERROR: mss not installed. Run: pip install mss websockets")
         sys.exit(1)
 
     proxy = StreamProxy(args.relay, args.port, args.fps, args.quality, args.scale,
-                        args.monitor, args.capture_window, args.hw_encoder, args.instance)
+                        args.monitor or 1, args.monitor is None, args.hw_encoder, args.instance,
+                        allowed_origins=args.origin, allow_control=args.allow_control,
+                        game_executable=args.game_executable, game_pid=args.game_pid)
     try:
         asyncio.run(proxy.run())
     except KeyboardInterrupt:

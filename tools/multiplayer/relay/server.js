@@ -12,7 +12,9 @@
 //   RELAY_PORT        HTTP/WebSocket port (default 8080)
 //   JWT_SECRET        Secret for signing JWT tokens
 //   DATA_DIR          Path to data directory (default ./data)
-//   CORS_ORIGIN       Allowed CORS origin (default * for dev)
+//   RELAY_HOST        Bind address (default 127.0.0.1; public deployments use a TLS proxy)
+//   CORS_ORIGIN       Explicit additional browser origins (default same host only)
+//   PUBLIC_ORIGIN     Exact HTTPS browser origin when a TLS proxy changes the backend host/scheme
 //   MAX_PLAYERS       Default player cap for a new room (default 0: no cap)
 //   GAME_TIMEOUT      Seconds before idle game is removed (default 3600)
 //   MAIN_LOBBY        Name of the always-open lobby every game joins by default (default "Main Lobby")
@@ -22,18 +24,19 @@ const express = require('express');
 const http = require('http');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
-const { v4: uuidv4 } = require('uuid');
+const uuidv4 = crypto.randomUUID;
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
-const { installAccountRoutes, atomicJson } = require('./account_service');
+const { installAccountRoutes, atomicJson, readJson, activeSession } = require('./account_service');
 const { TransportSecurity, validateRoomRequest, originAllowed } = require('./transport_security');
 const { Social } = require('./social');
 
 // ---------- Configuration ----------
 const PORT = parseInt(process.env.RELAY_PORT, 10) || 8080;
+const HOST = process.env.RELAY_HOST || '127.0.0.1';
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const secretFile = path.join(DATA_DIR, '.session-secret');
@@ -42,6 +45,7 @@ if (!process.env.JWT_SECRET && !fs.existsSync(secretFile))
 const JWT_SECRET = process.env.JWT_SECRET || fs.readFileSync(secretFile, 'utf8').trim();
 if (JWT_SECRET.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters.');
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '';
+const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN || '';
 const MAX_PLAYERS = parseInt(process.env.MAX_PLAYERS, 10) || 0;
 const GAME_TIMEOUT = parseInt(process.env.GAME_TIMEOUT, 10) || 3600;
 const MAX_SAVE_BYTES = 16 * 1024 * 1024;  // matches account_service.js cloud file cap
@@ -57,7 +61,7 @@ function roomIdFor(name) {
   if (!key || key === MAIN_LOBBY_NAME.toLowerCase()) return MAIN_LOBBY_ID;
   return 'r-' + crypto.createHash('sha256').update(key).digest('hex').slice(0, 20);
 }
-const allowedOrigin = req => originAllowed(req.headers.origin, req.headers.host, CORS_ORIGIN, process.env.NODE_ENV !== 'production');
+const allowedOrigin = req => originAllowed(req.headers.origin, req.headers.host, [CORS_ORIGIN, PUBLIC_ORIGIN].filter(Boolean).join(','), process.env.NODE_ENV !== 'production');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -66,8 +70,9 @@ const DB_FILE = path.join(DATA_DIR, 'mc3_relay.json');
 
 function loadDB() {
   try {
-    const raw = fs.readFileSync(DB_FILE, 'utf8');
-    return JSON.parse(raw);
+    return readJson(DB_FILE, {
+      users: [], games: [], game_players: [], cloud_saves: [], career_progress: [], car_setups: [], match_history: []
+    }, 64 * 1024 * 1024);
   } catch (e) {
     if (e.code !== 'ENOENT') throw e; // Preserve an unreadable database instead of erasing accounts.
     return {
@@ -87,8 +92,10 @@ function saveDB(db) {
 }
 
 let db = loadDB();
-for (const table of ['users','games','game_players','cloud_saves','career_progress','car_setups','match_history'])
-  if (!Array.isArray(db[table])) db[table] = [];
+for (const table of ['users','games','game_players','cloud_saves','career_progress','car_setups','match_history']) {
+  if (db[table] === undefined) db[table] = [];
+  else if (!Array.isArray(db[table])) throw new Error('An account database table is invalid; existing data was preserved.');
+}
 
 // Helper: find by id
 function findById(table, id) {
@@ -123,9 +130,10 @@ function removeById(table, id) {
 // ---------- Hel ----------
 function now() { return Math.floor(Date.now() / 1000); }
 
-function makeToken(user) {
+function makeToken(user, sessionId) {
+  if (typeof sessionId !== 'string' || !/^[0-9a-f]{64}$/.test(sessionId)) throw new Error('A device session is required for access tokens.');
   return jwt.sign(
-    { id: user.id, username: user.username },
+    { id: user.id, username: user.username, sid: sessionId },
     JWT_SECRET,
     { expiresIn: '30m' }
   );
@@ -133,7 +141,10 @@ function makeToken(user) {
 
 function verifyToken(token) {
   try {
-    return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+    if (!payload || typeof payload !== 'object' || typeof payload.sid !== 'string' || !/^[0-9a-f]{64}$/.test(payload.sid)) return null;
+    const session = readJson(path.join(DATA_DIR, 'accounts-v1', 'devices', payload.sid + '.json'), null, 4096);
+    return activeSession(session, payload.id) ? payload : null;
   } catch (e) {
     return null;
   }
@@ -154,25 +165,29 @@ app.use((req, res, next) => {
 app.use(cors((req, callback) => callback(null, { origin: !!req.headers.origin && allowedOrigin(req), credentials: true })));
 
 // Rate limiting
+app.get('/healthz', (req, res) => res.json({ service: 'mc3-relay', protocol: 1, status: 'ok' }));
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: { error: 'Too many requests, please try again later.' }
 });
 app.use('/api/', apiLimiter);
-app.use('/api/cloud', express.json({ limit: '24mb' }));
-app.use(express.json({ limit: '10kb' }));
+const isCloudRequest = req => /^\/api\/cloud(?:\/|$)/.test(req.originalUrl.split('?')[0]);
+const ordinaryJson = express.json({ limit: '10kb' });
+app.use((req, res, next) => isCloudRequest(req) ? next() : ordinaryJson(req, res, next));
 app.use((error, req, res, next) => {
   if (error.type === 'entity.too.large') return res.status(413).json({ error: 'Request body exceeds its limit.' });
   if (error instanceof SyntaxError) return res.status(400).json({ error: 'Malformed JSON request.' });
   next(error);
 });
 app.use('/api/', (req, res, next) => {
+  if (isCloudRequest(req)) return next(); // Account identity/CSRF are checked before its larger body parser.
   if (['POST', 'PUT', 'PATCH'].includes(req.method) && (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)))
     return res.status(400).json({ error: 'A JSON object is required.' });
   next();
 });
-installAccountRoutes(app, { db, dataDirectory: DATA_DIR, persist: saveDB, makeToken, verifyToken });
+installAccountRoutes(app, { db, dataDirectory: DATA_DIR, persist: saveDB, makeToken, verifyToken,
+  onSessionRevoked: sid => { for (const [ws, client] of clients) if (client.sessionId === sid) security.reject(ws, { code: 1008, reason: 'Device session signed out' }); } });
 app.use(express.static(path.join(__dirname, '../browser'), { index: 'index.html' }));
 
 // Auth routes are supplied exclusively by account_service (salted scrypt + legacy migration).
@@ -402,9 +417,8 @@ app.post('/api/saves', authMiddleware, (req, res) => {
   }
 });
 
-// Native save-import acknowledgment. The native game (or its stream proxy) calls
-// this after it has successfully imported/loaded a cloud save, so HTTP 200 on
-// /api/saves no longer means "game loaded the save" — only native_ack == true does.
+// Client-reported import status only. This endpoint observes no original game loader,
+// snapshot digest or revision and therefore cannot certify that the game accepted a save.
 app.post('/api/saves/:slot/ack', authMiddleware, (req, res) => {
   const { slot } = req.params;
   const slotNum = typeof slot === 'string' && /^\d{1,2}$/.test(slot) ? Number(slot) : slot;
@@ -415,10 +429,13 @@ app.post('/api/saves/:slot/ack', authMiddleware, (req, res) => {
   if (!save) {
     return res.status(404).json({ error: 'Save not found.' });
   }
-  save.native_ack = true;
-  save.native_acked_at = now();
+  if (save.native_ack === true) save.legacy_reported_native_ack = true;
+  save.native_ack = false;
+  save.client_reported_loaded = true;
+  save.client_reported_at = now();
   saveDB(db);
-  res.json({ success: true, slot: slotNum, native_ack: true, native_acked_at: save.native_acked_at });
+  res.json({ success: true, slot: slotNum, native_ack: false, client_reported_loaded: true,
+    client_reported_at: save.client_reported_at, verified_native_load: false });
 });
 
 app.delete('/api/saves/:slot', authMiddleware, (req, res) => {
@@ -519,6 +536,9 @@ app.post('/api/car-setups', authMiddleware, (req, res) => {
 const server = http.createServer(app);
 server.headersTimeout = 15000;
 server.requestTimeout = 30000;
+server.timeout = 30000;
+server.keepAliveTimeout = 5000;
+server.maxConnections = 512;
 server.maxHeadersCount = 64;
 
 // WebSocket server for real-time relay
@@ -683,6 +703,7 @@ wss.on('connection', (ws, req) => {
 
   security.attach(ws, req, data => {
     try {
+      if (client && client.accessExpires && client.accessExpires <= now()) { security.reject(ws, { code: 1008, reason: 'Access token expired' }); return; }
       switch (data.type) {
         case 'auth': {
           const token = data.token;
@@ -699,6 +720,8 @@ wss.on('connection', (ws, req) => {
             type: data.clientType || 'browser',
             userId: payload.id,
             username: payload.username,
+            sessionId: payload.sid,
+            accessExpires: payload.exp,
             gameId: null,
             role: null,
             color: null
@@ -934,7 +957,7 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => {
     try { if (client && client.gameId) leaveGame(client, ws); }
     catch (_) { console.error('WS room cleanup failed.'); }
-    finally { clients.delete(ws); }
+    finally { if (client) social.forget(client); clients.delete(ws); }
   });
 
   ws.on('error', (e) => {
@@ -943,7 +966,10 @@ wss.on('connection', (ws, req) => {
 });
 
 // Heartbeat
-const interval = setInterval(() => security.tick(), 5000);
+const interval = setInterval(() => {
+  for (const [ws, client] of clients) if (client.accessExpires && client.accessExpires <= now()) security.reject(ws, { code: 1008, reason: 'Access token expired' });
+  security.tick();
+}, 5000);
 
 wss.on('close', () => clearInterval(interval));
 
@@ -955,10 +981,11 @@ app.use((error, req, res, next) => {
 });
 
 // ---------- Start ----------
-server.listen(PORT, () => {
-  console.log(`[relay] HTTP+WS listening on port ${PORT}`);
+server.listen(PORT, HOST, () => {
+  const address = server.address();
+  console.log(`[relay] HTTP+WS listening on ${address.address}:${address.port}`);
   console.log(`[relay] Data directory: ${DATA_DIR}`);
-  console.log(`[relay] JWT_SECRET: ${JWT_SECRET === 'change-me-in-production' ? 'WARNING: using default!' : 'set'}`);
+  console.log('[relay] Device-bound access sessions enabled.');
 });
 
 // Graceful shutdown

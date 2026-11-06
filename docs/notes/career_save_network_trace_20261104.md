@@ -74,6 +74,128 @@ permission to merge a different career. A future live snapshot would have to
 account for file-handle completion, all related files, the original save state
 machine and concurrent changes; none is established by an HTTP response.
 
+## Complete original save and load boundaries
+
+Further static tracing establishes an explicit normal close and the original
+load validation path. These facts refine the earlier buffer-only observation.
+They do not establish successful native cloud restoration.
+
+### Ordered file image and close
+
+`sub_00022040` (`x86_recomp.2.cpp`) opens/creates the selected storage item. For
+type argument 1, `0x2217F..0x22183` calls `sub_000193F0` with the prepared save
+object and original buffered stream. At `0x22188..0x2218A` it calls
+`sub_001A2630` on that stream before returning AL=1 at `0x22194`.
+
+The current-format writer emits these exact spans:
+
+| Disk offset | Length | Source | Original write call |
+| --- | --- | --- | --- |
+| `0x00000` | `4` | save object `+0x10` header | `0x19413` |
+| `0x00004` | `0x18340` | object `+0x14` profile | `0x19423` |
+| `0x18344` | `1` | object `+0x18354` progress byte | `0x19437` |
+| `0x18345` | `1` | object `+0x18355` city byte | `0x1944B` |
+| `0x18346` | `0x61A8` | object `+0x18358` career stream | `0x1945E` |
+| `0x1E4EE` | `1` | global `0x50A1C0` | `0x194A5` |
+| `0x1E4EF` | `2` | global `0x50A1C2` | `0x194B3` |
+| `0x1E4F1` | `1` | global `0x50A1C4` | `0x194C1` |
+| `0x1E4F2` | `0x4074` | global `0x50A1C6` | `0x194D2` |
+| `0x22566` | `0x14` | calculated signature | `0x1951C -> 0x273480` |
+
+The resulting length is `0x2257A` = **140,666 bytes**. The four global tail spans
+are not identified here as a general career schema or named subsystem. Every
+preceding span is also fed to `0x2733E0`; `0x273400` finishes the 20-byte signature,
+and `0x273480` appends it. The earlier saved-money parser neither interpreted
+these tail fields nor verified this signature.
+
+The storage backend table at original `0x4AD83C` contains create/open/read/write/
+seek/close at offsets `+0/+4/+8/+0xC/+0x10/+0x14`. The relevant entries are
+write `0x1A1DF0`, close `0x22650`; `+0x20` (optional additional flush callback)
+is zero in the pinned image. `0x1A1DF0 -> 0x17607` invokes kernel write through
+import slot `0x4476F0`, while `0x22650 -> 0x1335A` invokes close through
+`0x4476E4`. In the pinned original import table those slots identify
+`NtWriteFile` (236) and `NtClose` (187).
+
+`0x1A2630` flushes a pending original stream buffer with `0x1A20B0`, calls the
+backend close, invalidates its handle (`+4 = -1`) and clears its backend pointer.
+The original close path does **not** propagate its flush/close return status.
+`0x193F0` likewise does not branch on individual `0x1A24C0` write results and
+returns AL=1. Therefore the wrapper's success flag establishes its normal
+control flow, not that every byte or disk write succeeded.
+
+At the host, `NtClose` removes a shared handle (`objects.cpp:CloseHandle`). A
+`File` destructor calls `fclose` only when the final host reference disappears;
+duplicated/in-flight references can keep it alive. `kernel::Shutdown` in
+`boot.cpp` calls `std::_Exit(code)`, which bypasses C++ destructors and C stdio
+flushing. Thus process exit code 0 is a **no-longer-writing process boundary**,
+not an alternative flush acknowledgment. The specific normal save flow's
+explicit close and an intact subsequently read file are separate evidence.
+
+### Save state completion versus load application
+
+`sub_0001A9E0` dispatches the storage operation's state at object `+4`. The
+two-level jump tables `0x1AABC`/`0x1AAA0` map these states in the pinned XBE:
+
+| State | Branch/callee | Scope |
+| --- | --- | --- |
+| `0` | `0x1AA06 -> 0x84600` | Idle/default work. |
+| `0x0A` | `0x1AA15 -> 0x1A680` | Named/new save path. |
+| `0x64` | `0x1AA23 -> 0x1A550` | Prepared normal save path. |
+| `0x78` | `0x1AA31 -> 0x19660` | Existing-data write path. |
+| `0x82` | `0x1AA3F -> 0x19730` | Read/validation path. |
+| `0x8C` | `0x1AA4D` | Result 3, reset state. |
+
+When a nonzero previous state becomes zero, `0x1AA77..0x1AA86` copies the local
+result to object `+8`, marks `+0x0C = 1`, and optionally invokes callback
+`+0x334F8` with ECX from `+0x334F4` and that result. This is a concrete original
+operation-completion notification. The write path's result still inherits the
+unchecked-write limitation above.
+
+The original load wrapper `sub_00022310` calls `sub_00019EC0` at `0x223DE` for
+type 1, preserves AL in storage object `+0x4C`, closes the original stream via
+`0x1A2630`, then returns that AL. `0x19EC0` reads the complete ordered spans,
+accumulates their returned byte counts, and reads the stored 20-byte signature
+via `0x2734A0` at `0x1A157`. It obtains the calculated signature via `0x273400`,
+then compares total read bytes with file length from `0x1A2670` at
+`0x1A184..0x1A18A`. Finally `0x2734C0` compares all five signature dwords; a
+length or signature mismatch returns AL=0. The crypto/key provenance for every
+other console/title variant is not established by this trace.
+
+`sub_00019560` first requires this reader to succeed (`0x19599..0x195A0`). Only
+then does it copy the loaded profile into `0x53F308` at `0x195CB`, invoke
+`0x26BC60(1)`, load the career through `0x277E20` at `0x195F7`, invoke
+`0x26CBB0`, set its completion fields and return AL=1. The career loader calls
+the actual field loaders `0x2829E0` and `0x287F50`, updates progress values and
+normalizes other career state. This is why a few money/city/roster writes are
+not a substitute for loading an opaque original career.
+
+### Cloud bridge scope and verification
+
+The new CPU-only [snapshot reader](../../tools/multiplayer/CLOUD_SNAPSHOT.md)
+checks a live process's actual executable/creation identity and instance before
+waiting for that same process to exit. It then collects only explicit selected
+original save/metadata and optional known preference paths. Virtual `hdd` maps
+to the actual selected `hddN`; it never substitutes an older/default profile.
+Two bounded reads compare identity, size, metadata and SHA-256. Its request is
+compatible with `/api/cloud`, but no upload/restore operation occurs.
+
+The reader's receipt deliberately keeps `physical_disk_durability_proved`,
+`original_loader_accepted`, `uploaded` and `restored` false. Server storage,
+local restored-file hash checks and original `0x19560` successful application
+are different boundaries. A future native observation needs to bind the actual
+opened file/digest, selected instance, exact build and successful original load;
+an authenticated client claim to `/api/saves/:slot/ack` alone does not provide it.
+
+Twenty tests passed under Python 3.12, including opaque binary preservation,
+wrong/default instance isolation, actual Windows Python-child executable and
+creation/command-line checks, nonzero exit, reparse/hard-link rejection,
+changes between passes, exclusive output, quotas and the actual Node
+`validateSnapshot` export. Proof:
+`.local/cloud-snapshot-cpu-20261104-r1/result.json`, SHA-256
+`572598b29461b939c7c2de0749b3dae0e1126e2b977d79fa03615990758d34a5`.
+Only synthetic files and isolated Python children were used. No game was
+launched, actual player files collected, cloud server started, or career restored.
+
 ## Race completion and money observation
 
 A newly traced bounded path exists in `x86_recomp.50.cpp` and `.52.cpp`:

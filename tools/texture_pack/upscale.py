@@ -103,6 +103,8 @@ def file_digest(path):
 
 def pass_context(model):
     return {"model": model, "pipeline_sha256": file_digest(Path(__file__)),
+            "postprocessors": {name: file_digest(Path(__file__).with_name(name))
+                               for name in ("train_windows.py", "crisp_fonts.py")},
             "models": {suffix: file_digest(MODELS[model] / (model + suffix)) for suffix in (".param", ".bin")}}
 
 
@@ -154,7 +156,14 @@ def replacement_valid(path, source):
             w, h = original.size
         scale = target_scale(w, h)
         with Image.open(path) as replacement:
-            if not scale or replacement.format != "PNG" or replacement.size != (w * scale, h * scale):
+            if replacement.format != "PNG":
+                return False
+            # Postprocessed fonts intentionally use 8x instead of the model's 2x/4x.
+            # A mark alone is insufficient: verify original/pipeline identity and the PNG too.
+            if replacement.info.get("mc3") == "mc3-crisp-fonts-v1":
+                import crisp_fonts
+                return crisp_fonts.replacement_valid(path, source)
+            if not scale or replacement.size != (w * scale, h * scale):
                 return False
             replacement.verify()
         return True
@@ -232,6 +241,7 @@ def finish(job, upscaled, dst):
 
 
 def main():
+    sys.path.insert(0, str(Path(__file__).parent))  # -I excludes this folder; resume validation also imports a helper.
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--textures", type=Path, default=TEXTURES, help="the game's textures folder (dump/ and replace/)")
     ap.add_argument("--force", action="store_true", help="redo textures already in replace/")
@@ -322,11 +332,27 @@ def main():
             publish_json(passes, passes_path)
         print(f"  {min(i + args.batch, len(todo))}/{len(todo)}: {done} upscaled, {skipped} skipped, {failed} failed")
     print(f"done: {done} replacements written to {replace}")
-    sys.path.insert(0, str(Path(__file__).parent))  # -I leaves this folder off the path
+    if args.stop_file and args.stop_file.exists():
+        print(f"Stopped before postprocessing: remove {args.stop_file} to resume", flush=True)
+        return 2
+    # Only advance records for outputs proven intact immediately before our postprocessors.
+    # Never adopt an unrelated or changed file into a named model pass.
+    trusted = {name: record for name, record in current_pass["completed"].items()
+               if name in found and pass_complete(record, found[name], replace / name)} if current_pass else {}
     import train_windows  # the trains' windows: passengers behind glass instead of holes (train_windows.py)
     train_windows.main(["--textures", str(args.textures)])
     import crisp_fonts  # menu/HUD font sheets: smooth glyph edges instead of upscaled pixel stairs (crisp_fonts.py)
     crisp_fonts.main(["--textures", str(args.textures)])
+    if current_pass is not None:
+        for name, record in trusted.items():
+            if (record["source_sha256"] != file_digest(found[name])
+                    or not replacement_valid(replace / name, found[name])):
+                continue
+            final_digest = file_digest(replace / name)
+            if final_digest != record["output_sha256"]:
+                record.setdefault("model_output_sha256", record["output_sha256"])
+                record["output_sha256"] = final_digest
+        publish_json(passes, passes_path)
     return 1 if failed else 0
 
 

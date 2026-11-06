@@ -264,6 +264,11 @@ if (location.protocol === 'http:' && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(
   }
   .game-item .game-id { color: #00d4ff; font-weight: 800; font-size: 0.95rem; letter-spacing: 1px; }
   .game-item .game-info { color: #8897b0; font-size: 0.8rem; }
+  .game-item .game-host { color: #8897b0; font-size: 0.75rem; margin-top: 4px; }
+  /* the creator's badge, shown beside their name wherever the page shows it */
+  .badge-creator { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; vertical-align: middle;
+    font-size: 0.68rem; font-weight: 800; font-style: normal; letter-spacing: 0.08em; line-height: 1.5;
+    color: #1a1200; background: linear-gradient(90deg, #ffd34d, #ff9f1c); box-shadow: 0 0 8px rgba(255, 190, 60, 0.55); }
   .game-item .players {
     display: flex;
     gap: 5px;
@@ -614,6 +619,8 @@ if (location.protocol === 'http:' && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(
 <div id="notif" role="status" aria-live="polite"></div>
 
 <script src="capabilities.js"></script>
+<script src="stream-client.js"></script>
+<script src="relay-client.js"></script>
 <script src="account-ui.js"></script>
 <script>
 /* ---------------- Config ---------------- */
@@ -622,16 +629,17 @@ const ACCOUNT_ENDPOINTS = MC3Account.resolveEndpoints(window.location.href);
 const RELAY_URL = ACCOUNT_ENDPOINTS.relay;
 const STREAM_URL = ACCOUNT_ENDPOINTS.stream;
 const API_URL = ACCOUNT_ENDPOINTS.api;
+const STREAM_PAIRING = MC3Stream.consumePairing(window.location.href, url => history.replaceState(null, '', url));
 let accountUI = null;
 
 /* ---------------- State ---------------- */
-let relayWs = null;
-let streamWs = null;
 let myId = null;
 let myUsername = null;
 let myToken = null;
 let myColor = null;
+let myRole = null;
 let currentGameId = null;
+let relayResumeRoom = null;
 let relayConnected = false;
 let streamConnected = false;
 let authChecked = false;
@@ -645,9 +653,6 @@ const GAMEPAD_POLL_MS = 16;
 let lastFrameTs = 0;
 let frameCount = 0;
 let fpsLastSecond = Date.now();
-
-// Pending cloud-save load awaiting stream_proxy acknowledgment.
-let pendingLoadSave = null; // { resolve, reject, slot, save_name }
 
 /* ---------------- Elements ---------------- */
 const gameScreen = document.getElementById('gameScreen');
@@ -694,9 +699,17 @@ function setGame(ok, text) {
   if (gameText) gameText.textContent = text;
 }
 
-function setAuth(authed, username) {
+function badgeEl(badge) {
+  if (badge !== 'creator') return null;
+  const span = document.createElement('span'); span.className = 'badge-creator'; span.textContent = 'DEV · CREATOR';
+  span.title = 'Creator of the Midnight Club 3 port';
+  return span;
+}
+
+function setAuth(authed, username, badge = null) {
   indAuth.className = `indicator ${authed ? 'online' : 'offline'}`;
   userText.textContent = authed ? username : 'not logged in';
+  const b = authed && badgeEl(badge); if (b) userText.appendChild(b);
 }
 
 function showScreen(screenId) {
@@ -726,85 +739,67 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
 }
 
 /* ---------------- Relay connection ---------------- */
-function connectRelay() {
-  relayWs = new WebSocket(RELAY_URL);
-  relayWs.binaryType = 'arraybuffer';
-
-  relayWs.onopen = () => {
+const relayClient = new MC3Relay.Client({
+  url: RELAY_URL,
+  onConnecting() { setRelay(false, 'connecting…'); btnCreate.disabled = btnRefresh.disabled = true; },
+  onReady(user) {
+    if (!accountUI || !accountUI.client.session || user.id !== accountUI.client.session.user.id) return;
     setRelay(true, 'connected');
+    btnCreate.disabled = btnRefresh.disabled = false;
     addChat('Connected to relay server', 'system');
-    btnCreate.disabled = false;
-    btnRefresh.disabled = false;
-    if (myToken) {
-      relayWs.send(JSON.stringify({ type: 'auth', token: myToken }));
-    }
-  };
-
-  relayWs.onclose = () => {
+    setAuth(true, accountUI.client.session.user.username, accountUI.client.session.user.badge);
+    requestList();
+    if (relayResumeRoom) relayClient.send({ type: 'join_game', gameId: relayResumeRoom });
+  },
+  onDisconnect(event) {
+    relayResumeRoom = currentGameId || relayResumeRoom;
+    currentGameId = null; myRole = myColor = null;
+    releaseBrowserInput(); streamSession.disconnect();
     setRelay(false, 'disconnected');
-    relayConnected = false;
-    btnCreate.disabled = true;
-    btnRefresh.disabled = true;
-    setTimeout(() => { if (myToken) connectRelay(); }, 3000);
-  };
+    btnCreate.disabled = btnRefresh.disabled = true;
+    if (event.code === 1008 && event.reason === 'Access token expired' && accountUI) {
+      accountUI.client.refresh().catch(error => showNotif(error.message, 'error'));
+    } else if ([1008, 1009, 4008, 4009].includes(event.code)) showNotif('Relay connection refused or invalid. Sign in again or check the relay address.', 'error');
+  },
+  onMessage: handleRelayMsg
+});
 
-  relayWs.onmessage = (event) => {
-    if (typeof event.data === 'string') {
-      const msg = JSON.parse(event.data);
-      handleRelayMsg(msg);
-    }
-  };
-
-  relayWs.onerror = () => {
-    setRelay(false, 'error');
-  };
+function connectRelay() {
+  relayClient.setSession(accountUI && accountUI.client.session);
 }
 
 function handleRelayMsg(msg) {
+  if (!accountUI || !accountUI.client.session || !relayClient.ready) return;
   switch (msg.type) {
-    case 'auth_ok':
-      myId = msg.user.id;
-      myUsername = msg.user.username;
-      if (!accountUI || !accountUI.client.session || msg.user.id !== accountUI.client.session.user.id) break;
-      setAuth(true, myUsername);
-      showScreen('mainMenu');
-      loadCareer();
-      loadSaves();
-      break;
-    case 'joined':
-      myId = msg.id || myId;
+    case 'room_joined':
       myRole = msg.role;
       myColor = msg.color;
       currentGameId = msg.gameId;
-      addChat(`Joined game #${currentGameId} (${myRole})`, 'system');
-      showScreen('mainMenu');
-      connectStream();
-      break;
-    case 'created':
-      myId = msg.id;
-      myRole = msg.role;
-      myColor = msg.color;
-      currentGameId = msg.gameId;
-      addChat(`Created game #${currentGameId} as host`, 'system');
+      relayResumeRoom = null;
+      addChat(`Joined ${msg.name} (${myRole})`, 'system');
       showScreen('mainMenu');
       connectStream();
       break;
     case 'gameList':
       renderGames(msg.games);
       break;
-    case 'playerJoined':
-      addChat(`${msg.name} joined`, 'system');
+    case 'player_joined':
+      addChat(' joined', 'system', { name: msg.username, badge: msg.badge });
       break;
-    case 'playerLeft':
-      addChat(`${msg.name} left`, 'system');
+    case 'player_left':
+      addChat(`${msg.username} left`, 'system');
       break;
     case 'chat':
-      addChat(`${msg.from}: ${msg.text}`, 'other');
+      addChat(`: ${msg.text}`, 'other', { name: msg.from, badge: msg.fromBadge });
       break;
-    case 'gameStarted':
+    case 'game_started':
       addChat('Game started!', 'system');
       break;
+    case 'host_transferred':
+      addChat(' is now the room host', 'system', { name: msg.newHost || msg.username, badge: msg.newHostBadge });
+      break;
     case 'error':
+      relayResumeRoom = null;
       addChat(`Error: ${msg.error}`, 'system');
       break;
   }
@@ -820,87 +815,103 @@ function renderGames(games) {
   for (const game of list) {
     const count = Number.isSafeInteger(game.player_count) ? game.player_count : 0;
     const maximum = Number.isSafeInteger(game.max_players) ? game.max_players : 0;
-    const available = maximum > count && game.status !== 'playing';
+    const open = maximum === 0; // Hosted rooms as well as the Main Lobby can be uncapped.
+    const available = (open || maximum > count) && game.status !== 'playing';
     const item = document.createElement('button'); item.type = 'button'; item.className = 'game-item'; item.disabled = !available;
     const top = document.createElement('div'); top.className = 'gi-top';
-    const id = document.createElement('div'); id.className = 'game-id'; id.textContent = '#' + String(game.id ?? '').slice(0, 128);
+    const id = document.createElement('div'); id.className = 'game-id'; id.textContent = String(game.name || game.id || '').slice(0, 128);
     const info = document.createElement('div'); info.className = 'game-info';
-    info.textContent = count + '/' + maximum + ' players' + (game.status === 'playing' ? ' · LIVE' : '');
+    info.textContent = (open ? count + ' online · No room cap' : count + '/' + maximum + ' players') + (game.status === 'playing' ? ' · LIVE' : '');
     top.append(id, info); item.appendChild(top);
+    const hostBadge = badgeEl(game.host_badge);
+    if (hostBadge) {
+      const host = document.createElement('div'); host.className = 'game-host';
+      host.textContent = 'Host ' + String(game.host_username || '').slice(0, 40); host.appendChild(hostBadge); item.appendChild(host);
+    }
     if (available && (typeof game.id === 'string' || Number.isSafeInteger(game.id))) item.onclick = () => joinGame(game.id);
     gameListEl.appendChild(item);
   }
 }
 
 function createGame() {
-  const name = prompt('Game name:', 'My Game') || 'My Game';
-  if (relayWs && relayWs.readyState === WebSocket.OPEN && myToken) {
-    relayWs.send(JSON.stringify({ type: 'create_game', name, token: myToken }));
-  }
+  const name = prompt('Game name:', 'My Game');
+  if (name === null) return;
+  if (!name.trim() || name.trim().length > 50) { showNotif('Use a 1–50 character room name.', 'error'); return; }
+  relayClient.send({ type: 'create_game', name: name.trim() });
 }
 
 function joinGame(gameId) {
-  if (relayWs && relayWs.readyState === WebSocket.OPEN && myToken) {
-    relayWs.send(JSON.stringify({ type: 'join_game', gameId, token: myToken }));
-  }
+  relayClient.send({ type: 'join_game', gameId });
 }
 
 function requestList() {
-  if (relayWs && relayWs.readyState === WebSocket.OPEN) relayWs.send(JSON.stringify({ type: 'list' }));
+  if (relayClient.ready) relayClient.send({ type: 'list' });
   else apiRequest('games?status=waiting').then(data => { if (data) renderGames(data.games || []); });
 }
 
 /* ---------------- Stream ---------------- */
-function connectStream() {
-  streamWs = new WebSocket(STREAM_URL);
-  streamWs.binaryType = 'arraybuffer';
-
-  streamWs.onopen = () => {
-    streamConnected = true;
-    indStream.className = 'indicator streaming';
-    gameConnecting.style.display = 'none';
-    addChat('Game stream connected', 'system');
-    streamWs.send(JSON.stringify({ type: 'join', name: myUsername || 'Player', token: myToken }));
-  };
-
-  streamWs.onclose = () => {
-    streamConnected = false;
-    indStream.className = 'indicator offline';
+let videoReceiver = null, videoEl = null, pendingPng = null, queuedPng = null;
+const streamSession = new MC3Stream.Session({
+  url: STREAM_URL, token: STREAM_PAIRING,
+  shouldReconnect: () => !!myToken && !!currentGameId,
+  onConnecting() {
+    resetStreamVideo();
+    gameConnecting.textContent = 'Pairing with the game host…';
     gameConnecting.style.display = 'block';
-    setGame(false, 'not streaming');
-    setTimeout(() => { if (myToken && currentGameId) connectStream(); }, 2000);
-  };
-
-  streamWs.onmessage = (event) => {
-    if (typeof event.data === 'string') {
-      const msg = JSON.parse(event.data);
-      if (msg.type === 'hello') {
-        if (msg.codec === 'h264') initVideoDecode();
-        return;
-      }
-      if (msg.type === 'frame') {
-        // PNG base64 frame — only render when not already decoding H.264.
-        if (!useWebCodecs && !videoEl) renderFrame(msg);
-        return;
-      }
-      if (msg.type === 'load_save_ack') {
-        handleLoadSaveAck(msg);
-        return;
-      }
-      console.log('[stream]', msg);
-    } else if (event.data instanceof ArrayBuffer || event.data instanceof Uint8Array) {
-      // Binary H.264 Annex-B frame from the stream proxy (hardware-accelerated path).
-      decodeH264Frame(new Uint8Array(event.data));
+  },
+  onReady(msg, id) {
+    streamConnected = true;
+    lastReport = '';
+    indStream.className = 'indicator streaming';
+    gameConnecting.textContent = 'Waiting for a game frame…';
+    addChat(msg.control ? 'Paired with game host; controller sharing enabled' : 'Paired with game host; viewing only', 'system');
+    if (msg.codec === 'h264') {
+      videoReceiver = new MC3Stream.AnnexBDecoder({
+        onFrame(frame) {
+          if (!streamSession.isCurrent(id)) return;
+          if (!videoEl) {
+            videoEl = document.createElement('canvas');
+            Object.assign(videoEl.style, { position: 'absolute', top: '0', left: '0', width: '100%', height: '100%', objectFit: 'contain' });
+            document.getElementById('gameContainer').appendChild(videoEl);
+          }
+          const ctx = videoEl.getContext('2d', { alpha: false });
+          if (!ctx) throw Error('Video canvas unavailable.');
+          videoEl.width = frame.codedWidth; videoEl.height = frame.codedHeight;
+          ctx.drawImage(frame, 0, 0);
+          gameScreen.hidden = true;
+          showStreamFrame();
+        },
+        onError(message) { if (streamSession.isCurrent(id)) streamSession.fail(1003, message); }
+      });
+      videoReceiver.start();
     }
-  };
+  },
+  onFrame: (msg, id) => renderFrame(msg, id),
+  onBinary: bytes => { if (videoReceiver) videoReceiver.push(bytes); },
+  onDisconnect(event) {
+    streamConnected = false;
+    activeKeys.clear(); lastReport = '';
+    resetStreamVideo();
+    indStream.className = 'indicator offline';
+    gameConnecting.textContent = event.reason;
+    gameConnecting.style.display = 'block';
+    fpsText.textContent = '-- fps';
+    setGame(false, 'not streaming');
+    if (event.code === 1008) showNotif('Host pairing expired or was refused. Open a new host pairing link.', 'error');
+    else if (event.code === 1003 || event.code === 1009) showNotif(event.reason, 'error');
+  }
+});
 
-  streamWs.onerror = (err) => {
-    console.error('[stream] error', err);
-  };
+function connectStream() {
+  if (!myToken || !currentGameId) return;
+  if (!STREAM_PAIRING) {
+    showNotif('Open a pairing link from the game host to view or control its stream.', 'error');
+    return;
+  }
+  streamSession.connect();
 }
 
-function renderFrame(msg) {
-  if (useWebCodecs || videoEl) return; // H.264 path renders its own frames
+function showStreamFrame() {
   const now = Date.now();
   frameCount++;
   if (now - fpsLastSecond >= 1000) {
@@ -908,146 +919,46 @@ function renderFrame(msg) {
     frameCount = 0;
     fpsLastSecond = now;
   }
-  gameScreen.src = `data:image/png;base64,${msg.data}`;
   gameConnecting.style.display = 'none';
   setGame(true, 'streaming');
 }
 
-/* ---------------- Cloud save load into game ---------------- */
-function handleLoadSaveAck(msg) {
-  if (!pendingLoadSave) return;
-  if (msg.slot !== undefined && msg.slot !== pendingLoadSave.slot) return;
-  pendingLoadSave.resolve({ ok: msg.ok === true, save_name: msg.save_name, error: msg.error });
-  pendingLoadSave = null;
-}
-
-/**
- * Ask the stream proxy to forward a cloud save to the native game and wait for
- * its acknowledgment. Returns { ok, save_name }. Native_ack (the game actually
- * imported the save) is only true if mc3.exe processed it and called
- * POST /api/saves/:slot/ack.
- */
-async function sendLoadSave(slot, save_data, save_name) {
-  if (!streamWs || streamWs.readyState !== WebSocket.OPEN) {
-    showNotif('Game stream not connected — cannot load save into game', 'error');
-    return { ok: false };
-  }
-  showNotif(`Sending save to game: ${save_name}…`);
-  const ack = await new Promise((resolve, reject) => {
-    pendingLoadSave = { resolve, reject, slot, save_name };
-    streamWs.send(JSON.stringify({ type: 'load_save', slot, save_name, save_data }));
-    setTimeout(() => { if (pendingLoadSave) { pendingLoadSave = null; reject(new Error('timeout')); } }, 8000);
-  });
-  pendingLoadSave = null;
-  if (ack && ack.ok) showNotif(`Game acknowledged save: ${save_name}`);
-  else showNotif(ack && ack.error ? ack.error : `Game did not acknowledge save: ${save_name}`, 'error');
-  return ack || { ok: false };
-}
-
-/* ---------------- H.264 video decode (WebCodecs, <video> fallback) ---------------- */
-let videoDecoder = null;
-let videoEl = null;
-let useWebCodecs = false;
-
-async function initVideoDecode() {
-  if (useWebCodecs || videoEl) return; // already decoding
-  if (typeof VideoDecoder !== 'undefined' && typeof EncodedVideoChunk !== 'undefined') {
-    try {
-      const config = { codec: 'avc1.640028' }; // H.264 baseline/profile consistent with ffmpeg output
-      const supported = await VideoDecoder.isConfigSupported?.(config);
-      if (supported && supported.supported) {
-        videoDecoder = new VideoDecoder({
-          output: frame => {
-            if (!videoEl) {
-              videoEl = document.createElement('canvas');
-              videoEl.style.position = 'absolute';
-              videoEl.style.top = '0'; videoEl.style.left = '0';
-              videoEl.style.width = '100%'; videoEl.style.height = '100%';
-              videoEl.style.objectFit = 'contain';
-              gameContainer.appendChild(videoEl);
-            }
-            const ctx = videoEl.getContext('2d', { alpha: false });
-            videoEl.width = frame.codedWidth;
-            videoEl.height = frame.codedHeight;
-            ctx.drawImage(frame, 0, 0);
-            gameConnecting.style.display = 'none';
-            setGame(true, 'streaming');
-            frame.close();
-          },
-          error: e => {
-            console.error('[video] WebCodecs decode error', e);
-            useWebCodecs = false;
-            videoDecoder = null;
-            initVideoFallback();
-          }
-        });
-        videoDecoder.configure(config);
-        useWebCodecs = true;
-        return;
-      }
-    } catch (e) { console.error('[video] WebCodecs unavailable', e); }
-  }
-  initVideoFallback();
-}
-
-function initVideoFallback() {
-  if (videoEl) return;
-  videoEl = document.createElement('video');
-  videoEl.style.position = 'absolute';
-  videoEl.style.top = '0'; videoEl.style.left = '0';
-  videoEl.style.width = '100%'; videoEl.style.height = '100%';
-  videoEl.style.objectFit = 'contain';
-  videoEl.muted = true;
-  videoEl.playsInline = true;
-  gameContainer.appendChild(videoEl);
-}
-
-// true when an Annex-B access unit holds an IDR slice or SPS (a frame the decoder can start from)
-function isKeyFrame(bytes) {
-  for (let i = 0; i + 3 < bytes.length; i++) {
-    if (bytes[i] === 0 && bytes[i + 1] === 0 && (bytes[i + 2] === 1 || (bytes[i + 2] === 0 && bytes[i + 3] === 1))) {
-      const at = bytes[i + 2] === 1 ? i + 3 : i + 4;
-      const nal = bytes[at] & 0x1F;
-      if (nal === 5 || nal === 7) return true;
+function renderFrame(msg, id) {
+  if (!streamSession.isCurrent(id)) return;
+  if (pendingPng) { queuedPng = { msg, id }; return; } // Retain only the newest waiting frame.
+  const image = new Image(), pending = { image, timer: null };
+  pendingPng = pending;
+  const finish = () => {
+    if (pendingPng !== pending) return;
+    clearTimeout(pending.timer); pendingPng = null;
+    const next = queuedPng; queuedPng = null;
+    if (next) renderFrame(next.msg, next.id);
+  };
+  image.onload = () => {
+    if (pendingPng === pending && streamSession.isCurrent(id)) {
+      gameScreen.src = image.src;
+      showStreamFrame();
     }
-  }
-  return false;
+    finish();
+  };
+  image.onerror = () => { if (streamSession.isCurrent(id)) streamSession.fail(1009, 'The game host sent an undecodable image.'); };
+  pending.timer = setTimeout(() => { if (streamSession.isCurrent(id)) streamSession.fail(1009, 'Game frame decoding timed out.'); }, 5000);
+  image.src = `data:image/png;base64,${msg.data}`;
 }
-let videoKeySeen = false;
 
-function decodeH264Frame(bytes) {
-  if (useWebCodecs && videoDecoder) {
-    try {
-      const key = isKeyFrame(bytes);
-      if (!videoKeySeen && !key) return;  // a decoder must start on a key frame
-      videoKeySeen = true;
-      videoDecoder.decode(new EncodedVideoChunk({ type: key ? 'key' : 'delta', timestamp: performance.now() * 1000, data: bytes }));
-    } catch (e) {
-      console.error('[video] WebCodecs decode failed', e);
-      useWebCodecs = false;
-      videoDecoder = null;
-      initVideoFallback();
-    }
-    return;
+function resetStreamVideo() {
+  if (videoReceiver) videoReceiver.stop();
+  videoReceiver = null;
+  if (videoEl) videoEl.remove();
+  videoEl = null; queuedPng = null;
+  if (pendingPng) {
+    clearTimeout(pendingPng.timer);
+    pendingPng.image.onload = pendingPng.image.onerror = null;
+    pendingPng.image.src = '';
+    pendingPng = null;
   }
-  if (videoEl && typeof MediaSource !== 'undefined') {
-    // MediaSource fallback: append H.264 segments to the video element.
-    if (!videoEl.msSourceBuffer && !videoEl.sourceBuffer) {
-      try {
-        const ms = new MediaSource();
-        videoEl.src = URL.createObjectURL(ms);
-        ms.addEventListener('sourceopen', () => {
-          const sb = ms.addSourceBuffer('video/avc; codecs="avc1.640028"');
-          sb.appendBuffer(bytes);
-        });
-        videoEl.msSourceBuffer = ms;
-      } catch (e) { console.error('[video] MediaSource setup failed', e); }
-    } else {
-      try { videoEl.msSourceBuffer.sourceBuffer.appendBuffer(bytes); } catch (_) {}
-    }
-    return;
-  }
-  // No decode path available; surface stays on the last PNG frame or placeholder.
+  gameScreen.removeAttribute('src'); gameScreen.hidden = false;
+  frameCount = 0; fpsLastSecond = Date.now();
 }
 
 function setGame(ok, text) {
@@ -1136,16 +1047,14 @@ function encodePadReport(s, connected = true) {
 
 function pollGamepads() {
   if (accountUI && accountUI.pollMenus()) return;
-  if (!streamConnected || !streamWs || streamWs.readyState !== WebSocket.OPEN) return;
+  if (!streamConnected || !streamSession.canControl) return;
   const now = Date.now();
   if (now - lastGamepadPoll < GAMEPAD_POLL_MS) return;
   lastGamepadPoll = now;
   const report = encodePadReport(buildPadState());
   const key = report.join(',');
   if (key === lastReport && now - lastReportTime < REPORT_KEEPALIVE_MS) return;
-  lastReport = key;
-  lastReportTime = now;
-  streamWs.send(report);
+  if (streamSession.sendInput(report)) { lastReport = key; lastReportTime = now; }
 }
 
 function gamepadLoop() {
@@ -1154,20 +1063,26 @@ function gamepadLoop() {
 }
 
 /* ---------------- Chat ---------------- */
-function addChat(text, type = 'other') {
+// who: { name, badge } shown before text, with the creator badge when the server sent one
+function addChat(text, type = 'other', who = null) {
   const div = document.createElement('div');
   div.className = `chat-msg ${type}`;
   const ts = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-  div.textContent = `[${ts}] ${text}`;
+  if (who && badgeEl(who.badge)) {
+    const name = document.createElement('span'); name.textContent = `[${ts}] ${String(who.name || '')}`; div.appendChild(name);
+    const b = badgeEl(who.badge); if (b) div.appendChild(b);
+    const rest = document.createElement('span'); rest.textContent = text; div.appendChild(rest);
+  } else div.textContent = `[${ts}] ${who ? String(who.name || '') : ''}${text}`;
   chatMessages.appendChild(div);
+  while (chatMessages.childElementCount > 100) chatMessages.firstElementChild.remove();
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
 function sendChat() {
   const text = chatInput.value.trim();
-  if (!text || !relayWs || relayWs.readyState !== WebSocket.OPEN) return;
-  relayWs.send(JSON.stringify({ type: 'chat', text }));
-  chatInput.value = '';
+  if (!text) return;
+  if (text.length > 512) { showNotif('Chat messages can contain up to 512 characters.', 'error'); return; }
+  if (relayClient.send({ type: 'chat', text })) chatInput.value = '';
 }
 
 /* ---------------- Account cloud and preferences ---------------- */
@@ -1177,35 +1092,41 @@ async function loadCareer() { if (accountUI) accountUI.renderCareer(); }
 function toggleSettings() { if (accountUI) accountUI.toggleSettings(); }
 function releaseBrowserInput() {
   activeKeys.clear();
-  if (streamWs && streamWs.readyState === WebSocket.OPEN) {
-    streamWs.send(encodePadReport(buildPadState(), false));  // unplug at once rather than after the timeout
-    lastReport = '';
-  }
+  streamSession.sendInput(encodePadReport(buildPadState(), false)); // Unplug only a paired, shared controller.
+  lastReport = '';
 }
 
 /* ---------------- Init ---------------- */
 window.addEventListener('keydown', onKeyDown);
 window.addEventListener('keyup', onKeyUp);
 window.addEventListener('blur', releaseBrowserInput);
+window.addEventListener('pagehide', () => { releaseBrowserInput(); streamSession.disconnect(); relayClient.setSession(null); });
+window.addEventListener('pageshow', event => { if (event.persisted && accountUI) { connectRelay(); if (currentGameId) connectStream(); } });
 btnCreate.onclick = createGame;
 btnRefresh.onclick = requestList;
 chatInput.onkeypress = event => { if (event.key === 'Enter') sendChat(); };
 accountUI = MC3Account.mount({
   window, apiBase: API_URL, notify: showNotif, showScreen, releaseInput: releaseBrowserInput,
   canResume: () => !!currentGameId && streamConnected,
-  onLoadSave: (slot, save_data, save_name) => sendLoadSave(slot, save_data, save_name),
   onSession(session) {
     authChecked = true;
     if (session) {
+      if (myId !== null && myId !== session.user.id) {
+        releaseBrowserInput(); streamSession.disconnect(); currentGameId = relayResumeRoom = null;
+        chatMessages.replaceChildren(); gameListEl.replaceChildren();
+      } else if (myToken && myToken !== session.token) {
+        relayResumeRoom = currentGameId || relayResumeRoom; currentGameId = null;
+        releaseBrowserInput(); streamSession.disconnect();
+      }
       myToken = session.token; myUsername = session.user.username; myId = session.user.id;
-      setAuth(true, myUsername);
-      if (relayWs && relayWs.readyState === WebSocket.OPEN) relayWs.send(JSON.stringify({ type: 'auth', token: myToken }));
-      else if (!relayWs || relayWs.readyState === WebSocket.CLOSED) connectRelay();
+      setAuth(true, myUsername, session.user.badge);
+      connectRelay();
     } else {
-      myToken = myUsername = myId = currentGameId = null; setAuth(false, '');
-      if (relayWs) relayWs.close();
-      if (streamWs) streamWs.close();
+      myToken = myUsername = myId = currentGameId = relayResumeRoom = null; myRole = myColor = null; setAuth(false, '');
+      chatMessages.replaceChildren(); gameListEl.replaceChildren();
+      relayClient.setSession(null); setRelay(false, 'disconnected');
       releaseBrowserInput();
+      streamSession.disconnect();
     }
   }
 });

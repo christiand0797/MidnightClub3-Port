@@ -5,15 +5,16 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test": "node --test account_service.test.js server_security.test.js transport_security.test.js social.test.js ../browser/account-ui.test.js ../browser/capabilities.test.js ../browser/stream-client.test.js ../browser/relay-client.test.js"
   },
   "dependencies": {
     "ws": "^8.14.2",
     "express": "^4.18.2",
-    "uuid": "^9.0.0",
     "jsonwebtoken": "^9.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express-rate-limit": "^7.1.5"
-  }
+  },
+  "engines": { "node": ">=24 <27" }
 }

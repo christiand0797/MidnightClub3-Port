@@ -34,7 +34,7 @@ function plus original instruction address is the stable citation.
 | Progression/unlocks | `0x28C3E0`, `0x292CD0`, `0x289CC0`, `tune/progress/unlockingrules.csv`; current [HANDOFF](../HANDOFF.md) Detroit entry | Full dependency graph and event ordering; no blanket unlock behavior inferred. |
 | Original menu/Flash | `0x139520`, `0x1395E0`, `0x13C5D0`, `0x154E40`; [garage navigation](garage_navigation.md), [garage save transition](garage_save_crash.md) | Complete screen lifecycle/map and all native controller paths. |
 | PC F1 settings/UI | `runtime/app/settings*`, `pbr_menu.*`, title `gameplay_menu.*`, `graphics_menu.*`; [graphics GUI](graphics_gui.md) | Broader physical-controller/native visual coverage. |
-| Pad/input/timing | `runtime/input/*`, `templates/game/src/game/arrow_driving.cpp`, `hooks.cpp`; [navigation](garage_navigation.md), [replays](replays.md) | Remote input lease/ownership and all pause/reconnect cases. |
+| Pad/input/timing | `runtime/core/input.*`, `runtime/core/remote_pad.*`, `templates/game/src/game/arrow_driving.cpp`, `hooks.cpp`; [navigation](garage_navigation.md), [replays](replays.md) | Remote input lease/ownership and all pause/reconnect cases. |
 | Replay | `0x20EA20`, `0x20EAC0`, `0x2DAC0`, host `replay.cpp`; [replay evidence](replays.md) | Port's transform correction is not original lockstep network simulation. |
 | Owned-car identity/configuration | `0x53F308`, CarCfg stride `0x108`, `0x271E20`, `0x26BB80`; [per-car tuning](per_car_tuning.md) | No proven original persistent unique ID; external roster edits remain ambiguous. |
 | Car/controller construction | `0x2CBC40`, human `0x2CBDE0`, AI `0x1FAE10`; [ownership](vehicle_ownership.md), [current trace](career_save_network_trace_20261104.md#car-construction-and-remote-actor-scope) | Exact remote-player factory/controller and teardown/streaming ownership. |
@@ -60,11 +60,18 @@ function plus original instruction address is the stable citation.
 
 ## Current deep trace
 
-[Career/save/network trace — 2026-11-04](career_save_network_trace_20261104.md)
+[Career/save/network trace â€” 2026-11-04](career_save_network_trace_20261104.md)
 records original save-buffer versus disk boundaries, a bounded race reward path,
 original network message IDs, Network menu constructors and car factory scope.
 It identifies useful observation points without claiming a finished shared-career
 or remote-actor implementation.
+
+The later [complete file-close/load trace](career_save_network_trace_20261104.md#complete-original-save-and-load-boundaries)
+distinguishes a normal explicit stream close from process exit, which uses
+`std::_Exit`. The new [offline snapshot reader](../../tools/multiplayer/CLOUD_SNAPSHOT.md)
+retains explicitly selected opaque bytes from a checked closed instance. Its
+20 synthetic/process/API contract tests do not establish original-loader or
+physical-disk durability acceptance.
 
 The index links existing detailed audits rather than repeating their expensive
 asset/media scans. Subsequent research can extend a specific row with function

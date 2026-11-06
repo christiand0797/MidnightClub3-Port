@@ -19,10 +19,12 @@ upscale.py (it calls this).
   py -3.12 tools/texture_pack/crisp_fonts.py [--textures DIR] [--only HASH ...] [--force]
 """
 import argparse
+import hashlib
 import json
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -94,6 +96,8 @@ def rebuild(source_png, hd_png):
     if not hard_edged(src[..., 3]):
         return None
     scale = min(SCALE, MAX_SIDE // max(src.shape[:2]))
+    if scale < 1:
+        return None
     alpha = crisp_alpha(src[..., 3], scale)
     h, w = alpha.shape
     before = src[..., 3].astype(np.float64).sum() / 255.0 * scale * scale
@@ -113,9 +117,55 @@ def rebuild(source_png, hd_png):
 
 def marked(png):
     try:
-        return Image.open(png).text.get("mc3") == MARK
+        with Image.open(png) as image:
+            return image.text.get("mc3") == MARK
     except Exception:
         return False
+
+
+def file_digest(path):
+    with Path(path).open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def replacement_valid(png, source):
+    """Only accept an intact font output tied to these source bytes and this processor."""
+    try:
+        with Image.open(source) as original:
+            w, h = original.size
+        scale = min(SCALE, MAX_SIDE // max(w, h))
+        with Image.open(png) as image:
+            valid = (scale >= 1 and image.format == "PNG" and image.size == (w * scale, h * scale)
+                     and image.info.get("mc3") == MARK
+                     and image.info.get("mc3-source-sha256") == file_digest(source)
+                     and image.info.get("mc3-pipeline-sha256") == file_digest(__file__))
+            image.verify()
+            return valid
+    except (OSError, ValueError, SyntaxError):
+        return False
+
+
+def publish(image, destination, source_digest):
+    """Publish one verified sibling file; never reuse or remove another writer's temporary."""
+    destination = Path(destination)
+    info = PngImagePlugin.PngInfo()
+    info.add_text("mc3", MARK)
+    info.add_text("mc3-source-sha256", source_digest)
+    info.add_text("mc3-pipeline-sha256", file_digest(__file__))
+    fd, name = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".crisp.tmp", dir=destination.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            image.save(stream, format="PNG", pnginfo=info)
+            stream.flush()
+            os.fsync(stream.fileno())
+        with Image.open(temporary) as check:
+            if check.format != "PNG" or check.size != image.size:
+                raise ValueError("Encoded font has an unexpected format or size")
+            check.verify()
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def main(argv=None):
@@ -144,18 +194,17 @@ def main(argv=None):
         if not src.exists():
             missing += 1
             continue
-        if out.exists() and marked(out) and not a.force:
+        if out.exists() and replacement_valid(out, src) and not a.force:
             kept += 1
             continue
+        source_digest = file_digest(src)
         img = rebuild(src, out)
         if img is None:
             soft += 1
             continue
-        info = PngImagePlugin.PngInfo()
-        info.add_text("mc3", MARK)
-        tmp = out.with_suffix(".crisp.tmp")
-        img.save(tmp, format="PNG", pnginfo=info)
-        os.replace(tmp, out)  # a new file: never write through a hard link shared with an archive
+        if file_digest(src) != source_digest:
+            raise ValueError("Font source changed during processing; replacement was preserved")
+        publish(img, out, source_digest)
         done += 1
     print(f"crisp fonts: {done} rebuilt, {kept} already done, {soft} soft sheets kept, {missing} without source")
     return 0

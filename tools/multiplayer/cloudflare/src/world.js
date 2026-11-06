@@ -434,7 +434,12 @@ export class World extends DurableObject {
     }
   }
 
-  async webSocketClose(ws) {
+  async webSocketClose(ws, code = 1000) {
+    // Required for older compatibility dates; newer runtimes may have already replied.
+    const closeCode = [1000, 1001, 1002, 1003, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014].includes(code) ||
+      (Number.isInteger(code) && code >= 3000 && code <= 4999) ? code : 1000;
+    try { ws.close(closeCode, 'Connection closed'); } catch (_) { /* already closed */ }
+    this.social.forget(this.info(ws));
     const wasPlayer = !!this.info(ws).id, wasQueued = !!this.info(ws).queued;
     if (this.info(ws).gameId) { this.leave(ws); this.gameList(); }
     this.forgetSocket(ws);

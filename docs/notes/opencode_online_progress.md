@@ -17,6 +17,29 @@ FINAL STATUS (2026-11-04): 9 of 11 review bugs fixed and verified by test; 2 ope
 
 mc3.exe was NOT built or launched this session; all tests exercise the proxy/relay stack in isolation.
 
+## Source-backed follow-up correction (Codex, 2026-11-04)
+
+The attributed workstream results below are historical observations, not a
+single current acceptance receipt. A C++ toolchain is installed; root's actual
+native build logs are under
+`.local/continuation-20261104-r1/native-build-r2.log` and later numbered logs.
+Later native builds do not turn adapter-only tests into a two-game acceptance.
+
+The proposed UDP JSON import and partial career/roster memory writes in the
+earlier remaining-work table are superseded by the corrected
+[integration note](integration_plan_20261104.md). The current cloud bridge design
+uses complete opaque files in a selected closed instance and the original
+`0x22310 -> 0x19EC0` length/signature check followed by `0x19560` profile/career
+application. Client-reported `native_ack` or UDP delivery is not proof of this
+load. The follow-up Claude section below also records removal of the unsafe
+import implementation.
+
+The new [CPU snapshot reader](../../tools/multiplayer/CLOUD_SNAPSHOT.md) emits an
+offline selected-file proposal only. Twenty synthetic/process/API tests passed;
+no actual save was collected or restored. An exited process and stable hashes
+do not prove disk durability; `kernel::Shutdown` uses `std::_Exit`.
+
+
 Goal: real native/browser shared multiplayer transport + Network menu integration; two independent peers for
 original discovery and unicast; original game messages + career hooks for shared free roam, car meets and
 progression; browser = local Firefox/Chromium WebAssembly/WebGPU runtime with hardware acceleration; accounts,
@@ -96,13 +119,15 @@ See `docs/notes/integration_plan_20261104.md` for the concrete, address-level pl
 
 | # | Task | What's needed |
 |---|------|---------------|
-| 1 | Build mc3.exe | Visual Studio with VC tools; `Build-MC3.ps1 -Jobs 8`. No compiler on this host. |
-| 2 | Native save import | xnet.cpp `MC3P` detection in `Recv()`; save-import module writing career `+0xACC`, `+0x50`, roster `+0x504`/stride `0x108`; dirty byte `+0x20`; `POST /api/saves/:slot/ack`. |
-| 3 | Network menu integration | Hook `MenuNetworkHostJoin` (`0x45BB44`/`0x16CC20`) to create/join games via relay; message schema discovery for `sub_001AFBB0` branches. |
+| 1 | Exact native candidate | Earlier compiler-unavailable claim superseded above; bind native acceptance to an exact later build. |
+| 2 | Original save bridge | Earlier UDP/partial-memory proposal superseded: opaque closed-instance restore plus original loader acceptance; see correction above. |
+| 3 | Network menu integration | Hook `MenuNetworkHostJoin` (`0x45BB44`/`0x16CC20`) to create/join games via relay; actual serializer/dispatcher tracing; `0x1AFBB0` is only diagnostic names. |
 | 4 | Remote actor | Car factory/remote controller chain; transform interpolation; collision authority. |
 | 5 | End-to-end test | Launch two `mc3.exe --instance N` instances; verify discovery + unicast + save load through the tunnel. |
 
-`mc3.exe` was not built or launched in any session; all tests exercise the proxy/relay stack in isolation. No C++ compiler is present on this host, so `runtime/xdk/xnet.cpp` changes are syntax-reviewed only, not compiled.
+The earlier OpenCode workstream reported adapter-only tests and no native
+build/launch within that workstream. Its global "no compiler" claim is
+superseded by the build evidence and later review above/below.
 
 ---
 

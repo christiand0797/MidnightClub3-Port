@@ -171,6 +171,56 @@ class PublicationTests(unittest.TestCase):
                 upscale.main()
             self.assertEqual(error.exception.code, 2)
 
+    def test_crisp_font_postprocessing_preserves_named_pass_and_resumes_without_inference(self):
+        textures = self.folder / "fonts"
+        originals = textures / "source"
+        originals.mkdir(parents=True)
+        name = "ABCDEF0123456789.png"
+        art = np.zeros((128, 128, 4), dtype=np.uint8)
+        art[..., :3] = 255
+        for y in range(4, 124, 20):
+            for x in range(4, 124, 20):
+                art[y:y+14, x:x+3, 3] = 255
+                art[y+11:y+14, x:x+10, 3] = 255
+        Image.fromarray(art).save(originals / name)
+        (textures / "source_index.json").write_text(json.dumps({Path(name).stem: "fonts/texture_x/fixture.tex"}))
+        runner = self.folder / "runner.exe"
+        runner.touch()
+        model = "ultrasharp-4x"
+        for suffix in (".param", ".bin"):
+            (self.folder / (model + suffix)).write_bytes(b"model fixture")
+
+        def fake_network(command, **_kwargs):
+            input_dir = Path(command[command.index("-i") + 1])
+            output_dir = Path(command[command.index("-o") + 1])
+            with Image.open(input_dir / name) as padded:
+                padded.resize((padded.width * 4, padded.height * 4)).save(output_dir / name)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        args = ["upscale.py", "--textures", str(textures), "--pass-id", "font-pass"]
+        with (patch.object(upscale, "ESRGAN", runner), patch.dict(upscale.MODELS, {model: self.folder}),
+              patch.object(upscale.sys, "argv", args),
+              patch.object(upscale.subprocess, "run", side_effect=fake_network) as network,
+              redirect_stdout(io.StringIO())):
+            self.assertEqual(upscale.main(), 0)
+            self.assertEqual(network.call_count, 1)
+            replacement = textures / "replace" / name
+            with Image.open(replacement) as image:
+                self.assertEqual(image.size, (1024, 1024))
+            self.assertTrue(upscale.replacement_valid(replacement, originals / name))
+            record = json.loads((textures / "upscale_passes.json").read_text())["passes"]["font-pass"]
+            self.assertEqual(set(record["context"]["postprocessors"]), {"train_windows.py", "crisp_fonts.py"})
+            output = record["completed"][name]
+            self.assertNotEqual(output["model_output_sha256"], output["output_sha256"])
+            self.assertTrue(upscale.pass_complete(output, originals / name, replacement))
+            self.assertTrue(audit.audit(textures, model, "font-pass")["complete"])
+            before = replacement.read_bytes()
+            network.reset_mock()
+            self.assertEqual(upscale.main(), 0)
+            network.assert_not_called()
+            self.assertEqual(replacement.read_bytes(), before)
+            self.assertTrue(audit.audit(textures, model, "font-pass")["complete"])
+
 
 if __name__ == "__main__":
     unittest.main()

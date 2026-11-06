@@ -4,7 +4,8 @@
 // Same for browser and local players: everything here rides the relay's WebSocket, which both the browser page and
 // the game's tunnel (proxy.py) use.
 //
-// Rankings come only from what the game itself sends, confirmed by more than one racer. Every tunnel reports the
+// Rankings are provisional client-reported activity, not trusted competitive progression. Two clients can collude.
+// Every tunnel reports the
 // game's race messages it sees (proxy/mcnet.py: RACE_STATE, RACE_CONFIG, CHECKPOINT, PLAYER_SCORE). The host
 // broadcasts RACE_STATE 5 when a race goes green, so its tunnel (sending) and every other racer's tunnel (receiving)
 // report the same start. A race counts once at least two different players in the room report it within
@@ -20,7 +21,8 @@ const RACE_POINTS = 10;
 const RACE_WINDOW_MS = 30 * 1000;
 const RACE_COOLDOWN_MS = 60 * 1000;
 const CHAT_KEEP = 50;
-const RESEARCH_KEEP = 2000;
+const RESEARCH_KEEP = 128;
+const MAX_PLAYERS = 1024, MAX_CLUBS = 128, MAX_MEMBERS = 128, MAX_RACES = 128;
 const TYPES = ['presence', 'club_create', 'club_join', 'club_leave', 'club_list', 'club_info', 'club_chat',
   'leaderboard', 'race_event'];
 
@@ -69,17 +71,26 @@ class Social {
     }
     this.races = new Map();   // room -> { at, reporters: Set, confirmed }
     this.results = new RaceResults(now);  // finishing places from checkpoints (race_results.js)
+    this.guests = new Map();  // Connection-only activity; display names never claim persisted identities.
     this.timer = null;
   }
 
   // ---------- identity and storage ----------
   key(client) {
-    // a signed-in account keeps its standing everywhere; a guest is known by its display name
+    // Only authenticated account IDs carry standing across connections. A display name is not an identity.
     return client.userId && !client.userId.startsWith('guest-') ? 'u:' + client.userId
-      : 'g:' + String(client.username || 'guest').toLowerCase();
+      : 'g:' + String(client.userId || client.id || 'anonymous');
   }
   player(client) {
     const k = this.key(client);
+    if (k.startsWith('g:')) {
+      if (!this.guests.has(k)) {
+        if (this.guests.size >= 512) return null;
+        this.guests.set(k, { name: client.username, points: 0, races: 0, club: null });
+      }
+      return this.guests.get(k);
+    }
+    if (!this.state.players[k] && Object.keys(this.state.players).length >= MAX_PLAYERS) return null;
     const p = this.state.players[k] || (this.state.players[k] = { name: client.username, points: 0, races: 0, club: null });
     p.name = client.username;
     p.lastSeen = this.now();
@@ -92,9 +103,15 @@ class Social {
       this.timer = null;
       const tmp = this.file + '.tmp';
       const { fs, path } = nodeFs();
-      fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      fs.writeFileSync(tmp, JSON.stringify(this.state));
-      fs.renameSync(tmp, this.file);
+      try {
+        fs.mkdirSync(path.dirname(this.file), { recursive: true });
+        fs.writeFileSync(tmp, JSON.stringify(this.state));
+        fs.renameSync(tmp, this.file);
+        this.lastSaveError = null;
+      } catch (error) {
+        this.lastSaveError = error; // Keep prior disk file and in-memory state; never crash the process from a timer.
+        console.error('[social] Persistence failed; previous file retained.');
+      }
     }, 500);
     if (this.timer.unref) this.timer.unref();
   }
@@ -118,7 +135,10 @@ class Social {
   // ctx: send(obj) to this client, rooms() -> [{ id, name, listed, players: [client] }], clients() -> [client],
   //      sendTo(client, obj)
   handle(client, m, ctx) {
-    const me = this.player(client);
+    if (!m) return;
+    const needsPlayer = ['club_create', 'club_join', 'club_leave', 'club_chat', 'race_event'].includes(m.type);
+    const me = needsPlayer ? this.player(client) : null;
+    if (needsPlayer && !me) return ctx.send({ type: 'error', error: 'Social storage quota reached.' });
     const k = this.key(client);
     switch (m.type) {
       case 'presence': {
@@ -131,6 +151,7 @@ class Social {
       case 'club_create': {
         if (k.startsWith('g:')) return ctx.send({ type: 'error', error: 'Sign in to create a car club.' });
         if (me.club) return ctx.send({ type: 'error', error: 'Leave your current club first.' });
+        if (Object.keys(this.state.clubs).length >= MAX_CLUBS) return ctx.send({ type: 'error', error: 'Club storage quota reached.' });
         const taken = Object.values(this.state.clubs).some(c => c.tag === m.tag || c.name.toLowerCase() === m.name.toLowerCase());
         if (taken) return ctx.send({ type: 'error', error: 'That club name or tag is taken.' });
         const club = { id: crypto.randomBytes(6).toString('hex'), name: m.name, tag: m.tag, owner: k, members: [k],
@@ -146,7 +167,10 @@ class Social {
         if (!club) return ctx.send({ type: 'error', error: 'No such club.' });
         if (k.startsWith('g:')) return ctx.send({ type: 'error', error: 'Sign in to join a car club.' });
         if (me.club && me.club !== club.id) return ctx.send({ type: 'error', error: 'Leave your current club first.' });
-        if (!club.members.includes(k)) club.members.push(k);
+        if (!club.members.includes(k)) {
+          if (club.members.length >= MAX_MEMBERS) return ctx.send({ type: 'error', error: 'Club membership quota reached.' });
+          club.members.push(k);
+        }
         me.club = club.id;
         this.save();
         this.clubBroadcast(club, ctx, { type: 'club_member', club: club.tag, name: me.name, joined: true });
@@ -193,7 +217,8 @@ class Social {
           ctx.send({ type: 'leaderboard', scope: 'clubs', rows: Object.values(this.state.clubs)
             .map(c => this.clubSummary(c)).sort((a, b) => b.points - a.points).slice(0, 50) });
         } else {
-          ctx.send({ type: 'leaderboard', scope: 'players', rows: Object.values(this.state.players)
+          ctx.send({ type: 'leaderboard', scope: 'players', provisional: true, rows: [...Object.entries(this.state.players)
+            .filter(([key]) => key.startsWith('u:')).map(([, value]) => value), ...this.guests.values()]
             .filter(p => p.races > 0)
             .map(p => ({ name: p.name, points: p.points, races: p.races, club: this.tagOfPlayer(p) }))
             .sort((a, b) => b.points - a.points || b.races - a.races).slice(0, 50) });
@@ -212,6 +237,7 @@ class Social {
   }
   tagOfPlayer(p) { return p && p.club && this.state.clubs[p.club] ? this.state.clubs[p.club].tag : null; }
   tagOf(client) { return this.tagOfPlayer(this.state.players[this.key(client)]); }
+  forget(client) { this.guests.delete(this.key(client)); }
   clubBroadcast(club, ctx, obj) {
     for (const c of ctx.clients()) if (club.members.includes(this.key(c))) ctx.sendTo(c, obj);
   }
@@ -231,7 +257,9 @@ class Social {
     });
     if (e.type !== 'RACE_STATE' || e.state !== 5) return;
     let race = this.races.get(client.gameId);
+    for (const [room, row] of this.races) if (now - row.at > RACE_COOLDOWN_MS) this.races.delete(room);
     if (!race || now - race.at > (race.confirmed ? RACE_COOLDOWN_MS : RACE_WINDOW_MS)) {
+      if (!this.races.has(client.gameId) && this.races.size >= MAX_RACES) return;
       race = { at: now, reporters: new Map(), confirmed: false };
       this.races.set(client.gameId, race);
     }
@@ -240,9 +268,10 @@ class Social {
     race.reporters.set(k, client);
     const award = c => {
       const p = this.player(c);
+      if (!p) return;
       p.points += RACE_POINTS;
       p.races += 1;
-      ctx.sendTo(c, { type: 'points', points: p.points, races: p.races, earned: RACE_POINTS });
+      ctx.sendTo(c, { type: 'points', points: p.points, races: p.races, earned: RACE_POINTS, provisional: true });
     };
     if (race.confirmed) award(client);  // a third racer reporting the same start
     else if (race.reporters.size >= 2) {

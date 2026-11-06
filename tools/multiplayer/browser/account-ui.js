@@ -77,7 +77,7 @@
     const url = new URL(page), secure = url.protocol === 'https:';
     const web = url.protocol === 'http:' || secure;
     const api = web ? url.origin : 'http://localhost:8080';
-    const relayDefault = api.replace(/^http/, 'ws');
+    const relayDefault = api.replace(/^http/, 'ws') + '/ws';
     const streamDefault = web ? `${secure ? 'wss:' : 'ws:'}//${url.hostname.includes(':') ? '[' + url.hostname.replace(/[\[\]]/g, '') + ']' : url.hostname}:8766` : 'ws://localhost:8766';
     const allowed = (query, fallback) => {
       if (!query) return fallback;
@@ -89,7 +89,9 @@
         return target.href;
       } catch (_) { return fallback; }
     };
-    return { api, relay: allowed(url.searchParams.get('relay'), relayDefault), stream: allowed(url.searchParams.get('stream'), streamDefault) };
+    const relay = new URL(allowed(url.searchParams.get('relay'), relayDefault));
+    if (relay.pathname === '/') relay.pathname = '/ws';
+    return { api, relay: relay.href, stream: allowed(url.searchParams.get('stream'), streamDefault) };
   }
   function scopedKey(origin, accountId, kind = 'preferences') {
     if (!ACCOUNT.test(accountId)) throw new AccountError('Invalid account identity.');
@@ -343,7 +345,7 @@
     const notice = (message, type = 'info') => options.notify && options.notify(String(message), type);
     let authMode = 'login', submitting = false, lastScreen = '', returnScreen = 'mainMenu', padState = new Map(), padRepeat = 0;
     let client;
-    const onLoadSave = options.onLoadSave; // (slot, save_data, save_name) -> Promise
+    const runtimeAdapter = options.runtimeAdapter;
     const node = (tag, className, text) => { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = String(text); return el; };
     const button = (text, handler, className = 'btn secondary') => { const el = node('button', className, text); el.type = 'button'; el.addEventListener('click', handler); return el; };
     function visibleScreen() { return Array.from(document.querySelectorAll('.screen')).reverse().find(el => !el.classList.contains('hidden') && window.getComputedStyle(el).display !== 'none') || null; }
@@ -456,14 +458,17 @@
         actions.appendChild(button('Download file', () => {
           try { download(file.path.split('/').pop(), new Blob([base64ToBytes(file.data)], { type: 'application/octet-stream' })); notice('Original file downloaded; game memory/save files were not changed.'); } catch (error) { showError(error); }
         }, 'save-btn load'));
-        // Offer to load original hdd/ game saves into a connected native game session.
-        if (file.path.startsWith('hdd/') && onLoadSave) {
-          const m = file.path.match(/(\d+)/);
-          const slot = m ? Number(m[1]) : 0;
-          actions.appendChild(button('Load into game', async () => {
+        // No slot is guessed from a filename. The shipped stream proxy deliberately has no save importer.
+        // A future local adapter must explicitly support original bytes and return an account/request/file-bound
+        // acknowledgement before this UI can report an import. Downloading is always available independently.
+        if (file.path.startsWith('hdd/') && runtimeAdapter && runtimeAdapter.supportsOriginalSaveBytes === true && typeof runtimeAdapter.importFiles === 'function') {
+          actions.appendChild(button('Import into local game', async () => {
             try {
-              const ack = await onLoadSave(slot, file.data, file.path);
-              notice(ack && ack.ok ? `Game acknowledged save: ${file.path}` : 'Game did not acknowledge the save.', ack && ack.ok ? 'info' : 'error');
+              const accountId = client.session.user.id, requestId = window.crypto.randomUUID();
+              const ack = await runtimeAdapter.importFiles({ accountId, requestId, files: [clone(file)] });
+              const accepted = ack && ack.applied === true && ack.accountId === accountId && ack.requestId === requestId &&
+                Array.isArray(ack.files) && ack.files.some(row => row.path === file.path && row.sha256 === file.sha256);
+              notice(accepted ? `Local game acknowledged original file: ${file.path}` : 'The local game did not acknowledge an original-file import.', accepted ? 'info' : 'error');
             } catch (error) { showError(error); }
           }, 'save-btn load'));
         }
@@ -567,7 +572,10 @@
     let storage = options.storage; if (!storage) try { storage = window.localStorage; } catch (_) {}
     client = new Client({ apiBase: options.apiBase, fetch: options.fetch || window.fetch.bind(window), storage,
       crypto: window.crypto, vault: new DraftVault(window.indexedDB),
-      onSession: session => { if (options.onSession) options.onSession(session); if (!session) activate('authScreen'); },
+      onSession: session => {
+        if (options.onSession) options.onSession(session);
+        if (!session) { mode('login'); $('authUsername').value = ''; activate('authScreen'); }
+      },
       onChange: () => { renderCloud(); applyPreferences(); } });
     $('btnViewSaves').onclick = () => { activate('savesScreen'); loadCloud().catch(showError); };
     $('btnViewCareer').onclick = () => { activate('careerScreen'); renderCareer(); };

@@ -1,0 +1,16 @@
+**
+!relay/
+!relay/Dockerfile
+!relay/package.json
+!relay/package-lock.json
+!relay/server.js
+!relay/account_service.js
+!relay/transport_security.js
+!relay/social.js
+!browser/
+!browser/index.html
+!browser/account-ui.js
+!browser/capabilities.js
+!browser/stream-client.js
+!browser/relay-client.js
+!browser/theme.css

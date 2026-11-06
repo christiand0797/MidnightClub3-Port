@@ -114,3 +114,43 @@ test('standing survives a restart', () => {
   const again = new Social({ file: w.file });
   assert.equal(again.state.players['u:user-a'].points, RACE_POINTS);
 });
+
+test('guest display names cannot claim persisted or another connection standing', () => {
+  const w = world();
+  const a=w.client('same', {account:false,type:'game',gameId:'main'});
+  a.userId='guest-first';
+  const b=w.client('same', {account:false,type:'game',gameId:'main'});
+  b.userId='guest-second';
+  const old={name:'same',points:9999,races:99,club:null};
+  w.social.state.players['g:same']=old;
+  const start={type:'race_event',event:{type:'RACE_STATE',body:'05000000',state:5}};
+  w.send(a,start);w.send(b,start);
+  assert.equal(w.last(a,'points').points,10);
+  assert.equal(w.last(b,'points').points,10);
+  assert.equal(w.last(b,'points').provisional,true);
+  assert.equal(Object.keys(w.social.state.players).length,1);
+  w.send(a,{type:'leaderboard'});
+  assert.ok(w.last(a,'leaderboard').rows.every(row=>row.points===10));
+  w.social.forget(a);assert.equal(w.social.guests.size,1);
+  assert.equal(old.points,9999); // Existing disk records are preserved, never adopted by a matching name.
+});
+
+test('social reads do not allocate players and mutation quotas preserve existing records', () => {
+  const w=world(), a=w.client('reader');
+  w.send(a,{type:'presence'});w.send(a,{type:'leaderboard'});w.send(a,{type:'club_list'});
+  assert.equal(Object.keys(w.social.state.players).length,0);
+  for(let n=0;n<1024;n++)w.social.state.players['u:'+n]={name:String(n),points:0,races:0,club:null};
+  w.send(a,{type:'club_create',name:'Overflow',tag:'OF'});
+  assert.match(w.last(a,'error').error,/quota/);
+  assert.equal(Object.keys(w.social.state.players).length,1024);
+});
+
+test('research and race maps have finite bounds', () => {
+  const w=world(), a=w.client('a',{type:'game',gameId:'main'});
+  for(let n=0;n<300;n++)w.send(a,{type:'race_event',event:{type:'CHECKPOINT',body:'00'.repeat(100)}});
+  assert.equal(w.social.state.research.length,128);
+  for(let n=0;n<150;n++){a.gameId='r'+n;w.send(a,{type:'race_event',event:{type:'RACE_STATE',body:'05000000',state:5}});}
+  assert.equal(w.social.races.size,128);
+  w.now.t+=120000;a.gameId='new';w.send(a,{type:'race_event',event:{type:'RACE_STATE',body:'05000000',state:5}});
+  assert.equal(w.social.races.size,1);
+});

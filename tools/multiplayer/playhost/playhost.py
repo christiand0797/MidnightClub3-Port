@@ -32,6 +32,7 @@ import secrets
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -48,6 +49,44 @@ PLAYER = re.compile(r"^[0-9a-f]{64}$")
 MARKER = ".playhost"
 DEFAULT_INSTANCES = (1, 2, 3, 4, 5, 6, 8)
 STREAM_BASE = 8800  # copy k streams on STREAM_BASE + 2k (UDP) and +1 (browser WebSocket, loopback only)
+MAX_SAVE_BYTES = 16 * 1024 * 1024
+
+
+def private_tree(root, max_bytes=MAX_SAVE_BYTES, max_files=4096):
+    """Reject links and excessive trees before any copy or rename. Never delete a player tree."""
+    root = Path(root).absolute()
+    for part in (root, *root.parents):
+        if part.exists() or part.is_symlink():
+            st = part.lstat()
+            if stat.S_ISLNK(st.st_mode) or getattr(st, 'st_file_attributes', 0) & 0x400:
+                raise OSError('Linked save paths are not supported.')
+    if not root.exists():
+        return
+    total = count = 0
+    for base, dirs, files in os.walk(root, followlinks=False):
+        for name in dirs + files:
+            p = Path(base) / name
+            st = p.lstat()
+            count += 1
+            if stat.S_ISLNK(st.st_mode) or getattr(st, 'st_file_attributes', 0) & 0x400:
+                raise OSError('Linked save entries are not supported.')
+            if not stat.S_ISDIR(st.st_mode):
+                if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+                    raise OSError('Save entries must be private regular files.')
+                total += st.st_size
+            if count > max_files or total > max_bytes:
+                raise OSError('Save storage quota reached; existing files were preserved.')
+
+
+def retain_tree(source):
+    """Same-parent rename with a fresh name; the old bytes remain available for recovery."""
+    source = Path(source).absolute()
+    private_tree(source)
+    dest = source.with_name(source.name + '.retained-' + secrets.token_hex(8))
+    if dest.parent.resolve() != source.parent.resolve() or dest.exists():
+        raise OSError('Unsafe save retention path.')
+    source.rename(dest)
+    return dest
 
 
 def hdd_dir(install, instance):
@@ -78,6 +117,7 @@ class Session:
         self.viewers = 0
         self.state = "starting"
         self.ended = asyncio.Event()
+        self.stop_lock = asyncio.Lock()
 
     @property
     def stream_port(self):
@@ -111,12 +151,17 @@ class PlayHost:
 
     def prepare_save(self, s):
         d = hdd_dir(self.install, s.instance)
+        if not usable_slot(self.install, s.instance):
+            raise OSError('Slot is no longer owned by this host.')
+        private_tree(d, 256 * 1024 * 1024)
+        private_tree(self.save_root, 2 * 1024 * 1024 * 1024, 32768)
         d.mkdir(parents=True, exist_ok=True)
         (d / MARKER).write_text("made by tools/multiplayer/playhost; reset for each browser session\n")
         udata = d / "E" / "UDATA"
         if udata.exists():
-            shutil.rmtree(udata)
+            retain_tree(udata)
         if s.player and self.player_saves(s.player).exists():
+            private_tree(self.player_saves(s.player))
             shutil.copytree(self.player_saves(s.player), udata)
         else:
             udata.mkdir(parents=True)
@@ -126,13 +171,19 @@ class PlayHost:
         if not s.player or not udata.exists() or not any(udata.rglob("*")):
             return
         dest = self.player_saves(s.player)
-        tmp = dest.with_name("UDATA.new")
-        if tmp.exists():
-            shutil.rmtree(tmp)
+        private_tree(udata)
+        private_tree(self.save_root, 2 * 1024 * 1024 * 1024, 32768)
+        tmp = dest.with_name("UDATA.new-" + secrets.token_hex(8))
         shutil.copytree(udata, tmp)
+        previous = None
         if dest.exists():
-            shutil.rmtree(dest)
-        tmp.rename(dest)
+            previous = retain_tree(dest)
+        try:
+            tmp.rename(dest)
+        except OSError:
+            if previous is not None and not dest.exists():
+                previous.rename(dest)
+            raise
 
     # ---------- processes ----------
     def spawn(self, s, name, args, env=None, cwd=None):
@@ -184,6 +235,10 @@ class PlayHost:
             await self.stop(s)
 
     async def stop(self, s):
+        async with s.stop_lock:
+            await self._stop(s)
+
+    async def _stop(self, s):
         if s.state == "ended":
             return
         s.state = "ending"
@@ -198,6 +253,7 @@ class PlayHost:
                     await asyncio.wait_for(asyncio.to_thread(p.wait), 10)
                 except asyncio.TimeoutError:
                     p.kill()
+                    await asyncio.to_thread(p.wait)
             log.close()
         try:
             self.keep_save(s)
@@ -267,7 +323,7 @@ class PlayHost:
     def session_for(self, req):
         s = self.sessions.get(req.match_info["sid"])
         key = req.headers.get("X-Session-Key") or req.query.get("key", "")
-        if not s or not hmac.compare_digest(key, s.key):
+        if not s or not isinstance(key, str) or not PLAYER.fullmatch(key) or not hmac.compare_digest(key, s.key):
             return None
         return s
 
@@ -287,10 +343,12 @@ class PlayHost:
         s = self.session_for(req)
         if not s:
             return web.Response(status=404)
-        ws = web.WebSocketResponse(heartbeat=20, max_msg_size=8 * 1024 * 1024)
-        await ws.prepare(req)
+        if s.viewers >= 1:
+            return web.Response(status=429, text='A browser is already connected to this game.')
         s.viewers += 1
+        ws = web.WebSocketResponse(heartbeat=20, max_msg_size=4096)
         try:
+            await ws.prepare(req)
             upstream = None
             deadline = time.time() + self.a.start_timeout
             async with ClientSession() as http:
@@ -314,9 +372,9 @@ class PlayHost:
                 async def down():
                     async for m in upstream:
                         if m.type == WSMsgType.TEXT:
-                            await ws.send_str(m.data)
+                            await asyncio.wait_for(ws.send_str(m.data), 2)
                         elif m.type == WSMsgType.BINARY:
-                            await ws.send_bytes(m.data)
+                            await asyncio.wait_for(ws.send_bytes(m.data), 2)
                         else:
                             break
 
@@ -338,6 +396,10 @@ class PlayHost:
                                                    return_when=asyncio.FIRST_COMPLETED)
                 for t in pending:
                     t.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
+                for t in done:
+                    if not t.cancelled():
+                        t.exception()  # Consume forwarding failure; teardown releases the controller upstream.
                 await upstream.close()
         finally:
             s.viewers -= 1
@@ -395,7 +457,13 @@ def parse(argv=None):
                     help="stream picture scale 0.25-1 (the stream is lossless PNG today: smaller is faster)")
     ap.add_argument("--saves", type=Path, default=None, help="where browser careers are kept between sessions")
     ap.add_argument("--python", default=sys.executable)
-    return ap.parse_args(argv)
+    args = ap.parse_args(argv)
+    if not (1 <= args.max_sessions <= len(args.instances) and 1 <= args.per_address <= args.max_sessions):
+        ap.error('Session limits must fit the selected instance slots.')
+    if not (1 <= args.fps <= 60 and 0.25 <= args.scale <= 1 and 5 <= args.idle <= 3600
+            and 5 <= args.start_timeout <= 300 and 0 <= args.window_wait <= 60 and 1024 <= args.port <= 65535):
+        ap.error('Invalid stream/time/port budget.')
+    return args
 
 
 def main(argv=None):

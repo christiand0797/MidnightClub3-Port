@@ -32,7 +32,6 @@ __pycache__/
 
 # Multiplayer tools
 tools/multiplayer/relay/node_modules/
-tools/multiplayer/relay/package-lock.json
 tools/multiplayer/relay/relay.log
 tools/multiplayer/relay/relay.err
 tools/multiplayer/relay/data/

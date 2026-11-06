@@ -5,6 +5,12 @@ the relay tunnel. The browser supplies accounts, cloud file storage, rooms and a
 optional paired view/controller connection to a Windows host. It does not yet
 run the complete game locally in WebAssembly/WebGPU.
 
+The `mc3.top` Cloudflare deployment provides the relay, accounts (register, sign
+in, device sessions, sign out), cloud save/config snapshots and car clubs, in the
+World Durable Object's SQLite (`cloudflare/src/accounts.js`). Its HTTP contract
+matches the Node server's, so the account page and launcher work unchanged.
+Test it with `MC3_WORLD=https://mc3.top node cloudflare/accounts_live.test.mjs`.
+
 ## Join from a native installation
 
 Use the same explicit instance as the game you started. Instances 0 and 1 share
@@ -18,6 +24,12 @@ or `MC3_SERVER`), which does not need local Node:
 & 'C:/Users/purpl/AppData/Local/Programs/Python/Python312/python.exe' -m pip install 'websockets>=14,<18'
 powershell -NoProfile -File tools/multiplayer/Launch-Multiplayer.ps1 -Instance 7
 ```
+
+Race points and rankings go to your account once this PC is signed in: add `-SignIn` (or
+`-Register` for a new account) once. It asks for your name and password, keeps a 30-day device
+sign-in (never the password) and signs the tunnel in on every start. `-SignOut` forgets it,
+`-Guest` races as a guest. `proxy/proxy.py --relay wss://mc3.top/ws --delete-account`
+permanently deletes the account (needs its password).
 
 For a local relay (`-Local`), install Node.js 24 LTS or 26, then install the
 locked server dependencies once:
@@ -44,7 +56,7 @@ an existing healthy relay is reused. Occupied tunnel/stream ports are rejected.
 
 ```powershell
 & 'C:/Users/purpl/AppData/Local/Programs/Python/Python312/python.exe' -m pip install -r tools/multiplayer/stream/requirements.txt
-powershell -NoProfile -File tools/multiplayer/Launch-Multiplayer.ps1 -Instance 7 -StartStream
+powershell -NoProfile -File tools/multiplayer/Launch-Multiplayer.ps1 -Instance 7 -Local -StartStream
 ```
 
 This explicitly shares the selected MC3 game window. A fresh host pairing secret
@@ -89,7 +101,7 @@ Online career metadata is not authoritative competitive progression.
 ## Services and deployment
 
 ```text
-Native game ⇄ MC3R UDP tunnel proxy ⇄ authenticated relay ⇄ other native proxies
+Native game ⇄ MC3R UDP tunnel proxy ⇄ room relay ⇄ other native proxies
 Browser account/rooms ⇄ same-origin HTTPS/WSS relay + account-scoped storage
 Selected native window → paired loopback PNG stream → browser canvas
 Paired browser controller → host IPC → additional native controller port
