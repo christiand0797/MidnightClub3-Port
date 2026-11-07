@@ -374,12 +374,14 @@ tabs.forEach(tab => {
 });
 
 addEventListener('keydown', e => {
+  resumeAudio();
   if (!started) return;
   if (e.code === 'F1') { e.preventDefault(); showMenu(!menuOpen); }
   if (menuOpen) { e.preventDefault(); return; }
   keys.add(e.code); taps.set(e.code, performance.now());
 });
 addEventListener('keyup', e => { if (!menuOpen) keys.delete(e.code); });
+addEventListener('click', resumeAudio, { once: true });
 
 // ---------- Settings UI ----------
 const settingEls = {};
@@ -588,7 +590,13 @@ function refreshLobbyUI() {
 }
 
 // ---------- the game ----------
-let started = false, gpuMode = false, audioCtx = null, audioNode = null;
+let started = false, gpuMode = false, audioCtx = null, audioNode = null, audioReady = false;
+// browsers block audio until a user gesture: set up the context here, resume on first click/key
+function resumeAudio() {
+  if (!audioReady || !audioCtx) return;
+  audioReady = false;
+  audioCtx.resume().then(() => {}).catch(() => {});
+}
 async function start() {
   if (started || !crossOriginIsolated) return;
   started = true;
@@ -632,7 +640,7 @@ async function start() {
     await audioCtx.audioWorklet.addModule(url);
     audioNode = new AudioWorkletNode(audioCtx, 'mc3-audio');
     audioNode.connect(audioCtx.destination);
-    await audioCtx.resume();
+    audioReady = true;
   } catch (e) { console.warn('Web Audio setup failed:', e); }
   $('setup').style.display = 'none';
   $('screen').style.display = 'block';

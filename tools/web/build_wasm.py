@@ -138,7 +138,7 @@ def main():
         # storage (OPFS) for the disc copy and saves; fixed memory so the page's views of it never go stale; the page
         # reads frames and writes the pad through these exports
         link += ["-sENVIRONMENT=web,worker", "-sPROXY_TO_PTHREAD=1", "-sWASMFS=1", "-sALLOW_MEMORY_GROWTH=0",
-                 "-sINITIAL_MEMORY=2048MB", "-sPTHREAD_POOL_SIZE=24", "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32",
+                 "-sINITIAL_MEMORY=2048MB", "-sPTHREAD_POOL_SIZE=24", "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,HEAPF32",
                  "-sEXPORTED_FUNCTIONS=_main,_web_set_pad,_web_frame,_web_frame_lock,_web_gpu_ring,_web_audio_render,_malloc,_free"]
     if a.debug:
         link += ["-sASSERTIONS=2", "-g2", "-sSTACK_OVERFLOW_CHECK=1"]
