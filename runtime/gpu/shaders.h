@@ -72,6 +72,9 @@ std::string QuadWgsl(std::string s);
 std::string QuadHlsl(std::string s);
 // depth stored reversed (1 at the near clip, 0 at the far one) from DrawConstants::zparams, for a vertex shader
 std::string ReversedDepthHlsl(std::string s);
+std::string ReversedDepthWgsl(std::string s);
+// a point sprite's program hands its point size to SpriteHlsl in tc3, whose coordinates the sprite makes
+std::string SpriteSizeWgsl(std::string s);
 // DLSS's variants, applied after ReversedDepthHlsl: the vertex shader hands on its clip position unjittered (cur) and
 // as of the previous frame (prev: a program's PrevPos on last frame's constants in b2, else cur), then moves pos by
 // DrawConstants::taa.xy; the pixel shader writes SV_Target1 for the velocity target (d3d12.cpp, DLSS motion)

@@ -63,9 +63,36 @@ web/src/gpu/encoder.ts, read 6 Nov 2026)
   both spellings side by side in one decision tree. Pixel bindings: `tex<i>` at `@group(1) @binding(2i)`, `smp<i>` at
   2i + 1, `pbr_nrm` 8, `pbr_orm` 9. `tests/wgsl_corpus_test` runs 600 generated keys. Its HLSL output is byte-identical
   to the generator before the change, so the D3D12 build is unchanged. All 657 WGSL modules (corpus plus vertex
-  programs) compile and build pipelines in Chromium. The WGSL uses `ShaderHooks`' defaults: D3D12's extension hooks
-  (texture pack reads, cube overrides, car paint, reversed depth, DLSS velocity) have no WGSL spelling yet, so they
-  come with step 2's backend.
+  programs) compile and build pipelines in Chromium.
+- Step 2, WebGPU backend mirroring `d3d12.cpp` + `nfsu2-web` performance architecture (6 Nov 2026):
+  - Shared API-independent draw setup (`runtime/gpu/draw_setup.h`, `runtime/gpu/draw_setup.cpp`) extracted from
+    `d3d12.cpp` (`ClassifyShaders`, `VertexKey`, `FillSurfaceConstants`, `FillFogConstants`, `FillCombinerConstants`,
+    `FillDepthConstants`, `FillTransformConstants`, `FillLightConstants`, `KeyBlend`, `KeyRasterizer`,
+    `ReadStagePalette`, `OffsetsPolygons`) so both `d3d12.cpp` and `tools/web/webgpu_backend.cpp` run the exact same
+    draw setup.
+  - Added `ReversedDepthWgsl` (`1.0 - z` clip depth matching `D3D12Backend::ReversedDepthHlsl`) and `SpriteSizeWgsl` to
+    `runtime/gpu/shaders.cpp`.
+  - Enabled `-DXBE_RAW_VERTICES=1` for the browser build (`tools/web/build_wasm.py`, `runtime/gpu/vertex.cpp`) so raw
+    GPU vertex buffers go directly to WebGPU vertex inputs (`OP_DRAW2`), only decoding 1-component 8/16-bit formats that
+    WebGPU lacks.
+  - Matched `d3d12.cpp` parity in `tools/web/webgpu_backend.cpp` and `tools/web/gpu.js`:
+    - Sized target tracking (`TargetKey(key, depth, w, h)`), `DepthCopy` (`OP_DEPTH_COPY`), active render-target
+      feedback copies (`t.fb`), separated color/depth clears on mismatched dimensions, viewport-rect fallback in `Clear`,
+      and shader-based sub-rectangle / partial write-mask clears (`CLEAR_SHADER`).
+    - Sampled texture change detection (`MemSig` + `DirtyEpoch` + palette hash), `SpriteOnStage3`/`SpriteStageZero`,
+      `UnitTexcoords`/`AnyStageWraps` UV clamp heuristic, `FACTOR_ALPHA` for alpha blend factors, `CMP_REVERSED` depth
+      comparisons, and `depthBiasSlopeScale`.
+  - Applied `nfsu2-web` (`nfsu2.xyz`) performance patterns in `tools/web/gpu.js` and `tools/web/webgpu_backend.cpp`:
+    - 2-frames-in-flight ring consumption (claiming command buffers into a persistent `cmdBuf` before encoding so the
+      Wasm game thread simulates the next frame in parallel) and 60 ms hidden-tab timeout so background tabs never stall
+      the worker.
+    - Persistent staging buffers (`ustageBuf`, `astageBuf`) with one `writeBuffer` per uniform/vertex arena per frame,
+      deferred `.destroy()` after `queue.submit`, redundant pass state deduplication (`setPipeline`, `setBindGroup`,
+      `setBlendConstant`, `setStencilReference`, `setScissorRect`), fast integer PSO hashing (`psoKey`), and
+      `localStorage` pipeline warm-up (`mc3_pso_warmup_v1`) using `device.createRenderPipelineAsync`.
+  - Verified in Chromium WebGPU (`http://localhost:8800/?devdisc`): intro movies, menus, and the 3D Showroom (Scion tC,
+    reflections, garage environment, UI overlays) render cleanly at 50-60 fps (`x0.98` real-time speed) with 0 missing
+    textures and 0 WebGPU validation errors.
 
 Milestone order: 1 (vertex programs first: most draws), then 2's draw path for the menus, then 3D scenes, then targets
 and effects, then 4.

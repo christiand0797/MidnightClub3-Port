@@ -248,7 +248,9 @@ function tick() {
 
 // testing: the CPU picture's last frame as a data URL (with ?ref=1, also in WebGPU compare mode)
 window.cpuSnapshot = () => {
-  const M = window.Module, info = M._web_frame() >>> 2;
+  const M = window.Module;
+  if (!M || !M._web_frame || !M._web_frame_lock) return null;
+  const info = M._web_frame() >>> 2;
   const w = M.HEAPU32[info + 1], h = M.HEAPU32[info + 2], ptr = M.HEAPU32[info + 3];
   if (!w || !M._web_frame_lock(1)) return null;
   const img = new ImageData(w, h);

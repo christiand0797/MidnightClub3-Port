@@ -10,7 +10,7 @@
 // texture per depth surface; the presented target is shown.
 'use strict';
 window.MC3Gpu = (() => {
-  const OP_CLEAR = 1, OP_PRESENT = 2, OP_TEXTURE = 3, OP_DRAW = 4, OP_COPY = 5, OP_SHADER = 6, OP_IMAGE = 7, OP_DRAW2 = 8;
+  const OP_CLEAR = 1, OP_PRESENT = 2, OP_TEXTURE = 3, OP_DRAW = 4, OP_COPY = 5, OP_SHADER = 6, OP_IMAGE = 7, OP_DRAW2 = 8, OP_DEPTH_COPY = 9;
   const DRAW_HEADER = 98, VERTEX_FLOATS = 32, UNIFORM_STRIDE = 512, MAX_DRAWS = 16384;
 
   const SHADER = /* wgsl */ `
@@ -171,6 +171,7 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
   const FACTOR = { 0: 'zero', 1: 'one', 0x300: 'src', 0x301: 'one-minus-src', 0x302: 'src-alpha', 0x303: 'one-minus-src-alpha',
     0x304: 'dst-alpha', 0x305: 'one-minus-dst-alpha', 0x306: 'dst', 0x307: 'one-minus-dst', 0x308: 'src-alpha-saturated',
     0x8001: 'constant', 0x8002: 'one-minus-constant', 0x8003: 'constant', 0x8004: 'one-minus-constant' };
+  const FACTOR_ALPHA = { ...FACTOR, 0x300: 'src-alpha', 0x301: 'one-minus-src-alpha', 0x306: 'dst-alpha', 0x307: 'one-minus-dst-alpha' };
   const BLEND_OP = { 0x8006: 'add', 0x800A: 'subtract', 0x800B: 'reverse-subtract', 0x8007: 'min', 0x8008: 'max' };
   const COMPARE = { 0x200: 'never', 0x201: 'less', 0x202: 'equal', 0x203: 'less-equal', 0x204: 'greater', 0x205: 'not-equal',
     0x206: 'greater-equal', 0x207: 'always' };
@@ -179,8 +180,9 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
   let device, context, canvasFormat, M = null, ring = 0, features = 0;
   let module, blitModule, layout, pipelineLayout, blitPipeline, white;
   const pipelines = new Map(), samplers = new Map(), textures = new Map(), targets = new Map(), groups = new Map();
+  const destroyAfterSubmit = [];
   let vbuf = null, ibuf = null, ubuf = null, vcap = 0, icap = 0;
-  let frames = 0, lastFront = 0;
+  let frames = 0, lastFront = 0, referencePath = false;
   const stats = { draws: 0, textures: 0, programmable: 0, missing: 0, targetTex: 0, bound: 0 };
 
   async function init(canvas) {
@@ -232,8 +234,8 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
   function target(key, w, h) {
     let t = targets.get(key);
     if (!t || t.w !== w || t.h !== h) {
-      t?.color.destroy();
-      t = { w, h,
+      if (t) { destroyAfterSubmit.push(t.color); if (t.fb) destroyAfterSubmit.push(t.fb); }
+      t = { w, h, fb: null, fbView: null, fbGen: 0,
         color: device.createTexture({ size: [w, h], format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST }) };
       t.view = t.color.createView();
       targets.set(key, t);
@@ -275,7 +277,7 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
   function texture(key, w, h, data) {
     let t = textures.get(key);
     if (!t || t.w !== w || t.h !== h) {
-      t?.tex.destroy();
+      if (t) destroyAfterSubmit.push(t.tex);
       t = { w, h, tex: device.createTexture({ size: [w, h], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST }) };
       t.view = t.tex.createView();
       t.gen = (textures.get(key)?.gen || 0) + 1;
@@ -321,14 +323,33 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
   const STENCIL_OP = { 0: 'zero', 0x1E00: 'keep', 0x1E01: 'replace', 0x1E02: 'increment-clamp', 0x1E03: 'decrement-clamp',
     0x150A: 'invert', 0x8507: 'increment-wrap', 0x8508: 'decrement-wrap' };
   const CMP_INDEX = ['never', 'less', 'equal', 'less-equal', 'greater', 'not-equal', 'greater-equal', 'always'];
-  // the console tests texel OP r, WebGPU r OP texel: the same test with the sides swapped
-  const CMP_SWAPPED = ['never', 'greater', 'equal', 'greater-equal', 'less', 'not-equal', 'less-equal', 'always'];
+  // ReversedDepthWgsl stores 1 - z (1 at near, 0 at far): < and > swap, <= and >= swap (D3D12Backend::ReversedCmp)
+  const CMP_REVERSED = ['never', 'greater', 'equal', 'greater-equal', 'less', 'not-equal', 'less-equal', 'always'];
   const DRAW2_HEADER = 96;
   const shaders = new Map(), images = new Map(), layouts1 = new Map(), pipelines2 = new Map(), groups1 = new Map();
   const depths = new Map(), dummies = {};
   let layout0 = null, group0 = null, group0Buf = null, ucap = 0, ugpu = null, acap = 0, agpu = null;
+  let ustageBuf = new Uint8Array(1 << 20), astageBuf = new Uint8Array(4 << 20), cmdBuf = new Uint32Array(2 << 20);
+  const dynOffsets = new Uint32Array(2), vbOff = new Uint32Array(17), vbBytes = new Uint32Array(17);
+  const drawKinds = ['', '', '', ''], drawViews = [null, null, null, null], drawSamps = [null, null, null, null];
   const decoder = new TextDecoder();
   let dcBytes = 0;
+
+  // Pipeline warm-up cache (nfsu2-web pattern): saved pipeline states are compiled with createRenderPipelineAsync
+  // as soon as their vertex and fragment shaders arrive.
+  const WARMUP_KEY = 'mc3_pso_warmup_v1';
+  const warmupSaved = new Map(), warmupPending = [];
+  let warmupDirty = false, warmupTimer = 0;
+  try {
+    const raw = localStorage.getItem(WARMUP_KEY);
+    if (raw) for (const r of JSON.parse(raw)) { warmupSaved.set(r.k, r); warmupPending.push(r); }
+  } catch (_) {}
+  function flushWarmup() {
+    warmupTimer = 0;
+    if (!warmupDirty) return;
+    warmupDirty = false;
+    try { localStorage.setItem(WARMUP_KEY, JSON.stringify([...warmupSaved.values()].slice(-512))); } catch (_) {}
+  }
 
   const idOf = (lo, hi) => `${hi.toString(16)}:${lo.toString(16)}`;
 
@@ -339,6 +360,17 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     });
     shaders.set(id, { module, stage });
     stats.shaders = (stats.shaders || 0) + 1;
+    for (let i = warmupPending.length - 1; i >= 0; i--) {
+      const r = warmupPending[i];
+      const vs = shaders.get(r.vs), ps = shaders.get(r.ps);
+      if (!vs || !ps) continue;
+      warmupPending.splice(i, 1);
+      if (pipelines2.has(r.k)) continue;
+      const h = new Uint32Array(r.h), f32 = new Float32Array(h.buffer);
+      device.createRenderPipelineAsync(pipeline2Desc(h, f32, 0, vs.module, ps.module, r.kinds)).then(p => {
+        if (!pipelines2.has(r.k)) pipelines2.set(r.k, p);
+      }, () => {});
+    }
   }
 
   function image(u32, p) {
@@ -350,7 +382,7 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     const layers = kind === 3 ? 6 : kind === 2 ? depth : 1;
     let t = images.get(id);
     if (!t || t.w !== W || t.h !== H || t.layers !== layers || t.levels !== levels || t.format !== format || t.kind !== kind) {
-      t?.tex.destroy();
+      if (t) destroyAfterSubmit.push(t.tex);
       t = { w: W, h: H, layers, levels, format, kind,
         tex: device.createTexture({ size: [W, H, layers], format, mipLevelCount: levels, dimension: kind === 2 ? '3d' : '2d',
           usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST }) };
@@ -368,7 +400,7 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
         const rows = bc ? ch / 4 : ch;
         if (bytes && pitch && bytes >= pitch * rows * ld)
           device.queue.writeTexture({ texture: t.tex, mipLevel: l, origin: [0, 0, kind === 3 ? f : 0] },
-            new Uint8Array(u32.buffer, (at + 2) * 4, bytes).slice(), { bytesPerRow: pitch, rowsPerImage: rows }, [cw, ch, ld]);
+            new Uint8Array(u32.buffer, u32.byteOffset + (at + 2) * 4, bytes), { bytesPerRow: pitch, rowsPerImage: rows }, [cw, ch, ld]);
         at += 2 + Math.ceil(bytes / 4);
       }
     }
@@ -424,7 +456,8 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
         lodMinClamp: maxmip, lodMaxClamp: mip ? 32 : maxmip };
       if (d.lodMaxClamp < d.lodMinClamp) d.lodMaxClamp = d.lodMinClamp;
       if (aniso > 1 && d.minFilter === 'linear' && d.magFilter === 'linear' && d.mipmapFilter === 'linear') d.maxAnisotropy = aniso;
-      if (shadow) { d.compare = CMP_SWAPPED[(word >>> 24) & 7]; d.maxAnisotropy = 1; }
+      // the console tests texel OP r, WebGPU r OP texel; with both reversed (ReversedDepthWgsl) it is the same OP (d3d12.cpp:3017)
+      if (shadow) { d.compare = CMP_INDEX[(word >>> 24) & 7]; d.maxAnisotropy = 1; }
       s = device.createSampler(d);
       samplers.set(key, s);
     }
@@ -435,21 +468,70 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     const k = `${key}:${w}x${h}`;
     let d = depths.get(k);
     if (!d) {
-      d = { tex: device.createTexture({ size: [w, h], format: 'depth24plus-stencil8', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING }) };
+      d = { tex: device.createTexture({ size: [w, h], format: 'depth24plus-stencil8',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST }) };
       d.view = d.tex.createView();
       d.depthOnly = d.tex.createView({ aspect: 'depth-only' });
       depths.set(k, d);
-      depths.set(`latest:${key}`, d);
     }
+    depths.set(`latest:${key}`, d);
     return d;
   }
 
-  function pipeline2(h, vs, ps, kinds) {
-    const fields = [h[0], h[1], h[2], h[3], h[4] ? 1 : 0, h[7] ? 1 : 0, ...h.subarray(10, 20), h[19] ? h.subarray(20, 26).join('.') : '',
-      h[26], h[27], h[28], h[35], h[36], (h[10] >>> 8) & 1 ? h[38] : '', ...h.subarray(41, 73)];
-    const key = fields.join(',') + '|' + kinds.join(',');
-    let p = pipelines2.get(key);
+  const CLEAR_SHADER = /* wgsl */ `
+@vertex fn vs(@builtin(vertex_index) i: u32, @builtin(instance_index) z: u32) -> @builtin(position) vec4f {
+  let x = f32(i & 1u) * 4.0 - 1.0;
+  let y = 1.0 - f32(i & 2u) * 2.0;
+  return vec4f(x, y, f32(z) / 65535.0, 1.0);
+}
+@fragment fn fs() -> @location(0) vec4f {
+  return vec4f(1.0, 1.0, 1.0, 1.0);
+}
+`;
+  let clearModule = null;
+  const clearPipelines = new Map();
+  function clearPipeline(wmask, zClear, sClear) {
+    const key = `${wmask}|${zClear ? 1 : 0}|${sClear ? 1 : 0}`;
+    let p = clearPipelines.get(key);
     if (p) return p;
+    if (!clearModule) clearModule = device.createShaderModule({ code: CLEAR_SHADER, label: 'clear' });
+    const face = { compare: 'always', failOp: 'keep', depthFailOp: 'keep', passOp: sClear ? 'replace' : 'keep' };
+    p = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: clearModule, entryPoint: 'vs' },
+      fragment: { module: clearModule, entryPoint: 'fs', targets: [{
+        format: 'rgba8unorm',
+        blend: { color: { operation: 'add', srcFactor: 'constant', dstFactor: 'zero' },
+                 alpha: { operation: 'add', srcFactor: 'constant', dstFactor: 'zero' } },
+        writeMask: wmask,
+      }] },
+      primitive: { topology: 'triangle-list' },
+      depthStencil: { format: 'depth24plus-stencil8', depthWriteEnabled: zClear, depthCompare: 'always',
+        stencilFront: face, stencilBack: face, stencilReadMask: 0xFF, stencilWriteMask: sClear ? 0xFF : 0 },
+    });
+    clearPipelines.set(key, p);
+    return p;
+  }
+
+  function psoKey(h, kinds) {
+    let a = 0x811c9dc5 | 0, b = 0x9e3779b9 | 0;
+    const mix = v => { a = Math.imul(a ^ v, 0x01000193); b = Math.imul(b ^ v, 0x85ebca6b); };
+    mix(h[0]); mix(h[1]); mix(h[2]); mix(h[3]);
+    mix(h[4] ? 1 : 0); mix(h[7] ? 1 : 0);
+    for (let i = 10; i < 20; i++) mix(h[i]);
+    if (h[19]) for (let i = 20; i < 26; i++) mix(h[i]);
+    mix(h[26]); mix(h[27]); mix(h[28]);
+    const regs = h[35], nb = h[36];
+    mix(regs); mix(nb);
+    if ((h[10] >>> 8) & 1) mix(h[38]);
+    mix(h[90]);
+    for (let r = 0; r < 16; r++) if ((regs >>> r) & 1) mix(h[41 + r]);
+    for (let i = 0; i < nb; i++) mix(h[57 + i]);
+    for (let i = 0; i < 4; i++) mix(kinds[i].charCodeAt(0));
+    return `${a >>> 0}:${b >>> 0}:${h[0].toString(16)}:${h[2].toString(16)}`;
+  }
+
+  function pipeline2Desc(h, f32, pOff, vs, ps, kinds) {
     const regs = h[35], nb = h[36], topo = h[10] & 0xFF, strip = (h[10] >>> 8) & 1;
     const buffers = [];
     for (let b = 0; b < nb; b++) buffers.push({ arrayStride: h[57 + b], attributes: [] });
@@ -464,7 +546,8 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     if (blend) {
       const operation = BLEND_OP[bop] || 'add', minmax = operation === 'min' || operation === 'max';
       const c = { operation, srcFactor: minmax ? 'one' : (FACTOR[src] || 'one'), dstFactor: minmax ? 'one' : (FACTOR[dst] || 'zero') };
-      blendState = { color: c, alpha: c };
+      const a = { operation, srcFactor: minmax ? 'one' : (FACTOR_ALPHA[src] || 'one'), dstFactor: minmax ? 'one' : (FACTOR_ALPHA[dst] || 'zero') };
+      blendState = { color: c, alpha: a };
     }
     const primitive = { topology: topo === 0 ? 'point-list' : topo === 1 ? (strip ? 'line-strip' : 'line-list') : (strip ? 'triangle-strip' : 'triangle-list') };
     if (strip && h[37]) primitive.stripIndexFormat = h[38] ? 'uint16' : 'uint32';
@@ -472,23 +555,37 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     const zen = h[16], sten = h[19];
     const face = { compare: sten ? CMP_INDEX[(h[20] - 0x200) & 7] : 'always', failOp: STENCIL_OP[h[23]] || 'keep',
       depthFailOp: STENCIL_OP[h[24]] || 'keep', passOp: STENCIL_OP[h[25]] || 'keep' };
-    const desc = {
+    const zslope = topo >= 2 ? f32[pOff + 90] : 0;  // WebGPU requires depthBiasSlopeScale = 0 on point/line topologies
+    return {
       layout: device.createPipelineLayout({ bindGroupLayouts: [layout0, layout1(kinds)] }),
       vertex: { module: vs, entryPoint: 'main', buffers },
       fragment: { module: ps, entryPoint: 'main', targets: [{ format: 'rgba8unorm', blend: blendState, writeMask: h[15] }] },
       primitive,
       depthStencil: { format: 'depth24plus-stencil8', depthWriteEnabled: !!(zen && h[17]),
-        depthCompare: zen ? (CMP_INDEX[(h[18] - 0x200) & 7] || 'always') : 'always',
+        depthCompare: zen ? (CMP_REVERSED[(h[18] - 0x200) & 7] || 'always') : 'always',
+        depthBiasSlopeScale: zslope,
         stencilFront: face, stencilBack: face, stencilReadMask: sten ? h[21] : 0xFF, stencilWriteMask: sten ? h[22] : 0 },
     };
-    try { p = device.createRenderPipeline(desc); } catch (e) { console.warn('webgpu: pipeline', e.message); p = null; }
+  }
+
+  function pipeline2(h, f32, pOff, vs, ps, kinds) {
+    const key = psoKey(h, kinds);
+    let p = pipelines2.get(key);
+    if (p !== undefined) return p;
+    try { p = device.createRenderPipeline(pipeline2Desc(h, f32, pOff, vs, ps, kinds)); }
+    catch (e) { console.warn('webgpu: pipeline', e.message); p = null; }
     pipelines2.set(key, p);
+    if (p && !warmupSaved.has(key) && warmupSaved.size < 512) {
+      warmupSaved.set(key, { k: key, vs: idOf(h[0], h[1]), ps: idOf(h[2], h[3]), kinds: [...kinds], h: Array.from(h) });
+      warmupDirty = true;
+      if (!warmupTimer) warmupTimer = setTimeout(flushWarmup, 3000);
+    }
     return p;
   }
 
   // one frame's commands: uploads first (queued before the submit), then the passes
   function run(u32, start, count, present) {
-    const f32 = new Float32Array(u32.buffer);
+    const f32 = new Float32Array(u32.buffer, u32.byteOffset, u32.length);
     const draws = [], clears = [];
     let vfloats = 0, iwords = 0, ubytes = 0, abytes = 0;
     // pass 1: textures, and the sizes of the vertex and index data
@@ -496,11 +593,12 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
       const op = u32[at], n = u32[at + 1], p = at + 2;
       if (op === OP_TEXTURE) {
         const w = u32[p + 1], h = u32[p + 2];
-        texture(u32[p], w, h, new Uint8Array(u32.buffer, (p + 3) * 4, w * h * 4).slice());
+        texture(u32[p], w, h, new Uint8Array(u32.buffer, u32.byteOffset + (p + 3) * 4, w * h * 4));
       } else if (op === OP_DRAW) {
+        referencePath = true;
         vfloats += u32[p + 9] * VERTEX_FLOATS; iwords += u32[p + 10];
       } else if (op === OP_SHADER) {
-        shaderModule(idOf(u32[p], u32[p + 1]), u32[p + 2], decoder.decode(new Uint8Array(u32.buffer, (p + 4) * 4, u32[p + 3]).slice()));
+        shaderModule(idOf(u32[p], u32[p + 1]), u32[p + 2], decoder.decode(new Uint8Array(u32.buffer, u32.byteOffset + (p + 4) * 4, u32[p + 3])));
       } else if (op === OP_IMAGE) {
         image(u32, p);
       } else if (op === OP_DRAW2) {
@@ -509,21 +607,20 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
         if (fl & 1) ubytes += 3072;
         if (fl & 2) ubytes += Math.ceil(dcBytes / 256) * 256;
         let q = p + DRAW2_HEADER + (fl & 1 ? 768 : 0) + (fl & 2 ? dcw : 0);
-        const lens = [];
-        for (let b = 0, nb = u32[p + 36]; b <= nb; b++) { lens.push(u32[q]); abytes += Math.ceil(u32[q] / 4) * 4 + 4; q += 1 + Math.ceil(u32[q] / 4); }
-        stats.lastDraw2 = { n, fl, dcw, nb: u32[p + 36], lens, abytes, ubytes };
-        if (q !== p + n) stats.badDraw2 = { n, used: q - p, fl, dcw, nb: u32[p + 36], lens };
+        for (let b = 0, nb = u32[p + 36]; b <= nb; b++) { abytes += Math.ceil(u32[q] / 4) * 4 + 4; q += 1 + Math.ceil(u32[q] / 4); }
       }
       at = p + n;
     }
     // the frame's uniform blocks (256 aligned) and vertex and index bytes, staged here and written before the submit
     if (!ugpu || ubytes > ucap) {
-      ugpu?.destroy(); ucap = Math.max(ubytes, 1 << 20) * 2;
+      if (ugpu) destroyAfterSubmit.push(ugpu);
+      ucap = Math.max(ubytes, 1 << 20) * 2;
       ugpu = device.createBuffer({ size: ucap, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
       group0 = null;
     }
     if (!agpu || abytes > acap) {
-      agpu?.destroy(); acap = Math.max(abytes, 4 << 20) * 2;
+      if (agpu) destroyAfterSubmit.push(agpu);
+      acap = Math.max(abytes, 4 << 20) * 2;
       agpu = device.createBuffer({ size: acap, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
     }
     if (dcBytes && (!group0 || group0Buf !== ugpu)) {
@@ -531,44 +628,83 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
         { binding: 1, resource: { buffer: ugpu, size: dcBytes } }] });
       group0Buf = ugpu;
     }
-    const ustage = new Uint8Array(Math.max(ubytes, 4)), astage = new Uint8Array(Math.max(abytes, 4));
+    if (ubytes > ustageBuf.byteLength) ustageBuf = new Uint8Array(Math.max(ubytes, ustageBuf.byteLength * 2));
+    if (abytes > astageBuf.byteLength) astageBuf = new Uint8Array(Math.max(abytes, astageBuf.byteLength * 2));
+    const ustage = ustageBuf, astage = astageBuf;
     let uat = 0, aat = 0, vcOff = 0, dcOff = 0;
-    const verts = new Float32Array(vfloats), idx = new Uint32Array(iwords), uni = new ArrayBuffer(UNIFORM_STRIDE * MAX_DRAWS);
-    const uniU = new Uint32Array(uni), uniF = new Float32Array(uni);
+    const verts = vfloats ? new Float32Array(vfloats) : null, idx = iwords ? new Uint32Array(iwords) : null;
+    const uni = vfloats ? new ArrayBuffer(UNIFORM_STRIDE * MAX_DRAWS) : null;
+    const uniU = uni ? new Uint32Array(uni) : null, uniF = uni ? new Float32Array(uni) : null;
     let vat = 0, iat = 0, nd = 0;
     const encoder = device.createCommandEncoder();
     let pass = null, passKey = 0, passZs = 0;
+    let curPl = null, curG1 = null, curVc = -1, curDc = -1, curBc = -1, curSref = -1, curScX = -1, curScY = -1, curScW = -1, curScH = -1;
+    const resetPassState = () => { curPl = null; curG1 = null; curVc = -1; curDc = -1; curBc = -1; curSref = -1; curScX = -1; curScY = -1; curScW = -1; curScH = -1; };
     const begin = (key, w, h, clearColor, clearDepth, zs = 0) => {
       pass?.end();
+      resetPassState();
       const t = target(key || `depthonly:${zs}`, w, h);
       const d = depthTarget(zs || `own:${key}`, t.w, t.h);
+      const zClear = clearDepth ? (clearDepth.zClear !== false) : false;
+      const sClear = clearDepth ? (clearDepth.sClear !== false) : false;
       pass = encoder.beginRenderPass({
         colorAttachments: [{ view: t.view, loadOp: clearColor ? 'clear' : 'load', storeOp: 'store', clearValue: clearColor || [0, 0, 0, 0] }],
-        depthStencilAttachment: { view: d.view, depthLoadOp: clearDepth ? 'clear' : 'load', depthStoreOp: 'store',
-          depthClearValue: clearDepth ? clearDepth.z : 1, stencilLoadOp: clearDepth ? 'clear' : 'load', stencilStoreOp: 'store',
-          stencilClearValue: clearDepth ? clearDepth.s : 0 },
+        depthStencilAttachment: { view: d.view, depthLoadOp: zClear ? 'clear' : 'load', depthStoreOp: 'store',
+          depthClearValue: zClear ? clearDepth.z : (referencePath ? 1 : 0), stencilLoadOp: sClear ? 'clear' : 'load', stencilStoreOp: 'store',
+          stencilClearValue: sClear ? clearDepth.s : 0 },
       });
-      pass.setVertexBuffer(0, vbuf);
-      pass.setIndexBuffer(ibuf, 'uint32');
+      if (referencePath) {
+        pass.setVertexBuffer(0, vbuf);
+        pass.setIndexBuffer(ibuf, 'uint32');
+      }
       passKey = key;
       passZs = zs;
       return t;
     };
     // the frame's vertex and index data go up before the passes run
-    if (!vbuf || vfloats * 4 > vcap) { vbuf?.destroy(); vcap = Math.max(vfloats * 4, 4 << 20) * 2; vbuf = device.createBuffer({ size: vcap, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }); }
-    if (!ibuf || iwords * 4 > icap) { ibuf?.destroy(); icap = Math.max(iwords * 4, 1 << 20) * 2; ibuf = device.createBuffer({ size: icap, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST }); }
+    if (referencePath) {
+      if (!vbuf || vfloats * 4 > vcap) { if (vbuf) destroyAfterSubmit.push(vbuf); vcap = Math.max(vfloats * 4, 4 << 20) * 2; vbuf = device.createBuffer({ size: vcap, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }); }
+      if (!ibuf || iwords * 4 > icap) { if (ibuf) destroyAfterSubmit.push(ibuf); icap = Math.max(iwords * 4, 1 << 20) * 2; ibuf = device.createBuffer({ size: icap, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST }); }
+    }
     let front = 0, fw = 0, fh = 0;
     for (let at = start, end = start + count; at + 2 <= end;) {
       const op = u32[at], n = u32[at + 1], p = at + 2;
       if (op === OP_CLEAR) {
-        const flags = u32[p], color = u32[p + 1], rt = u32[p + 4];
+        const flags = u32[p], color = u32[p + 1], rt = u32[p + 4], zs = u32[p + 5];
         const t = targets.get(rt);
-        const w = t ? t.w : u32[p + 6], h = t ? t.h : u32[p + 7];
-        const c = (flags & 0xF0) ? [((color >>> 16) & 255) / 255, ((color >>> 8) & 255) / 255, (color & 255) / 255, ((color >>> 24) & 255) / 255] : null;
-        const zf = f32[p + 2];
-        const d = (flags & 3) ? { z: Math.min(1, Math.max(0, zf > 1 ? 1 : zf)), s: u32[p + 3] & 255 } : null;
-        const zs = u32[p + 5];
-        if ((rt || zs) && (c || d)) begin(rt, w, h, c, d, d ? zs : (passKey === rt ? passZs : 0));
+        const w = u32[p + 6] || (t ? t.w : 640), h = u32[p + 7] || (t ? t.h : 480);
+        const wmask = rt ? (flags >>> 4) & 0xF : 0;
+        const zClear = !!(zs && (flags & 1)), sClear = !!(zs && (flags & 2));
+        if (!wmask && !zClear && !sClear) { at = p + n; continue; }
+        const c = wmask ? [((color >>> 16) & 255) / 255, ((color >>> 8) & 255) / 255, (color & 255) / 255, ((color >>> 24) & 255) / 255] : null;
+        const zf = Math.min(1, Math.max(0, f32[p + 2]));
+        const clearZ = referencePath ? zf : 1 - zf, clearS = u32[p + 3] & 255;
+        const rc = u32[p + 8];
+        const i32 = new Int32Array(u32.buffer, u32.byteOffset, u32.length);
+        const fullRect = rc === 0 || (rc === 1 && i32[p + 9] <= 0 && i32[p + 10] <= 0 && i32[p + 11] >= w && i32[p + 12] >= h);
+        if (fullRect && (wmask === 0 || wmask === 0xF)) {
+          const d = (zClear || sClear) ? { z: clearZ, s: clearS, zClear, sClear } : null;
+          begin(rt, w, h, c, d, d ? zs : (passKey === rt ? passZs : 0));
+        } else {
+          const wantZs = (zClear || sClear) ? zs : (passKey === rt ? passZs : 0);
+          if (!pass || passKey !== rt || passZs !== wantZs || (rt && targets.get(rt)?.w !== w)) begin(rt, w, h, null, null, wantZs);
+          resetPassState();
+          pass.setPipeline(clearPipeline(wmask, zClear, sClear));
+          if (c) pass.setBlendConstant(c);
+          if (sClear) pass.setStencilReference(clearS);
+          const zInst = Math.round(clearZ * 65535);
+          for (let r = 0; r < (rc || 1); r++) {
+            const q = p + 9 + r * 4;
+            const x0 = rc ? Math.max(0, Math.min(w, i32[q])) : 0;
+            const y0 = rc ? Math.max(0, Math.min(h, i32[q + 1])) : 0;
+            const x1 = rc ? Math.max(0, Math.min(w, i32[q + 2])) : w;
+            const y1 = rc ? Math.max(0, Math.min(h, i32[q + 3])) : h;
+            if (x1 > x0 && y1 > y0) {
+              pass.setScissorRect(x0, y0, x1 - x0, y1 - y0);
+              pass.draw(3, 1, 0, zInst);
+            }
+          }
+        }
       } else if (op === OP_DRAW && nd < MAX_DRAWS) {
         const h = u32.subarray(p, p + DRAW_HEADER);
         const rt = h[0], tw = h[1], th = h[2], vc = h[9], ic = h[10];
@@ -605,13 +741,13 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
         const h = u32.subarray(p, p + DRAW2_HEADER);
         const fl = h[89], dcw = h[92];
         let q = p + DRAW2_HEADER;
-        if (fl & 1) { vcOff = uat; ustage.set(new Uint8Array(u32.buffer, q * 4, 3072), uat); uat += 3072; q += 768; }
-        if (fl & 2) { dcOff = uat; ustage.set(new Uint8Array(u32.buffer, q * 4, dcw * 4), uat); uat += Math.ceil(dcw * 4 / 256) * 256; q += dcw; }
-        const nb = h[36], vb = [];
+        if (fl & 1) { vcOff = uat; ustage.set(new Uint8Array(u32.buffer, u32.byteOffset + q * 4, 3072), uat); uat += 3072; q += 768; }
+        if (fl & 2) { dcOff = uat; ustage.set(new Uint8Array(u32.buffer, u32.byteOffset + q * 4, dcw * 4), uat); uat += Math.ceil(dcw * 4 / 256) * 256; q += dcw; }
+        const nb = h[36];
         for (let b = 0; b <= nb; b++) {
           const bytes = u32[q];
-          vb.push({ off: aat, bytes });
-          astage.set(new Uint8Array(u32.buffer, (q + 1) * 4, bytes), aat);
+          vbOff[b] = aat; vbBytes[b] = bytes;
+          astage.set(new Uint8Array(u32.buffer, u32.byteOffset + (q + 1) * 4, bytes), aat);
           aat += Math.ceil(bytes / 4) * 4 + 4;
           q += 1 + Math.ceil(bytes / 4);
         }
@@ -620,67 +756,95 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
         const x0 = h[31], y0 = h[32], x1 = Math.min(h[33], tw), y1 = Math.min(h[34], th);
         if (!vs || !ps) { stats.missing++; at = p + n; continue; }
         if (x1 <= x0 || y1 <= y0) { at = p + n; continue; }
+        // feedback copy when a stage samples the active color target (D3D12Backend::Feedback)
+        for (let i = 0; i < 4; i++) {
+          const f = h[75 + i * 3];
+          if ((f & 3) === 3 && h[73 + i * 3] === rt && stageKind(f) !== 'depth') {
+            const t = target(rt, tw, th);
+            pass?.end(); pass = null; passKey = 0;
+            if (!t.fb) {
+              t.fb = device.createTexture({ size: [t.w, t.h], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+              t.fbView = t.fb.createView();
+            }
+            encoder.copyTextureToTexture({ texture: t.color }, { texture: t.fb }, [t.w, t.h]);
+            t.fbGen++;
+            break;
+          }
+        }
         if (!pass || passKey !== rt || passZs !== zs || (rt && targets.get(rt)?.w !== tw)) begin(rt, tw, th, null, null, zs);
-        const kinds = [], views = [], samps = [];
         let gkey = '';
         for (let i = 0; i < 4; i++) {
           const f = h[75 + i * 3], kind = stageKind(f);
-          kinds.push(kind);
+          drawKinds[i] = kind;
           let view = null, levels = 1;
           if (f & 1) {
             if (f & 2) {
               const key = h[73 + i * 3];
-              if (key !== rt && key !== zs) {
-                if (kind === 'depth') view = depths.get(`latest:${key}`)?.depthOnly;
-                else view = targets.get(key)?.view;
+              if (kind === 'depth') {
+                if (key !== zs) view = depths.get(`latest:${key}`)?.depthOnly;
+                gkey += `d${key},`;
+              } else if (key === rt) {
+                const t = targets.get(key);
+                view = t?.fbView;
+                gkey += `fb${key}:${t?.w}:${t?.fbGen},`;
+              } else {
+                const t = targets.get(key);
+                view = t?.view;
+                gkey += `t${key}:${t?.w},`;
               }
-              gkey += `t${key}:${targets.get(key)?.w},`;
             } else {
               const t = images.get(idOf(h[73 + i * 3], h[74 + i * 3]));
               if (t) { view = t.view; levels = t.levels; gkey += `${h[73 + i * 3]}.${h[74 + i * 3]}:${t.gen},`; }
             }
             if (!view) stats.missing++;
+            else { stats.bound++; if (f & 2) stats.targetTex++; }
           }
           if (!view) { view = dummy(kind); gkey += `-${kind},`; }
-          views.push(view);
-          samps.push(sampler2(h[85 + i], kind === 'depth', levels));
-          gkey += `${h[85 + i]}|${levels > 1};`;
+          drawViews[i] = view;
+          drawSamps[i] = sampler2(h[85 + i], kind === 'depth', levels);
+          gkey += `${h[85 + i]}|${levels > 1}:${kind};`;
         }
-        const pl = pipeline2(h, vs.module, ps.module, kinds);
+        const pl = pipeline2(h, f32, p, vs.module, ps.module, drawKinds);
         if (!pl) { at = p + n; continue; }
-        let g1 = groups1.get(gkey + kinds.join());
+        let g1 = groups1.get(gkey);
         if (!g1) {
           const entries = [];
-          for (let i = 0; i < 4; i++) { entries.push({ binding: i * 2, resource: views[i] }); entries.push({ binding: i * 2 + 1, resource: samps[i] }); }
+          for (let i = 0; i < 4; i++) { entries.push({ binding: i * 2, resource: drawViews[i] }); entries.push({ binding: i * 2 + 1, resource: drawSamps[i] }); }
           entries.push({ binding: 8, resource: dummy('2d') }, { binding: 9, resource: dummy('2d') });
-          g1 = device.createBindGroup({ layout: layout1(kinds), entries });
+          g1 = device.createBindGroup({ layout: layout1(drawKinds), entries });
           if (groups1.size > 8192) groups1.clear();
-          groups1.set(gkey + kinds.join(), g1);
+          groups1.set(gkey, g1);
         }
-        pass.setPipeline(pl);
-        pass.setBindGroup(0, group0, [vcOff, dcOff]);
-        pass.setBindGroup(1, g1);
-        for (let b = 0; b < nb; b++) if (vb[b].bytes) pass.setVertexBuffer(b, agpu, vb[b].off, vb[b].bytes);
+        if (pl !== curPl) { pass.setPipeline(pl); curPl = pl; }
+        if (vcOff !== curVc || dcOff !== curDc) { dynOffsets[0] = vcOff; dynOffsets[1] = dcOff; pass.setBindGroup(0, group0, dynOffsets); curVc = vcOff; curDc = dcOff; }
+        if (g1 !== curG1) { pass.setBindGroup(1, g1); curG1 = g1; }
+        for (let b = 0; b < nb; b++) if (vbBytes[b]) pass.setVertexBuffer(b, agpu, vbOff[b], vbBytes[b]);
         const bc = h[29];
-        pass.setBlendConstant([((bc >>> 16) & 255) / 255, ((bc >>> 8) & 255) / 255, (bc & 255) / 255, ((bc >>> 24) & 255) / 255]);
-        pass.setStencilReference(h[30]);
-        pass.setScissorRect(x0, y0, x1 - x0, y1 - y0);
+        if (bc !== curBc) {
+          pass.setBlendConstant([((bc >>> 16) & 255) / 255, ((bc >>> 8) & 255) / 255, (bc & 255) / 255, ((bc >>> 24) & 255) / 255]);
+          curBc = bc;
+        }
+        const sref = h[30];
+        if (sref !== curSref) { pass.setStencilReference(sref); curSref = sref; }
+        const scW = x1 - x0, scH = y1 - y0;
+        if (x0 !== curScX || y0 !== curScY || scW !== curScW || scH !== curScH) {
+          pass.setScissorRect(x0, y0, scW, scH);
+          curScX = x0; curScY = y0; curScW = scW; curScH = scH;
+        }
         if (h[37]) {
-          const ix = vb[nb];
-          pass.setIndexBuffer(agpu, h[38] ? 'uint16' : 'uint32', ix.off, ix.bytes);
+          pass.setIndexBuffer(agpu, h[38] ? 'uint16' : 'uint32', vbOff[nb], vbBytes[nb]);
           pass.drawIndexed(h[37], 1, 0, h[40] | 0);
         } else if (h[39]) {
           pass.draw(h[39], 1, 0, 0);
         }
         stats.draws++;
-        if (!(h[75] & 1) || h[0]) stats.draws2 = (stats.draws2 || 0) + 1;
       } else if (op === OP_COPY) {
         // CopyRects between targets, outside any pass
         const src = targets.get(u32[p]);
         if (src) {
           pass?.end(); pass = null; passKey = 0;
           const dst = target(u32[p + 3], u32[p + 4], u32[p + 5]);
-          const i32 = new Int32Array(u32.buffer);
+          const i32 = new Int32Array(u32.buffer, u32.byteOffset, u32.length);
           for (let r = 0, n = u32[p + 6]; r < n; r++) {
             const q = p + 7 + r * 6;
             let x0 = i32[q], y0 = i32[q + 1], x1 = i32[q + 2], y1 = i32[q + 3], dx = i32[q + 4], dy = i32[q + 5];
@@ -692,6 +856,15 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
             if (cw > 0 && ch > 0) encoder.copyTextureToTexture({ texture: src.color, origin: [x0, y0] }, { texture: dst.color, origin: [dx, dy] }, [cw, ch]);
           }
           stats.copies = (stats.copies || 0) + 1;
+        }
+      } else if (op === OP_DEPTH_COPY) {
+        const src = depthTarget(u32[p], u32[p + 1], u32[p + 2]);
+        const dst = depthTarget(u32[p + 3], u32[p + 4], u32[p + 5]);
+        if (src && dst && src !== dst) {
+          pass?.end(); pass = null; passKey = 0;
+          const w = Math.min(u32[p + 1], u32[p + 4]), h = Math.min(u32[p + 2], u32[p + 5]);
+          encoder.copyTextureToTexture({ texture: src.tex }, { texture: dst.tex }, [w, h]);
+          stats.depthCopies = (stats.depthCopies || 0) + 1;
         }
       } else if (op === OP_PRESENT) {
         front = u32[p]; fw = u32[p + 1]; fh = u32[p + 2];
@@ -709,9 +882,13 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
       if (t) {
         const canvas = context.canvas;
         if (canvas.width !== t.w || canvas.height !== t.h) { canvas.width = t.w; canvas.height = t.h; }
+        if (!t.blitGroup) {
+          t.blitGroup = device.createBindGroup({ layout: blitPipeline.getBindGroupLayout(0),
+            entries: [{ binding: 0, resource: t.view }, { binding: 1, resource: sampler(0, 0, 1) }] });
+        }
         const bp = encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
         bp.setPipeline(blitPipeline);
-        bp.setBindGroup(0, device.createBindGroup({ layout: blitPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: t.view }, { binding: 1, resource: sampler(0, 0, 1) }] }));
+        bp.setBindGroup(0, t.blitGroup);
         bp.draw(3);
         bp.end();
         frames++;
@@ -719,19 +896,24 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
       }
     }
     device.queue.submit([encoder.finish()]);
+    while (destroyAfterSubmit.length) destroyAfterSubmit.pop().destroy();
   }
 
-  // once per animation frame: run every frame the game has published since the last call, present the newest
+  // once per animation frame: claim each frame's command slice immediately so the worker keeps simulating in parallel
+  // (2 frames in flight, nfsu2-web pattern), then encode and submit
   function frame() {
     if (!M || !device) return 0;
     const i32 = new Int32Array(M.HEAPU32.buffer), u32 = M.HEAPU32;
     const published = Atomics.load(i32, ring) >>> 0;
     let consumed = Atomics.load(i32, ring + 1) >>> 0;
     while (consumed < published) {
-      const f = consumed + 1;
-      run(u32, u32[ring + 8 + (f & 1)] >>> 2, u32[ring + 2 + (f & 1)], f === published);
+      const f = consumed + 1, slot = f & 1;
+      const start = u32[ring + 8 + slot] >>> 2, count = u32[ring + 2 + slot];
+      if (count > cmdBuf.length) cmdBuf = new Uint32Array(Math.max(count, cmdBuf.length * 2));
+      cmdBuf.set(u32.subarray(start, start + count), 0);
       consumed = f;
       Atomics.store(i32, ring + 1, consumed);
+      run(cmdBuf, 0, count, f === published);
     }
     const shown = frames;
     frames = 0;
@@ -739,8 +921,8 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
   }
 
   // diagnostics: the last presented target as a PNG data URL (testing; no effect on the game)
-  async function snapshot() {
-    const t = targets.get(lastFront);
+  async function snapshot(key) {
+    const t = targets.get(key || lastFront);
     if (!t) return null;
     const bpr = Math.ceil(t.w * 4 / 256) * 256;
     const buf = device.createBuffer({ size: bpr * t.h, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });

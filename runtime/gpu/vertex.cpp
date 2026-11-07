@@ -278,6 +278,11 @@ bool RawReadable(const State& s, const Inputs& inputs) {
         uint32_t stride = StrideOf(s, inputs.layout, in);
         bool readable = he.format && stride && stride % kStrideAlign == 0 && in.offset < kElementOffsetEnd &&
                         in.offset % std::min<uint32_t>(he.bytes, 4) == 0;
+#ifdef __EMSCRIPTEN__
+        // WebGPU has no single-component 8/16-bit vertex formats (snorm16, sint16, unorm8)
+        readable &= he.format != DXGI_FORMAT_R16_SNORM && he.format != DXGI_FORMAT_R16_SINT &&
+                    he.format != DXGI_FORMAT_R8_UNORM;
+#endif
         if (!readable) {
             LOG_FIRST(32, "vertex: converted on the CPU: v%d type %02X offset %u stride %u", inputs.regs[k], in.type,
                       in.offset, stride);

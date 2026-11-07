@@ -547,7 +547,7 @@ void alphatest(float a) {
 
 std::string PsHelpers() { return kPsSbyte + Hooks().Shadow() + kPsTail; }
 
-// the same helpers in WGSL; shadow is ShaderHooks::Shadow's default (the browser has no backend extension)
+// the same helpers in WGSL; shadow is ShaderHooks::Shadow's default with reversed depth (1 - z)
 const char* kWgslPsHelpers = R"(
 // unorm to byte b, less lo under 128 or hi from 128, over d
 fn sbyte(u: vec3f, lo: f32, hi: f32, d: f32) -> vec3f {
@@ -557,7 +557,7 @@ fn sbyte(u: vec3f, lo: f32, hi: f32, d: f32) -> vec3f {
 // the sampler compares, a linear filter blends the four results like the console does
 fn shadow(t: texture_depth_2d, s: sampler_comparison, uv: vec2f, z: f32, fmt: i32, px: vec2f, size: vec2f) -> vec4f {
     let mx = select(16777215.0, 65535.0, fmt == 2);
-    return vec4f(textureSampleCompareLevel(t, s, uv, clamp(z, 0.0, mx) / mx));
+    return vec4f(textureSampleCompareLevel(t, s, uv, 1.0 - clamp(z, 0.0, mx) / mx));
 }
 fn spreadtap(t: texture_2d<f32>, s: sampler, uv: vec2f, w: vec4f, m: f32) -> vec4f {
     var c = vec4f(0.0);
@@ -936,10 +936,11 @@ const char* kWgslVsEpilogue = R"(
     if (dc.surf.w == 0.0 && abs(p.x - (dc.surf.x - 0.5)) < 1e-3) { p.x = dc.surf.x; }
     if (dc.surf.w == 0.0 && abs(p.y - (dc.surf.y - 0.5)) < 1e-3) { p.y = dc.surf.y; }
     var q: vec4f;
-    q.x = p.x * 2.0 / dc.surf.x - 1.0;
-    q.y = 1.0 - p.y * 2.0 / dc.surf.y;
-    q.z = p.z * dc.surf.z;
-    o.pos = vec4f(q.xyz * p.w, p.w);
+    q.x = (p.x * 2.0 / dc.surf.x - 1.0) * p.w;
+    q.y = (1.0 - p.y * 2.0 / dc.surf.y) * p.w;
+    q.z = p.z * dc.surf.z * p.w;
+    q.w = p.w;
+    o.pos = q;
     o.d0 = saturate(oD0);
     o.d1 = saturate(oD1);
     o.b0 = saturate(oB0);
@@ -1611,6 +1612,12 @@ const char* kReversedClipHlsl = R"(float ReversedClip(float z, float w) {
 }
 )";
 
+const char* kReversedClipWgsl = R"(fn ReversedClip(z: f32, w: f32) -> f32 {
+    if (dc.zparams.x != 0.0) { return dc.zparams.x * (dc.zparams.y - (w + dc.zparams.z)); }
+    return w - z - dc.zparams.z * w;
+}
+)";
+
 bool InsertAfter(std::string& s, const char* at, const char* text) {
     size_t p = s.find(at);
     if (p == std::string::npos) return false;
@@ -1625,6 +1632,21 @@ std::string ReversedDepthHlsl(std::string s) {
     if (entry != std::string::npos) s.insert(entry, kReversedClipHlsl);
     InsertAfter(s, "    o.pos = q;\n", "    o.pos.z = ReversedClip(q.z, q.w);\n");
     InsertAfter(s, "    o.pos = cp;\n", "    o.pos.z = ReversedClip(cp.z, cp.w);\n");
+    return s;
+}
+
+std::string ReversedDepthWgsl(std::string s) {
+    size_t entry = s.find("@vertex\n");
+    if (entry != std::string::npos) s.insert(entry, kReversedClipWgsl);
+    InsertAfter(s, "    o.pos = q;\n", "    o.pos.z = ReversedClip(q.z, q.w);\n");
+    InsertAfter(s, "    o.pos = cp;\n", "    o.pos.z = ReversedClip(cp.z, cp.w);\n");
+    return s;
+}
+
+std::string SpriteSizeWgsl(std::string s) {
+    const char* tc3 = "    o.tc3 = oT3;\n";
+    size_t at = s.find(tc3);
+    if (at != std::string::npos) s.replace(at, std::strlen(tc3), "    o.tc3 = oPts;\n");
     return s;
 }
 

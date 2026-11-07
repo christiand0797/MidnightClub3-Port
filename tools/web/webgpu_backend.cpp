@@ -59,7 +59,7 @@
 
 namespace {
 
-enum Op : uint32_t { kOpClear = 1, kOpPresent = 2, kOpTexture = 3, kOpDraw = 4, kOpCopy = 5, kOpShader = 6, kOpImage = 7, kOpDraw2 = 8 };
+enum Op : uint32_t { kOpClear = 1, kOpPresent = 2, kOpTexture = 3, kOpDraw = 4, kOpCopy = 5, kOpShader = 6, kOpImage = 7, kOpDraw2 = 8, kOpDepthCopy = 9 };
 constexpr uint32_t kDraw2Header = 96;
 constexpr uint32_t kDrawHeader = 98;
 constexpr uint32_t kBufferWords = 8u << 20;  // 32 MiB per frame buffer
@@ -77,10 +77,45 @@ struct Ring {
 Ring g_ring;
 std::vector<uint32_t> g_store[2];
 
-uint32_t Bits(float f) {
+uint32_t Word(float f) {
     uint32_t u;
     std::memcpy(&u, &f, 4);
     return u;
+}
+
+uint64_t TargetKey(uint32_t key, bool depth, uint32_t w, uint32_t h) {
+    return uint64_t(w & 0x7FFF) << 48 | uint64_t(h & 0x7FFF) << 33 | uint64_t(depth ? 1 : 0) << 32 | key;
+}
+
+// MemSig hashes a surface up to 64 KiB whole, a bigger one as 64 evenly spaced 64-byte samples (d3d12.cpp)
+uint64_t MemSig(uint32_t data, uint32_t total) {
+    constexpr uint32_t kWholeMax = 65536, kSamples = 64, kSampleBytes = 64;
+    const uint8_t* p = static_cast<const uint8_t*>(kernel::HostPtr(data));
+    uint64_t sig = gpu::Hash(&total, sizeof(total));
+    if (total <= kWholeMax) return gpu::Hash(p, total, sig);
+    for (uint32_t i = 0; i < kSamples; i++) {
+        const uint8_t* s = p + uint64_t(total - kSampleBytes) * i / (kSamples - 1);
+        sig = gpu::Hash(s, kSampleBytes, sig);
+    }
+    return sig;
+}
+
+bool SpriteOnStage3(const gpu::State& s, uint32_t prim) {
+    bool prog = (s.vs_handle & 1) && s.vs && !s.vs->program.empty();
+    return prim == 1 && prog && !s.ps && s.rs[gpu::kRsPointSpriteEnable] && s.tss[3][gpu::kTssColorOp] != 1;
+}
+
+gpu::State SpriteStageZero(const gpu::State& s) {
+    gpu::State moved = s;
+    moved.tss[0] = s.tss[3];
+    moved.textures[0] = s.textures[3];
+    moved.palettes[0] = s.palettes[3];
+    for (int i = 1; i < 4; i++) {
+        moved.tss[i][gpu::kTssColorOp] = 1;
+        moved.tss[i][gpu::kTssAlphaOp] = 1;
+        moved.textures[i] = 0;
+    }
+    return moved;
 }
 
 }  // namespace
@@ -120,17 +155,42 @@ public:
     }
     void Clear(const State& s, uint32_t n, const uint8_t* rects, uint32_t flags, uint32_t color, float z,
                uint32_t stencil) override {
-        std::vector<uint32_t> p{flags, color, Bits(z), stencil, reference::GpuKey(s.rt.data), reference::GpuKey(s.zs.data),
-                                width_, height_, rects ? n : 0};
-        if (rects)
-            for (uint32_t i = 0; i < n * 4; i++) {
-                uint32_t v;
-                std::memcpy(&v, rects + i * 4, 4);
-                p.push_back(v);
+        bool has_rt = (flags & 0xF0) && s.rt.header && s.rt.data;
+        bool has_ds = (flags & 3) && s.zs.header && s.zs.data;
+        uint32_t rw = width_, rh = height_, zw = width_, zh = height_;
+        if (has_rt) SurfaceSize(s.rt, rw, rh);
+        if (has_ds) SurfaceSize(s.zs, zw, zh);
+        uint32_t rt_key = has_rt ? reference::GpuKey(s.rt.data) : 0;
+        uint32_t zs_key = has_ds ? reference::GpuKey(s.zs.data) : 0;
+        auto emit_clear = [&](uint32_t fl, uint32_t rk, uint32_t zk, uint32_t gw, uint32_t gh) {
+            uint32_t count = (n && rects) ? n : 1;
+            std::vector<uint32_t> p{fl, color, Word(z), stencil, rk, zk, gw, gh, count};
+            if (n && rects) {
+                for (uint32_t i = 0; i < n * 4; i++) {
+                    uint32_t v;
+                    std::memcpy(&v, rects + i * 4, 4);
+                    p.push_back(v);
+                }
+            } else {
+                const auto& vp = s.viewport;
+                for (int32_t v : {int32_t(vp.x), int32_t(vp.y), int32_t(vp.x + vp.w), int32_t(vp.y + vp.h)})
+                    p.push_back(uint32_t(v));
             }
-        Put(kOpClear, {{p.data(), uint32_t(p.size())}});
-        if (s.rt.data) targets_[reference::GpuKey(s.rt.data)] = width_;
-        if (s.zs.data) targets_[reference::GpuKey(s.zs.data)] = width_;
+            Put(kOpClear, {{p.data(), uint32_t(p.size())}});
+        };
+        if (has_rt && has_ds && (rw != zw || rh != zh)) {
+            emit_clear(flags & 0xF0, rt_key, 0, rw, rh);
+            emit_clear(flags & 3, 0, zs_key, zw, zh);
+        } else if (has_rt || has_ds) {
+            emit_clear(flags, rt_key, zs_key, has_rt ? rw : zw, has_rt ? rh : zh);
+        }
+        if (has_rt) {
+            targets_.insert(TargetKey(rt_key, false, rw, rh));
+            color_targets_.insert(rt_key);
+        }
+        if (has_ds) {
+            targets_.insert(TargetKey(zs_key, true, zw, zh));
+        }
         if (dual_) reference::Clear(s, n, rects, flags, color, z, stencil);
     }
     void Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) override {
@@ -141,9 +201,12 @@ public:
     // with); the destination becomes a GPU target, so later draws sample it from there
     void Copy(const Surface& src, const Surface& dst, uint32_t n, uint32_t rects, uint32_t points) override {
         uint32_t sw = 0, sh = 0, dw = 0, dh = 0;
-        if (reference::SurfaceSize(src, sw, sh) && reference::SurfaceSize(dst, dw, dh)) {
+        uint32_t src_key = reference::GpuKey(src.data), dst_key = reference::GpuKey(dst.data);
+        bool gpu_src = reference::SurfaceSize(src, sw, sh) && reference::SurfaceSize(dst, dw, dh) &&
+                       (targets_.count(TargetKey(src_key, false, sw, sh)) || color_targets_.count(src_key));
+        if (gpu_src) {
             uint32_t count = n && rects ? n : 1;
-            std::vector<uint32_t> p{reference::GpuKey(src.data), sw, sh, reference::GpuKey(dst.data), dw, dh, count};
+            std::vector<uint32_t> p{src_key, sw, sh, dst_key, dw, dh, count};
             for (uint32_t i = 0; i < count; i++) {
                 int32_t x0 = 0, y0 = 0, x1 = int32_t(sw), y1 = int32_t(sh), dx = 0, dy = 0;
                 if (n && rects) {
@@ -156,9 +219,10 @@ public:
             }
             Put(kOpCopy, {{p.data(), uint32_t(p.size())}});
             reference::MarkGpuTarget(dst.data, dw);
-            targets_[reference::GpuKey(dst.data)] = dw;
+            targets_.insert(TargetKey(dst_key, false, dw, dh));
+            color_targets_.insert(dst_key);
         }
-        if (dual_) inner_->Copy(src, dst, n, rects, points);
+        if (dual_ || !gpu_src) inner_->Copy(src, dst, n, rects, points);
     }
     void Present(const Surface& front) override {
         uint32_t p[3] = {reference::GpuKey(front.data), width_, height_};
@@ -221,7 +285,7 @@ private:
             uint32_t head[3] = {t.key, t.w, t.h};
             if (Put(kOpTexture, {{head, 3}, {t.rgba, t.w * t.h}})) uploaded_[t.key] = t.hash;
         }
-        uint32_t h[kDrawHeader] = {d.rt, d.rt_w, d.rt_h, d.zs, Bits(d.zscale), uint32_t(d.left), uint32_t(d.top),
+        uint32_t h[kDrawHeader] = {d.rt, d.rt_w, d.rt_h, d.zs, Word(d.zscale), uint32_t(d.left), uint32_t(d.top),
                                    uint32_t(d.right), uint32_t(d.bottom), d.vertex_count, d.index_count, d.blend, d.src,
                                    d.dst, d.op, d.blend_color, d.color_mask, d.ztest, d.zwrite, d.zfunc, d.cull, d.front,
                                    d.atest, d.afunc, d.aref, d.alphakill, d.programmable, d.flat, d.tfactor, d.fog_color};
@@ -260,7 +324,8 @@ private:
         info.rect = d.linear;
         if (fi.depth) info.shadow = fi.bits == 16 ? 2 : 1;
         uint32_t key = reference::GpuKey(d.data);
-        if (targets_.count(key) && CanBeTargetFormat(d.format, fi.compressed) && info.kind == kTex2D) {
+        if (targets_.count(TargetKey(key, fi.depth, d.width, d.height)) &&
+            CanBeTargetFormat(d.format, fi.compressed) && info.kind == kTex2D) {
             info.flags |= kTexTarget;
             h[0] = key, h[1] = 0, h[2] = 1;
             return true;
@@ -269,12 +334,12 @@ private:
         ReadStagePalette(s, i, d, pal);
         uint64_t id = Hash(&d, sizeof(d), pal.hash ^ pal.va);
         h[0] = uint32_t(id), h[1] = uint32_t(id >> 32), h[2] = 0;
-        // the bytes: hashed at most once a frame, sent again when they changed
+        // cheap change check once per frame: lock epochs plus a sample of the bytes (D3D12Backend::BindGuestTexture)
         if (!hashed_.count(id)) {
             hashed_.insert(id);
-            uint64_t bytes = Hash(kernel::HostPtr(d.data), TotalSize(d), DirtyEpoch(d.data));
+            uint64_t sig = MemSig(d.data, TotalSize(d)) ^ DirtyEpoch(d.data) ^ pal.hash;
             auto it = images_.find(id);
-            if ((it == images_.end() || it->second != bytes) && SendImage(id, d, fi, pal)) images_[id] = bytes;
+            if ((it == images_.end() || it->second != sig) && SendImage(id, d, fi, pal)) images_[id] = sig;
         }
         return true;
     }
@@ -312,13 +377,56 @@ private:
         return Put(kOpImage, {{p.data(), uint32_t(p.size())}});
     }
 
+    static bool UnitTexcoords(const Assembled& a) {
+        if (!a.vertices.empty() || !a.vertex_count || a.vertex_count > 4096) return false;
+        bool any = false;
+        for (int r = 0; r < 16; r++) {
+            const VertexElement& e = a.elements[size_t(r)];
+            if (!((a.regs >> r) & 1) || e.format != DXGI_FORMAT_R32G32_FLOAT) continue;
+            const VertexBuffer& vb = a.buffers[e.buffer];
+            if (!vb.src || !vb.stride || uint64_t(a.vertex_count) * vb.stride > vb.bytes) return false;
+            for (uint32_t v = 0; v < a.vertex_count; v++) {
+                float uv[2];
+                std::memcpy(uv, vb.src + size_t(v) * vb.stride + e.offset, sizeof(uv));
+                if (!(uv[0] >= -1e-4f && uv[0] <= 1.0001f && uv[1] >= -1e-4f && uv[1] <= 1.0001f)) return false;
+            }
+            any = true;
+        }
+        return any;
+    }
+
+    static bool AnyStageWraps(const State& s) {
+        for (const auto& t : s.tss)
+            if (t[kTssAddressU] == 1 || t[kTssAddressV] == 1) return true;
+        return false;
+    }
+
     // D3DTADDRESS 1 wrap 2 mirror 3 clamp 4 border 5 clamp to edge; D3DTEXF 1 point 2 linear 3 anisotropic
-    static uint32_t SamplerWord(const State& s, int i) {
+    static uint32_t SamplerWord(const State& s, int i, bool clamp) {
         const auto& t = s.tss[size_t(i)];
+        uint32_t au = clamp && t[kTssAddressU] == 1 ? 3 : t[kTssAddressU];
+        uint32_t av = clamp && t[kTssAddressV] == 1 ? 3 : t[kTssAddressV];
         uint32_t aniso = (t[kTssMinFilter] == 3 || t[kTssMagFilter] == 3) ? std::max<uint32_t>(t[kTssMaxAnisotropy], 1) : 1;
-        return (t[kTssAddressU] & 7) | (t[kTssAddressV] & 7) << 3 | (t[kTssAddressW] & 7) << 6 | (t[kTssMinFilter] & 3) << 9 |
+        return (au & 7) | (av & 7) << 3 | (t[kTssAddressW] & 7) << 6 | (t[kTssMinFilter] & 3) << 9 |
                (t[kTssMagFilter] & 3) << 11 | (t[kTssMipFilter] & 3) << 13 | (std::min<uint32_t>(aniso, 16) & 31) << 15 |
                std::min<uint32_t>(t[kTssMaxMipLevel], 15) << 20 | CmpIndex(s.rs[kRsShadowFunc]) << 24;
+    }
+
+    // a depth buffer drawn as colour into another depth buffer's memory: copied as depth (D3D12Backend::DepthCopy)
+    bool DepthCopy(const State& s) {
+        TextureDesc d;
+        if (!s.rt.header || !s.textures[0] || !Describe(s.textures[0], d) || Format(d.format).depth || d.cube ||
+            d.depth != 1)
+            return false;
+        uint32_t gw = 0, gh = 0;
+        SurfaceSize(s.rt, gw, gh);
+        uint32_t dst_key = reference::GpuKey(s.rt.data), src_key = reference::GpuKey(d.data);
+        if (dst_key == src_key || !targets_.count(TargetKey(dst_key, true, gw, gh)) ||
+            !targets_.count(TargetKey(src_key, true, d.width, d.height)))
+            return false;
+        uint32_t p[6] = {src_key, d.width, d.height, dst_key, gw, gh};
+        Put(kOpDepthCopy, {{p, 6}});
+        return true;
     }
 
     struct WebKey {  // the fields KeyBlend and KeyRasterizer fill (draw_setup.h)
@@ -326,14 +434,24 @@ private:
     };
 
     void DrawShared(const State& s, uint32_t prim, uint32_t start, uint32_t count, const uint8_t* indices) {
+        if (SpriteOnStage3(s, prim)) {
+            DrawShared(SpriteStageZero(s), prim, start, count, indices);
+            return;
+        }
+        if (DepthCopy(s)) return;
         Assembled& a = asm_;
         if (!Assemble(s, prim, start, count, indices, a)) return;
-        bool has_rt = s.rt.data != 0, has_ds = s.zs.data && (s.rs[kRsZEnable] || s.rs[kRsStencilEnable]);
+        bool has_rt = s.rt.header && s.rt.data != 0;
+        bool has_ds = s.zs.header && s.zs.data && (s.rs[kRsZEnable] || s.rs[kRsStencilEnable]);
         if (!has_rt && !has_ds) return;
         GuestExtent size{640, 480};
         SurfaceSize(has_rt ? s.rt : s.zs, size.w, size.h);
         uint32_t zw = 0, zh = 0;
         if (has_ds) SurfaceSize(s.zs, zw, zh);
+        if (has_rt && has_ds && (size.w != zw || size.h != zh)) {
+            has_ds = false;
+            zw = zh = 0;
+        }
 
         // shaders: the same choice and generator as D3D12Backend::Draw
         ShaderChoice sh = ClassifyShaders(s, a, count);
@@ -350,6 +468,8 @@ private:
         if (!shaders_.count(vkey)) {
             std::string vs = sh.prog ? VertexProgramWgsl(s.vs->program, a.regs, a.decode)
                                      : FixedVertexWgsl(a.regs, a.pretransformed, a.decode, sh.fk);
+            if (sh.prog && sh.sprite) vs = SpriteSizeWgsl(std::move(vs));
+            vs = ReversedDepthWgsl(std::move(vs));
             SendShader(vkey, 0, sh.quad ? QuadWgsl(std::move(vs)) : vs);
         }
         if (!shaders_.count(pkey)) SendShader(pkey, 1, PixelWgsl(pk));
@@ -358,7 +478,7 @@ private:
         WebKey k;
         KeyBlend(s, k);
         KeyRasterizer(s, a, k);
-        uint32_t zen = s.rs[kRsZEnable] != 0, zwrite = 0, zfunc = 0, sten = s.rs[kRsStencilEnable] != 0;
+        uint32_t zen = has_ds && s.rs[kRsZEnable] != 0, zwrite = 0, zfunc = 0, sten = has_ds && s.rs[kRsStencilEnable] != 0;
         if (zen) zwrite = SimpleState(s, kMZWriteEnable) != 0, zfunc = SimpleState(s, kMZFunc);
 
         // constants as D3D12Backend::UploadConstants fills them
@@ -420,15 +540,18 @@ private:
                 h[41 + r] = e.format | uint32_t(e.buffer) << 8 | uint32_t(e.offset) << 16;
             }
         for (uint32_t b = 0; b < a.buffer_count && b < 16; b++) h[57 + b] = a.buffers[b].stride;
+        bool clamp_uv = AnyStageWraps(s) && UnitTexcoords(a);
         for (int i = 0; i < 4; i++) {
             h[73 + i * 3] = texw[i][0], h[74 + i * 3] = texw[i][1];
             // bit 0 bound, 1 a render target, 4.. TexKind, 8.. shadow
             h[75 + i * 3] = bound[i] ? (1u | texw[i][2] << 1 | uint32_t(info[i].kind) << 4 | uint32_t(info[i].shadow) << 8) : 0;
-            h[85 + i] = SamplerWord(s, i);
+            h[85 + i] = SamplerWord(s, i, clamp_uv);
         }
         bool vc_same = last_vc_valid_ && !std::memcmp(last_vc_.data(), s.vsc.data(), sizeof(s.vsc));
         bool dc_same = last_dc_valid_ && !std::memcmp(&last_dc_, &c, sizeof(c));
         h[89] = (vc_same ? 0 : 1) | (dc_same ? 0 : 2);
+        float zslope = has_ds && OffsetsPolygons(s, a.topology) ? -gpu::Bits(SimpleState(s, kMSlopeScale)) : 0.0f;
+        h[90] = Word(zslope);
         h[92] = uint32_t(sizeof(DrawConstants) / 4);
 
         std::vector<uint32_t> tail;
@@ -462,9 +585,13 @@ private:
             std::vector<Span> again{{h, kDraw2Header}, {&c, uint32_t(sizeof(c) / 4)}, {tail.data(), uint32_t(tail.size())}};
             if (PutSpans(kOpDraw2, again)) last_dc_ = c;
         }
-        if (has_rt) targets_[reference::GpuKey(s.rt.data)] = size.w;
-        if (has_ds) targets_[reference::GpuKey(s.zs.data)] = zw;
-        if (has_rt) reference::MarkGpuTarget(s.rt.data, size.w);
+        if (has_rt) {
+            uint32_t rt_key = reference::GpuKey(s.rt.data);
+            targets_.insert(TargetKey(rt_key, false, size.w, size.h));
+            color_targets_.insert(rt_key);
+            reference::MarkGpuTarget(s.rt.data, size.w);
+        }
+        if (has_ds) targets_.insert(TargetKey(reference::GpuKey(s.zs.data), true, zw, zh));
     }
 
     bool PutSpans(uint32_t op, const std::vector<Span>& spans) {
@@ -486,7 +613,8 @@ private:
 
     Assembled asm_;
     bool reference_ = false;
-    std::map<uint32_t, uint32_t> targets_;  // render targets drawn or cleared: key -> width
+    std::set<uint64_t> targets_;            // SizedTargetKey of render and depth targets drawn or cleared
+    std::set<uint32_t> color_targets_;      // color target keys drawn or cleared
     std::set<uint64_t> shaders_;            // shader ids the page has
     std::map<uint64_t, uint64_t> images_;   // texture id -> hash of the bytes the page has
     std::set<uint64_t> hashed_;             // texture ids checked this frame
