@@ -30,6 +30,10 @@
 
 namespace mc3 {
 
+#ifdef XBE_WEB
+uint16_t WebKeyboardArrows();  // tools/web/web_stubs.cpp: kUp=1, kDown=2, kLeft=4, kRight=8 held on browser keyboard
+#endif
+
 constexpr uint32_t kHumanController = 0x47684C;  // the player's car controller vtable
 constexpr uint64_t kLeaseMs = 150;  // several 60 Hz updates, so one late frame does not hand the arrows back
 // D-pad bits and pad slots, as input::KeyboardPad sets them
@@ -62,10 +66,16 @@ void ResetNowMsForTest() { g_now_ms = GetTickCount64; }
 // GameInfo::pad: the first controller's arrows as driving controls while driving
 void ArrowDriving(int port, input::Pad& pad) {
     if (port != 0 || !Driving()) return;
+#ifdef XBE_WEB
+    const uint16_t arrows = WebKeyboardArrows();
+    const bool left = (arrows & kLeft) != 0, right = (arrows & kRight) != 0;
+    const bool up = (arrows & kUp) != 0, back = (arrows & kDown) != 0;
+#else
     const HWND window = static_cast<HWND>(app::Window());
     if (!window || window != GetForegroundWindow()) return;
     auto down = [](int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; };
     const bool left = down(VK_LEFT), right = down(VK_RIGHT), up = down(VK_UP), back = down(VK_DOWN);
+#endif
     if (left || right) {
         pad.buttons &= uint16_t(~(kLeft | kRight));
         if (left != right && !pad.lx) pad.lx = int16_t(right ? 32767 : -32767);

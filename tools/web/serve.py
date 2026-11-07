@@ -1,10 +1,12 @@
 """Browser port: serve the play page and the WebAssembly build locally (docs/notes/browser_port_plan.md).
 
-  py -3.12 tools/web/serve.py [--port 8800] [--build templates/game/out/wasm]
+  py -3.12 tools/web/serve.py [--port 8800] [--build templates/game/out/wasm] [--bind mc3.top]
 
-Then open http://localhost:8800/. Sends the Cross-Origin-Opener-Policy / Cross-Origin-Embedder-Policy headers the game's
-threads need (SharedArrayBuffer). Serves tools/web/play.html as / and mc3.js / mc3.wasm from the build folder; nothing
-else. The game disc is never served: each player picks their own in the page.
+Then open http://localhost:8800/ (or https://mc3.top/ when deployed on your domain). Sends the Cross-Origin-Opener-Policy / Cross-Origin-Embedder-Policy headers the game's threads need (SharedArrayBuffer). Serves tools/web/play.html as / and mc3.js / mc3.wasm from the build folder; nothing else. The game disc is never served: each player picks their own in the page.
+
+For production on mc3.top, use Cloudflare Worker instead:
+  py -3.12 tools/web/stage_site.py    # copies build to tools/multiplayer/browser/play/
+  cd tools/multiplayer/cloudflare && npx wrangler deploy   # deploys to mc3.top
 
 Testing only: --dev-disc PATH also streams that disc image at /dev-disc to this computer (loopback only), and
 http://localhost:8800/?devdisc copies it into the page's storage without the file picker (automated browser tests).
@@ -21,13 +23,17 @@ PAGE = Path(__file__).with_name("play.html")
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", type=int, default=8800)
-    ap.add_argument("--bind", default="127.0.0.1")
+    ap.add_argument("--bind", default="0.0.0.0", help="Bind address (mc3.top or 0.0.0.0 for your domain)")
     ap.add_argument("--build", default=str(REPO / "templates/game/out/wasm"))
     ap.add_argument("--dev-disc", help="testing: stream this disc image at /dev-disc (loopback only)")
     a = ap.parse_args()
     build = Path(a.build).resolve()
+    MP = REPO / "tools" / "multiplayer" / "browser"
     files = {"/": PAGE, "/index.html": PAGE, "/gpu.js": PAGE.with_name("gpu.js"), "/mc3.js": build / "mc3.js",
-             "/mc3.wasm": build / "mc3.wasm"}
+             "/mc3.wasm": build / "mc3.wasm",
+             "/disc.iso": build / "disc.iso",
+             "/static/relay-client.js": MP / "relay-client.js",
+             "/static/account-ui.js": MP / "account-ui.js"}
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def send_isolation(self):

@@ -1,4 +1,5 @@
 // the settings file beside the exe
+#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -6,6 +7,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -21,7 +23,9 @@
 #include "app/app.h"
 #include "core/log.h"
 #include "core/host_path.h"
+#ifdef _WIN32
 #include "gpu/dlss.h"
+#endif
 
 namespace app {
 
@@ -263,12 +267,20 @@ void ClampDeadzones(Settings& s) {
     s.deadzone_outer = std::clamp(s.deadzone_outer, s.deadzone_inner + 0.05f, 1.0f);
 }
 
+toml::table ParseTomlFile(const std::filesystem::path& p) {
+#ifdef _WIN32
+    return toml::parse_file(p.wstring());
+#else
+    return toml::parse_file(p.string());
+#endif
+}
+
 // after the settings file: graphics_keys says which [graphics] keys that file set, so an older name here for one of
 // them only applies when settings.toml does not have it
 void LoadEnhancements(Settings& s, const toml::table* graphics_keys) {
     toml::table t;
     try {
-        t = toml::parse_file(EnhancementsFile().wstring());
+        t = ParseTomlFile(EnhancementsFile());
     } catch (...) {
         return;  // optional
     }
@@ -303,13 +315,13 @@ void Load() {
     Settings& s = Get();
     toml::table t;
     try {
-        t = toml::parse_file(File().wstring());
+        t = ParseTomlFile(File());
     } catch (...) {
         // none yet (first run) or unreadable: the release's recommended preset (config\default-settings.toml, the
         // developer's HD look) when it ships one, else the defaults; the game's load hook and the enhancements file
         // still run
         try {
-            t = toml::parse_file((ExeDir() / "config" / "default-settings.toml").wstring());
+            t = ParseTomlFile(ExeDir() / "config" / "default-settings.toml");
         } catch (...) {
             t = toml::table{};
         }
@@ -462,6 +474,7 @@ void LogSettings() {
         if (!line.empty()) LOGR("  %s", line.c_str());
 }
 
+#ifdef _WIN32
 Mode Desktop() {
     HMONITOR mon = MonitorFromWindow(static_cast<HWND>(Window()), MONITOR_DEFAULTTOPRIMARY);
     MONITORINFOEXW mi{};
@@ -472,6 +485,19 @@ Mode Desktop() {
         return {dm.dmPelsWidth, dm.dmPelsHeight};
     return {uint32_t(GetSystemMetrics(SM_CXSCREEN)), uint32_t(GetSystemMetrics(SM_CYSCREEN))};
 }
+#else
+namespace {
+std::atomic<uint64_t> g_desktop_mode{uint64_t(1280) << 32 | 720};
+}
+void SetDesktopForWeb(uint32_t w, uint32_t h) {
+    if (w >= 320 && h >= 240 && w <= resolution::kMaxDimension && h <= resolution::kMaxDimension)
+        g_desktop_mode.store(uint64_t(w) << 32 | h, std::memory_order_relaxed);
+}
+Mode Desktop() {
+    uint64_t v = g_desktop_mode.load(std::memory_order_relaxed);
+    return {uint32_t(v >> 32), uint32_t(v)};
+}
+#endif
 
 Mode Output() {
     const Settings& s = Get();
@@ -485,9 +511,11 @@ Mode CachedOutput();
 // called every frame, so from the cached output
 Mode RenderResolution() {
     const Settings& s = Get();
+#ifdef _WIN32
     // DLSS renders at its mode's share of the output and upscales to it (gpu/dlss.h)
     if (s.graphics.dlss && gpu::dlss::Available())
         return resolution::Scene({0, 0}, CachedOutput(), gpu::dlss::RenderPercent(gpu::dlss::Mode(s.graphics.dlss)));
+#endif
     return resolution::Scene({s.graphics.scene_width, s.graphics.scene_height}, CachedOutput(), s.render_percent);
 }
 
@@ -506,8 +534,10 @@ bool Widescreen() {
     static std::atomic<uint64_t> scene_key{~0ull};
     static std::atomic<bool> wide{true};
     const Settings& s = Get();
-    // the two force switches are in the key too: they change from the settings menu while the game runs
-    uint64_t k = uint64_t(s.width) << 34 | uint64_t(s.height) << 2 | uint64_t(s.force_widescreen) << 1 | uint64_t(s.force_1080p);
+    const Mode d = Desktop();
+    // the two force switches and desktop dimensions are in the key too: they change while the game runs
+    uint64_t k = uint64_t(s.width ? s.width : d.width) << 34 | uint64_t(s.height ? s.height : d.height) << 2 |
+                 uint64_t(s.force_widescreen) << 1 | uint64_t(s.force_1080p);
     uint64_t sk = uint64_t(s.graphics.scene_width) << 32 | s.graphics.scene_height;
     bool changed = key.exchange(k) != k;
     changed |= scene_key.exchange(sk) != sk;
@@ -522,6 +552,7 @@ bool Widescreen() {
 // Output for every frame: the desktop mode lookup reads the registry, so it runs again only when the resolution
 // setting or the window's monitor changes
 Mode CachedOutput() {
+#ifdef _WIN32
     struct Key {
         uint32_t width;
         uint32_t height;
@@ -541,6 +572,9 @@ Mode CachedOutput() {
         mode = Output();
     }
     return mode;
+#else
+    return Output();
+#endif
 }
 
 float RenderScale(uint32_t guest_height) {

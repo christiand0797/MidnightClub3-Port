@@ -25,7 +25,7 @@ HARNESS = REPO / "harness"
 DEPS = GAME / "out/native/_deps"
 
 # runtime parts the browser replaces (as the harness leaves out), plus Windows-only tools
-EXCLUDE = [r"/runtime/app/", r"/core/input\.cpp$", r"/gpu/d3d12\.cpp$", r"/audio/xaudio2\.cpp$", r"/gpu/dlss\.cpp$",
+EXCLUDE = [r"/runtime/app/", r"/core/input\.cpp$", r"/harness/null_audio\.cpp$", r"/harness/pad_script\.cpp$", r"/gpu/d3d12\.cpp$", r"/audio/xaudio2\.cpp$", r"/gpu/dlss\.cpp$",
            # PC enhancements on Direct3D 12 / WIC / Media Foundation / bcrypt; the browser's WebGPU backend replaces
            # them (stand ins for the names the rest of the runtime calls: tools/web/web_stubs.cpp)
            r"/gpu/pbr_[a-z_]+\.cpp$", r"/gpu/shader_cache\.cpp$", r"/gpu/texture_pack\.cpp$",
@@ -44,9 +44,9 @@ def sources(only):
     src = [p for p in sorted(RT.glob("*/*.cpp")) if not any(re.search(x, p.as_posix()) for x in EXCLUDE)]
     src += sorted(GAME.glob("src/*/*.cpp"))
     # the harness stand ins, with the browser entry point in place of its main
-    src += [p for p in sorted(HARNESS.glob("*.cpp")) if p.name != "main_test.cpp"]
+    src += [p for p in sorted(HARNESS.glob("*.cpp")) if p.name != "main_test.cpp" and not any(re.search(x, p.as_posix()) for x in EXCLUDE)]
     src += [Path(__file__).with_name("web_main.cpp"), Path(__file__).with_name("web_stubs.cpp"),
-            Path(__file__).with_name("webgpu_backend.cpp"),
+            Path(__file__).with_name("web_audio.cpp"), Path(__file__).with_name("webgpu_backend.cpp"),
             GAME / "out/native/Game_xbe.cpp"]
     src += [DEPS / "imgui-src" / f for f in ("imgui.cpp", "imgui_draw.cpp", "imgui_tables.cpp", "imgui_widgets.cpp")]
     if only:
@@ -139,7 +139,7 @@ def main():
         # reads frames and writes the pad through these exports
         link += ["-sENVIRONMENT=web,worker", "-sPROXY_TO_PTHREAD=1", "-sWASMFS=1", "-sALLOW_MEMORY_GROWTH=0",
                  "-sINITIAL_MEMORY=2048MB", "-sPTHREAD_POOL_SIZE=24", "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32",
-                 "-sEXPORTED_FUNCTIONS=_main,_web_set_pad,_web_frame,_web_frame_lock,_web_gpu_ring,_malloc,_free"]
+                 "-sEXPORTED_FUNCTIONS=_main,_web_set_pad,_web_frame,_web_frame_lock,_web_gpu_ring,_web_audio_render,_malloc,_free"]
     if a.debug:
         link += ["-sASSERTIONS=2", "-g2", "-sSTACK_OVERFLOW_CHECK=1"]
     print("[wasm] link", flush=True)

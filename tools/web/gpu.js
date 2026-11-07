@@ -7,10 +7,10 @@
 // OP_IMAGE textures as gpu/texture.cpp decodes them, OP_DRAW2 the raw vertices, the vertex constants, DrawConstants
 // and the pipeline state of each draw (webgpu_backend.cpp DrawShared). The older OP_DRAW (RENDERER=reference) brings
 // transformed triangles that this side's stand in shader colours. One texture per game render target, one depth
-// texture per depth surface; the presented target is shown.
+// texture per depth surface; the presented target is shown through the D3D12 post-processing chain (grade + LUT + FXAA + CAS).
 'use strict';
 window.MC3Gpu = (() => {
-  const OP_CLEAR = 1, OP_PRESENT = 2, OP_TEXTURE = 3, OP_DRAW = 4, OP_COPY = 5, OP_SHADER = 6, OP_IMAGE = 7, OP_DRAW2 = 8, OP_DEPTH_COPY = 9;
+  const OP_CLEAR = 1, OP_PRESENT = 2, OP_TEXTURE = 3, OP_DRAW = 4, OP_COPY = 5, OP_SHADER = 6, OP_IMAGE = 7, OP_DRAW2 = 8, OP_DEPTH_COPY = 9, OP_GAMMA = 10, OP_EVICT = 11, OP_REPLACEMENT = 12, OP_PBR_MAPS = 13;
   const DRAW_HEADER = 98, VERTEX_FLOATS = 32, UNIFORM_STRIDE = 512, MAX_DRAWS = 16384;
 
   const SHADER = /* wgsl */ `
@@ -168,6 +168,93 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
 @fragment fn fs(o: O) -> @location(0) vec4f { return vec4f(textureSample(T, S, o.uv).rgb, 1.0); }
 `;
 
+  // The present's picture chain (d3d12.cpp kPostHlsl): grade (box-filter downsample + console gamma LUT + gamma/brightness/contrast/saturation/vibrance), FXAA, AMD CAS
+  const POST_SHADER = /* wgsl */ `
+struct PostParams { p0: vec4f, p1: vec4f, p2: vec4f, p3: vec4f };
+@group(0) @binding(0) var<uniform> P: PostParams;
+@group(0) @binding(1) var t0: texture_2d<f32>;
+@group(0) @binding(2) var t1: texture_2d<f32>;
+@group(0) @binding(3) var ls: sampler;
+@group(0) @binding(4) var ps: sampler;
+struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
+@vertex fn vs(@builtin(vertex_index) id: u32) -> O {
+  let t = vec2f(f32((id << 1u) & 2u), f32(id & 2u));
+  var o: O;
+  o.p = vec4f(t * vec2f(2.0, -2.0) + vec2f(-1.0, 1.0), 0.0, 1.0);
+  o.uv = t;
+  return o;
+}
+fn Luma(c: vec3f) -> f32 { return dot(c, vec3f(0.299, 0.587, 0.114)); }
+@fragment fn grade(i: O) -> @location(0) vec4f {
+  let n = max(i32(P.p0.z), 1);
+  let nf = f32(n);
+  var c = vec4f(0.0);
+  for (var y = 0; y < n; y++) {
+    for (var x = 0; x < n; x++) {
+      c += textureSampleLevel(t0, ls, i.uv + P.p0.xy * ((vec2f(f32(x), f32(y)) + 0.5) / nf - 0.5), 0.0);
+    }
+  }
+  c /= nf * nf;
+  var col = saturate(c.rgb);
+  if (P.p0.w > 0.0) {
+    col = vec3f(
+      textureSampleLevel(t1, ps, vec2f(col.r, 0.5), 0.0).r,
+      textureSampleLevel(t1, ps, vec2f(col.g, 0.5), 0.0).g,
+      textureSampleLevel(t1, ps, vec2f(col.b, 0.5), 0.0).b
+    );
+  }
+  col = pow(saturate(col), vec3f(P.p2.x));
+  col = (col - 0.5) * P.p1.y + 0.5 + P.p1.x;
+  col = mix(vec3f(Luma(col)), col, P.p1.z);
+  let sat = max(col.r, max(col.g, col.b)) - min(col.r, min(col.g, col.b));
+  col = mix(vec3f(Luma(col)), col, 1.0 + P.p1.w * (1.0 - saturate(sat)));
+  col = saturate(col);
+  return vec4f(col, Luma(col));
+}
+@fragment fn fxaa(i: O) -> @location(0) vec4f {
+  let r = P.p0.xy;
+  let m = textureSampleLevel(t0, ls, i.uv, 0.0).rgb;
+  let lNW = textureSampleLevel(t0, ls, i.uv + vec2f(-1.0, -1.0) * r, 0.0).a;
+  let lNE = textureSampleLevel(t0, ls, i.uv + vec2f(1.0, -1.0) * r, 0.0).a;
+  let lSW = textureSampleLevel(t0, ls, i.uv + vec2f(-1.0, 1.0) * r, 0.0).a;
+  let lSE = textureSampleLevel(t0, ls, i.uv + vec2f(1.0, 1.0) * r, 0.0).a;
+  let lM = Luma(m);
+  let lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
+  let lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+  var dir = vec2f(-((lNW + lNE) - (lSW + lSE)), (lNW + lSW) - (lNE + lSE));
+  let reduce = max((lNW + lNE + lSW + lSE) * (0.25 / 8.0), 1.0 / 128.0);
+  let rcpMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + reduce);
+  dir = clamp(dir * rcpMin, vec2f(-8.0), vec2f(8.0)) * r;
+  let a = 0.5 * (textureSampleLevel(t0, ls, i.uv + dir * (1.0 / 3.0 - 0.5), 0.0).rgb +
+                 textureSampleLevel(t0, ls, i.uv + dir * (2.0 / 3.0 - 0.5), 0.0).rgb);
+  let b = a * 0.5 + 0.25 * (textureSampleLevel(t0, ls, i.uv - dir * 0.5, 0.0).rgb +
+                            textureSampleLevel(t0, ls, i.uv + dir * 0.5, 0.0).rgb);
+  let lb = Luma(b);
+  let col = mix(m, select(b, a, lb < lMin || lb > lMax), P.p0.z);
+  return vec4f(col, Luma(col));
+}
+@fragment fn cas(i: O) -> @location(0) vec4f {
+  let r = P.p0.xy;
+  let a = textureSampleLevel(t0, ps, i.uv + vec2f(-1.0, -1.0) * r, 0.0).rgb;
+  let b = textureSampleLevel(t0, ps, i.uv + vec2f(0.0, -1.0) * r, 0.0).rgb;
+  let c = textureSampleLevel(t0, ps, i.uv + vec2f(1.0, -1.0) * r, 0.0).rgb;
+  let d = textureSampleLevel(t0, ps, i.uv + vec2f(-1.0, 0.0) * r, 0.0).rgb;
+  let e = textureSampleLevel(t0, ps, i.uv, 0.0).rgb;
+  let f = textureSampleLevel(t0, ps, i.uv + vec2f(1.0, 0.0) * r, 0.0).rgb;
+  let g = textureSampleLevel(t0, ps, i.uv + vec2f(-1.0, 1.0) * r, 0.0).rgb;
+  let h = textureSampleLevel(t0, ps, i.uv + vec2f(0.0, 1.0) * r, 0.0).rgb;
+  let k = textureSampleLevel(t0, ps, i.uv + vec2f(1.0, 1.0) * r, 0.0).rgb;
+  var mn = min(min(min(d, e), min(f, b)), h);
+  mn += min(mn, min(min(a, c), min(g, k)));
+  var mx = max(max(max(d, e), max(f, b)), h);
+  mx += max(mx, max(max(a, c), max(g, k)));
+  let amp = sqrt(saturate(min(mn, vec3f(2.0) - mx) / max(mx, vec3f(1e-5))));
+  let w = amp * (-1.0 / mix(8.0, 5.0, saturate(P.p0.z)));
+  let col = saturate((b * w + d * w + f * w + h * w + e) / (1.0 + 4.0 * w));
+  return vec4f(col, Luma(col));
+}
+`;
+
   const FACTOR = { 0: 'zero', 1: 'one', 0x300: 'src', 0x301: 'one-minus-src', 0x302: 'src-alpha', 0x303: 'one-minus-src-alpha',
     0x304: 'dst-alpha', 0x305: 'one-minus-dst-alpha', 0x306: 'dst', 0x307: 'one-minus-dst', 0x308: 'src-alpha-saturated',
     0x8001: 'constant', 0x8002: 'one-minus-constant', 0x8003: 'constant', 0x8004: 'one-minus-constant' };
@@ -178,7 +265,10 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
   const ADDRESS = { 1: 'repeat', 2: 'mirror-repeat' };
 
   let device, context, canvasFormat, M = null, ring = 0, features = 0;
-  let module, blitModule, layout, pipelineLayout, blitPipeline, white;
+  let depthFmt = 'depth24plus';  // Firefox may not support depth24plus-stencil8
+  let module, blitModule, postModule, layout, pipelineLayout, blitPipeline, white, lutTex = null, lutView = null;
+  let postLayout = null, postPipeLayout = null, postPipelines = {}, postUbuf = null, postTargets = [null, null], postW = 0, postH = 0;
+  const postData = new Float32Array(192);
   const pipelines = new Map(), samplers = new Map(), textures = new Map(), targets = new Map(), groups = new Map();
   const destroyAfterSubmit = [];
   let vbuf = null, ibuf = null, ubuf = null, vcap = 0, icap = 0;
@@ -193,6 +283,8 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     device = await adapter.requestDevice({ requiredFeatures: wanted });
     features = (device.features.has('texture-compression-bc') ? 1 : 0);
     if (!(features & 1)) console.warn('webgpu: no texture-compression-bc: compressed textures will be missing');
+    depthFmt = 'depth24plus-stencil8';
+    try { device.createTexture({ size: [1, 1], format: depthFmt, usage: GPUTextureUsage.RENDER_ATTACHMENT }); } catch { depthFmt = 'depth24plus'; }
     device.lost.then(info => console.warn('webgpu: device lost:', info.message));
     device.addEventListener?.('uncapturederror', e => console.warn('webgpu:', e.error.message));
     canvasFormat = navigator.gpu.getPreferredCanvasFormat();
@@ -203,6 +295,7 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
 
     module = device.createShaderModule({ code: SHADER });
     blitModule = device.createShaderModule({ code: BLIT });
+    postModule = device.createShaderModule({ code: POST_SHADER, label: 'post' });
     const entries = [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', hasDynamicOffset: true } }];
     for (let i = 0; i < 4; i++) entries.push({ binding: 1 + i, visibility: GPUShaderStage.FRAGMENT, texture: {} });
     for (let i = 0; i < 4; i++) entries.push({ binding: 5 + i, visibility: GPUShaderStage.FRAGMENT, sampler: {} });
@@ -212,10 +305,49 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
       fragment: { module: blitModule, entryPoint: 'fs', targets: [{ format: canvasFormat }] }, primitive: { topology: 'triangle-list' } });
     white = device.createTexture({ size: [1, 1], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     device.queue.writeTexture({ texture: white }, new Uint8Array([255, 255, 255, 255]), { bytesPerRow: 4 }, [1, 1]);
+    lutTex = device.createTexture({ size: [256, 1], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    const idLut = new Uint8Array(256 * 4);
+    for (let i = 0; i < 256; i++) { idLut[i * 4] = i; idLut[i * 4 + 1] = i; idLut[i * 4 + 2] = i; idLut[i * 4 + 3] = 255; }
+    device.queue.writeTexture({ texture: lutTex }, idLut, { bytesPerRow: 1024 }, [256, 1]);
+    lutView = lutTex.createView();
+    postLayout = device.createBindGroupLayout({ entries: [
+      { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', hasDynamicOffset: true } },
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+      { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+    ] });
+    postPipeLayout = device.createPipelineLayout({ bindGroupLayouts: [postLayout] });
+    postUbuf = device.createBuffer({ size: 256 * 3, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     ubuf = device.createBuffer({ size: UNIFORM_STRIDE * MAX_DRAWS, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     const ub = { type: 'uniform', hasDynamicOffset: true }, vf = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
     layout0 = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: vf, buffer: ub }, { binding: 1, visibility: vf, buffer: ub }] });
     return null;
+  }
+
+  function postPipeline(entry, fmt) {
+    const key = `${entry}:${fmt}`;
+    let p = postPipelines[key];
+    if (!p) {
+      p = device.createRenderPipeline({
+        layout: postPipeLayout,
+        vertex: { module: postModule, entryPoint: 'vs' },
+        fragment: { module: postModule, entryPoint: entry, targets: [{ format: fmt }] },
+        primitive: { topology: 'triangle-list' },
+      });
+      postPipelines[key] = p;
+    }
+    return p;
+  }
+
+  function ensurePostTargets(w, h) {
+    if (postTargets[0] && postW === w && postH === h) return;
+    for (let i = 0; i < 2; i++) {
+      if (postTargets[i]) destroyAfterSubmit.push(postTargets[i].tex);
+      const tex = device.createTexture({ size: [w, h], format: 'rgba8unorm', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
+      postTargets[i] = { tex, view: tex.createView() };
+    }
+    postW = w; postH = h;
   }
 
   function attach(module_) { M = module_; ring = M._web_gpu_ring() >>> 2; M.HEAPU32[ring + 5] = features; }
@@ -256,19 +388,19 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
       const c = { operation, srcFactor: minmax ? 'one' : (FACTOR[src] || 'one'), dstFactor: minmax ? 'one' : (FACTOR[dst] || 'zero') };
       blendState = { color: c, alpha: c };
     }
-    // screen y runs down, clip y up: a triangle clockwise on screen is clockwise in clip space too (GL_CW 0x900)
     const primitive = { topology: 'triangle-list' };
     if (cull === 0x900) { primitive.frontFace = 'ccw'; primitive.cullMode = 'back'; }
     else if (cull === 0x901) { primitive.frontFace = 'cw'; primitive.cullMode = 'back'; }
     const attrs = [];
     for (let i = 0; i < 7; i++) attrs.push({ shaderLocation: i, offset: i * 16, format: 'float32x4' });
     attrs.push({ shaderLocation: 7, offset: 112, format: 'float32' });
+    // Async pipeline creation avoids main-thread jank on first use of each shader variant.
     p = device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: { module, entryPoint: 'vs', buffers: [{ arrayStride: VERTEX_FLOATS * 4, attributes: attrs }] },
       fragment: { module, entryPoint: 'fs', targets: [{ format: 'rgba8unorm', blend: blendState, writeMask }] },
       primitive,
-      depthStencil: { format: 'depth24plus-stencil8', depthWriteEnabled: zwrite, depthCompare: ztest ? (COMPARE[zfunc] || 'always') : 'always' },
+      depthStencil: { format: depthFmt, depthWriteEnabled: zwrite, depthCompare: ztest ? (COMPARE[zfunc] || 'always') : 'always' },
     });
     pipelines.set(key, p);
     return p;
@@ -377,7 +509,8 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     const id = idOf(u32[p], u32[p + 1]);
     let w = u32[p + 2], h = u32[p + 3], depth = u32[p + 4];
     const levels = u32[p + 5], kind = u32[p + 6], format = HOST[u32[p + 7]] || 'bgra8unorm';
-    const bc = format.startsWith('bc');
+    const bc = format.startsWith('bc') && (features & 1);
+    if (!bc && format.startsWith('bc')) return;  // compressed texture without the feature: skip
     const W = bc ? Math.ceil(w / 4) * 4 : w, H = bc ? Math.ceil(h / 4) * 4 : h;
     const layers = kind === 3 ? 6 : kind === 2 ? depth : 1;
     let t = images.get(id);
@@ -405,6 +538,64 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
       }
     }
     stats.textures++;
+  }
+
+  // OP_REPLACEMENT: texture pack replacement image (id, then RGBA8 texels like OP_IMAGE but no mip chain)
+  function replacement(u32, p) {
+    const id = idOf(u32[p], u32[p + 1]);
+    let w = u32[p + 2], h = u32[p + 3];
+    const format = 'rgba8unorm';
+    const W = Math.ceil(w / 4) * 4, H = Math.ceil(h / 4) * 4;
+    let t = images.get(id);
+    if (!t || t.w !== W || t.h !== H || t.format !== format || t.kind !== 1) {
+      if (t) destroyAfterSubmit.push(t.tex);
+      t = { w: W, h: H, layers: 1, levels: 1, format, kind: 1,
+        tex: device.createTexture({ size: [W, H, 1], format, mipLevelCount: 1, dimension: '2d',
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST }) };
+      t.view = t.tex.createView();
+      t.gen = (images.get(id)?.gen || 0) + 1;
+      images.set(id, t);
+    }
+    const cached = textureCache.get(id);
+    if (cached && cached.gen === t.gen && cached.frame === textureFrame) return;
+    const bytes = u32[p + 4];
+    const pitch = u32[p + 5];
+    if (bytes && pitch && bytes >= pitch * h)
+      device.queue.writeTexture({ texture: t.tex },
+        new Uint8Array(u32.buffer, u32.byteOffset + (p + 6) * 4, bytes), { bytesPerRow: pitch }, [w, h]);
+    textureCache.set(id, { gen: t.gen, frame: textureFrame, w: W, h: H, format, levels: 1 });
+    stats.textures++;
+  }
+
+  // OP_PBR_MAPS: PBR companion normal + ORM maps (id, nrm_w, nrm_h, nrm_bytes, orm_w, orm_h, orm_bytes, then pixels)
+  function pbrMaps(u32, p) {
+    const id = idOf(u32[p], u32[p + 1]);
+    const nrmW = u32[p + 2], nrmH = u32[p + 3], nrmBytes = u32[p + 4];
+    const ormW = u32[p + 5], ormH = u32[p + 6], ormBytes = u32[p + 7];
+    const format = 'rgba8unorm';
+    const nrmKey = id + ':nrm', ormKey = id + ':orm';
+    for (const [key, tw, th, bytes] of [[nrmKey, nrmW, nrmH, nrmBytes], [ormKey, ormW, ormH, ormBytes]]) {
+      let t = images.get(key);
+      if (!t || t.w !== tw || t.h !== th || t.format !== format || t.kind !== 1) {
+        if (t) destroyAfterSubmit.push(t.tex);
+        t = { w: tw, h: th, layers: 1, levels: 1, format, kind: 1,
+          tex: device.createTexture({ size: [tw, th, 1], format, mipLevelCount: 1, dimension: '2d',
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST }) };
+        t.view = t.tex.createView();
+        t.gen = (images.get(key)?.gen || 0) + 1;
+        images.set(key, t);
+      }
+      const cached = textureCache.get(key);
+      if (cached && cached.gen === t.gen && cached.frame === textureFrame) continue;
+      const pitch = Math.ceil(tw * 4 / 256) * 256;
+      if (bytes && pitch && bytes >= pitch * th) {
+        const offset = key === nrmKey ? (p + 8) : (p + 8 + Math.ceil(nrmBytes / 4));
+        device.queue.writeTexture({ texture: t.tex },
+          new Uint8Array(u32.buffer, u32.byteOffset + offset * 4, bytes), { bytesPerRow: pitch }, [tw, th]);
+      }
+      textureCache.set(key, { gen: t.gen, frame: textureFrame, w: tw, h: th, format, levels: 1 });
+    }
+    stats.textures += 2;
   }
 
   // what PixelWgsl declares for a stage: (kind, shadow) -> texture and sampler binding layouts
@@ -451,9 +642,14 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     if (!s) {
       const addr = a => a === 1 ? 'repeat' : a === 2 ? 'mirror-repeat' : 'clamp-to-edge';
       const min = (word >>> 9) & 3, mag = (word >>> 11) & 3, mip = (word >>> 13) & 3, aniso = (word >>> 15) & 31, maxmip = (word >>> 20) & 15;
+      const detail = (word >>> 28) & 3;
       const d = { addressModeU: addr(word & 7), addressModeV: addr((word >>> 3) & 7), addressModeW: addr((word >>> 6) & 7),
         minFilter: min >= 2 ? 'linear' : 'nearest', magFilter: mag >= 2 ? 'linear' : 'nearest', mipmapFilter: mip === 2 ? 'linear' : 'nearest',
         lodMinClamp: maxmip, lodMaxClamp: mip ? 32 : maxmip };
+      if (!shadow && detail >= 1) {
+        d.lodMinClamp = 0;
+        if (!mip || detail >= 2) d.lodMaxClamp = 0;
+      }
       if (d.lodMaxClamp < d.lodMinClamp) d.lodMaxClamp = d.lodMinClamp;
       if (aniso > 1 && d.minFilter === 'linear' && d.magFilter === 'linear' && d.mipmapFilter === 'linear') d.maxAnisotropy = aniso;
       // the console tests texel OP r, WebGPU r OP texel; with both reversed (ReversedDepthWgsl) it is the same OP (d3d12.cpp:3017)
@@ -468,7 +664,7 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
     const k = `${key}:${w}x${h}`;
     let d = depths.get(k);
     if (!d) {
-      d = { tex: device.createTexture({ size: [w, h], format: 'depth24plus-stencil8',
+      d = { tex: device.createTexture({ size: [w, h], format: depthFmt,
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST }) };
       d.view = d.tex.createView();
       d.depthOnly = d.tex.createView({ aspect: 'depth-only' });
@@ -506,7 +702,7 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
         writeMask: wmask,
       }] },
       primitive: { topology: 'triangle-list' },
-      depthStencil: { format: 'depth24plus-stencil8', depthWriteEnabled: zClear, depthCompare: 'always',
+      depthStencil: { format: depthFmt, depthWriteEnabled: zClear, depthCompare: 'always',
         stencilFront: face, stencilBack: face, stencilReadMask: 0xFF, stencilWriteMask: sClear ? 0xFF : 0 },
     });
     clearPipelines.set(key, p);
@@ -561,7 +757,7 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
       vertex: { module: vs, entryPoint: 'main', buffers },
       fragment: { module: ps, entryPoint: 'main', targets: [{ format: 'rgba8unorm', blend: blendState, writeMask: h[15] }] },
       primitive,
-      depthStencil: { format: 'depth24plus-stencil8', depthWriteEnabled: !!(zen && h[17]),
+      depthStencil: { format: depthFmt, depthWriteEnabled: !!(zen && h[17]),
         depthCompare: zen ? (CMP_REVERSED[(h[18] - 0x200) & 7] || 'always') : 'always',
         depthBiasSlopeScale: zslope,
         stencilFront: face, stencilBack: face, stencilReadMask: sten ? h[21] : 0xFF, stencilWriteMask: sten ? h[22] : 0 },
@@ -586,9 +782,9 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
   // one frame's commands: uploads first (queued before the submit), then the passes
   function run(u32, start, count, present) {
     const f32 = new Float32Array(u32.buffer, u32.byteOffset, u32.length);
-    const draws = [], clears = [];
     let vfloats = 0, iwords = 0, ubytes = 0, abytes = 0;
-    // pass 1: textures, and the sizes of the vertex and index data
+    textureFrame++;  // new frame: reset texture cache generation
+    // pass 1: textures, shaders, gamma LUT, evictions, and the sizes of the vertex and index data
     for (let at = start, end = start + count; at + 2 <= end;) {
       const op = u32[at], n = u32[at + 1], p = at + 2;
       if (op === OP_TEXTURE) {
@@ -601,6 +797,16 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
         shaderModule(idOf(u32[p], u32[p + 1]), u32[p + 2], decoder.decode(new Uint8Array(u32.buffer, u32.byteOffset + (p + 4) * 4, u32[p + 3])));
       } else if (op === OP_IMAGE) {
         image(u32, p);
+      } else if (op === OP_REPLACEMENT) {
+        replacement(u32, p);
+      } else if (op === OP_PBR_MAPS) {
+        pbrMaps(u32, p);
+      } else if (op === OP_GAMMA) {
+        if (lutTex && n >= 256)
+          device.queue.writeTexture({ texture: lutTex }, new Uint8Array(u32.buffer, u32.byteOffset + p * 4, 1024), { bytesPerRow: 1024 }, [256, 1]);
+      } else if (op === OP_EVICT) {
+        const id = idOf(u32[p], u32[p + 1]), t = images.get(id);
+        if (t) { destroyAfterSubmit.push(t.tex); images.delete(id); }
       } else if (op === OP_DRAW2) {
         const fl = u32[p + 89], dcw = u32[p + 92];
         dcBytes = dcw * 4;
@@ -666,7 +872,7 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
       if (!vbuf || vfloats * 4 > vcap) { if (vbuf) destroyAfterSubmit.push(vbuf); vcap = Math.max(vfloats * 4, 4 << 20) * 2; vbuf = device.createBuffer({ size: vcap, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }); }
       if (!ibuf || iwords * 4 > icap) { if (ibuf) destroyAfterSubmit.push(ibuf); icap = Math.max(iwords * 4, 1 << 20) * 2; ibuf = device.createBuffer({ size: icap, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST }); }
     }
-    let front = 0, fw = 0, fh = 0;
+    let front = 0, presentAt = 0, presentWords = 0;
     for (let at = start, end = start + count; at + 2 <= end;) {
       const op = u32[at], n = u32[at + 1], p = at + 2;
       if (op === OP_CLEAR) {
@@ -867,7 +1073,7 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
           stats.depthCopies = (stats.depthCopies || 0) + 1;
         }
       } else if (op === OP_PRESENT) {
-        front = u32[p]; fw = u32[p + 1]; fh = u32[p + 2];
+        front = u32[p]; presentAt = p; presentWords = n;
       }
       at = p + n;
     }
@@ -881,16 +1087,82 @@ struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
       const t = targets.get(front);
       if (t) {
         const canvas = context.canvas;
-        if (canvas.width !== t.w || canvas.height !== t.h) { canvas.width = t.w; canvas.height = t.h; }
-        if (!t.blitGroup) {
-          t.blitGroup = device.createBindGroup({ layout: blitPipeline.getBindGroupLayout(0),
-            entries: [{ binding: 0, resource: t.view }, { binding: 1, resource: sampler(0, 0, 1) }] });
+        const p = presentAt;
+        const hasPost = presentWords >= 14;
+        const flags = hasPost ? u32[p + 3] : 0;
+        const postOn = !referencePath && !!(flags & 1);
+        const gammaLut = !!(flags & 2);
+        const aa = hasPost ? u32[p + 4] : 0;
+        const aaStrength = hasPost ? f32[p + 5] : 0;
+        const sharpen = hasPost ? f32[p + 6] : 0;
+        const brightness = hasPost ? f32[p + 7] : 0;
+        const contrast = hasPost ? f32[p + 8] : 1;
+        const saturation = hasPost ? f32[p + 9] : 1;
+        const vibrance = hasPost ? f32[p + 10] : 0;
+        const gammaExp = hasPost ? (f32[p + 11] || 1) : 1;
+        const outW = Math.max(1, Math.min(4096, (hasPost && u32[p + 12]) ? u32[p + 12] : t.w));
+        const outH = Math.max(1, Math.min(4096, (hasPost && u32[p + 13]) ? u32[p + 13] : t.h));
+        if (canvas.width !== outW || canvas.height !== outH) { canvas.width = outW; canvas.height = outH; }
+        const canvasView = context.getCurrentTexture().createView();
+        if (postOn || gammaLut) {
+          const runFxaa = postOn && aa === 1 && aaStrength > 0;
+          const runCas = postOn && sharpen > 0;
+          const taps = Math.max(1, Math.min(4, Math.round(t.w / outW)));
+          postData.fill(0);
+          // slot 0: grade
+          postData[0] = 1 / outW; postData[1] = 1 / outH; postData[2] = taps; postData[3] = gammaLut ? 1 : 0;
+          postData[4] = postOn ? brightness : 0; postData[5] = postOn ? contrast : 1;
+          postData[6] = postOn ? saturation : 1; postData[7] = postOn ? vibrance : 0;
+          postData[8] = postOn ? gammaExp : 1;
+          // slot 1 (offset 64 floats = 256 bytes): fxaa
+          postData[64] = 1 / outW; postData[65] = 1 / outH; postData[66] = aaStrength;
+          // slot 2 (offset 128 floats = 512 bytes): cas
+          postData[128] = 1 / outW; postData[129] = 1 / outH; postData[130] = sharpen;
+          device.queue.writeBuffer(postUbuf, 0, postData);
+
+          const linSmp = sampler(3, 3, 1), ptSmp = sampler(3, 3, 0);
+          const drawPost = (entry, slot, s0View, s1View, dstView, dstFmt) => {
+            const bg = device.createBindGroup({
+              layout: postLayout,
+              entries: [
+                { binding: 0, resource: { buffer: postUbuf, size: 64 } },
+                { binding: 1, resource: s0View },
+                { binding: 2, resource: s1View || lutView },
+                { binding: 3, resource: linSmp },
+                { binding: 4, resource: ptSmp },
+              ],
+            });
+            const rp = encoder.beginRenderPass({ colorAttachments: [{ view: dstView, loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
+            rp.setPipeline(postPipeline(entry, dstFmt));
+            rp.setBindGroup(0, bg, [slot * 256]);
+            rp.draw(3);
+            rp.end();
+          };
+          if (!runFxaa && !runCas) {
+            drawPost('grade', 0, t.view, lutView, canvasView, canvasFormat);
+          } else {
+            ensurePostTargets(outW, outH);
+            drawPost('grade', 0, t.view, lutView, postTargets[0].view, 'rgba8unorm');
+            let cur = 0;
+            if (runFxaa) {
+              drawPost('fxaa', 1, postTargets[cur].view, lutView, runCas ? postTargets[1 - cur].view : canvasView, runCas ? 'rgba8unorm' : canvasFormat);
+              cur = 1 - cur;
+            }
+            if (runCas) {
+              drawPost('cas', 2, postTargets[cur].view, lutView, canvasView, canvasFormat);
+            }
+          }
+        } else {
+          if (!t.blitGroup) {
+            t.blitGroup = device.createBindGroup({ layout: blitPipeline.getBindGroupLayout(0),
+              entries: [{ binding: 0, resource: t.view }, { binding: 1, resource: sampler(3, 3, 1) }] });
+          }
+          const bp = encoder.beginRenderPass({ colorAttachments: [{ view: canvasView, loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
+          bp.setPipeline(blitPipeline);
+          bp.setBindGroup(0, t.blitGroup);
+          bp.draw(3);
+          bp.end();
         }
-        const bp = encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
-        bp.setPipeline(blitPipeline);
-        bp.setBindGroup(0, t.blitGroup);
-        bp.draw(3);
-        bp.end();
         frames++;
         lastFront = front;
       }

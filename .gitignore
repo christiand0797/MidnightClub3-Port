@@ -18,6 +18,17 @@
 /logs/
 /test_dxt3.dds
 
+# Browser port disc image IS tracked so every mc3.top visitor can sign in and play.
+# Do NOT add templates/game/out/wasm/disc.iso or templates/game/out/wasm/disc.iso.* to .gitignore.
+# The browser build requires these files and must NOT be removed:
+#   tools/web/play.html, gpu.js, webgpu_backend.cpp, web_audio.cpp, web_stubs.cpp,
+#   build_wasm.py, serve.py, stage_site.py,
+#   tools/multiplayer/browser/static/relay-client.js, account-ui.js,
+#   tools/multiplayer/browser/play/ (staged site output),
+#   tools/multiplayer/cloudflare/ (mc3.top Worker deployment)
+!templates/game/out/wasm/disc.iso
+!templates/game/out/wasm/disc.iso.*
+
 # Python caches and locally downloaded PBR model weights
 __pycache__/
 *.py[cod]

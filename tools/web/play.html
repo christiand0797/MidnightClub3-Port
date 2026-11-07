@@ -9,7 +9,7 @@
 if (location.protocol === 'http:' && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) location.replace('https://' + location.host + location.pathname + location.search + location.hash);
 </script>
 <!-- Browser port (docs/notes/browser_port_plan.md): the game runs here from the player's own disc image. The disc is
-     copied once into this site's private browser storage (OPFS) and never leaves this computer. Needs a server that
+     copied once into this browser's private storage (OPFS) and never leaves this computer. Needs a server that
      sends Cross-Origin-Opener-Policy / Cross-Origin-Embedder-Policy (tools/web/serve.py), for threads. -->
 <style>
   :root { --bg: #0b0d12; --panel: #141821; --line: #262c3a; --text: #e6e9ef; --muted: #8b93a7; --accent: #ff4d3d; }
@@ -33,6 +33,55 @@ if (location.protocol === 'http:' && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(
   canvas[hidden] { display: none; }
   kbd { background: #222836; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-size: 12px; }
   .keys { color: var(--muted); font-size: 13px; margin-top: 12px; }
+
+  /* ---------- F1 Menu Overlay ---------- */
+  #menu { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50; pointer-events: auto; }
+  #menu.open { display: block; }
+  .menu-wrap { position: absolute; inset: 8vh 10vw; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; height: 84vh; max-height: 700px; max-width: 900px; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+  .menu-bar { display: flex; border-bottom: 1px solid var(--line); padding: 0; }
+  .menu-tab { flex: 1; background: transparent; border: 0; color: var(--muted); padding: 12px; font-size: 13px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; }
+  .menu-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .menu-tab:hover { color: var(--text); background: #1a2030; }
+  .menu-pane { display: none; flex: 1; overflow: auto; padding: 16px; }
+  .menu-pane.active { display: block; }
+  .menu-pane h3 { margin: 0 0 12px; font-size: 15px; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  .menu-pane p { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .menu-pane .row { margin-bottom: 10px; }
+  .menu-pane label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .menu-pane input[type=text], .menu-pane input[type=number], .menu-pane select { width: 100%; background: #0f1420; border: 1px solid var(--line); color: var(--text); padding: 6px 8px; border-radius: 6px; font-size: 13px; }
+  .menu-pane input[type=checkbox] { margin-right: 6px; }
+  .menu-pane .setting { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #1a2030; }
+  .menu-pane .setting .val { font-family: Consolas, monospace; font-size: 12px; color: var(--text); }
+  .menu-pane .presets { display: flex; gap: 8px; margin: 12px 0; }
+  .menu-pane .presets button { flex: 1; padding: 8px; font-size: 12px; }
+  .menu-pane .accent-btn { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+  .menu-pane .accent-btn:hover { opacity: 0.9; }
+  .menu-pane .accent-btn:disabled { opacity: 0.5; cursor: default; }
+
+  /* Lobby */
+  .room-list { border: 1px solid var(--line); border-radius: 8px; max-height: 260px; overflow: auto; }
+  .room { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #1a2030; font-size: 13px; }
+  .room:last-child { border-bottom: 0; }
+  .room .name { font-weight: 600; color: var(--text); }
+  .room .meta { color: var(--muted); font-size: 12px; }
+  .room button { padding: 4px 10px; font-size: 12px; }
+  .chat-box { border: 1px solid var(--line); border-radius: 8px; height: 200px; overflow: auto; display: flex; flex-direction: column; margin-bottom: 8px; padding: 8px; font-size: 12px; background: #0f1420; }
+  .chat-msg { margin: 4px 0; padding: 4px 6px; background: #1a2030; border-radius: 4px; }
+  .chat-msg .from { color: var(--accent); font-weight: 600; }
+  .chat-input { display: flex; gap: 6px; }
+  .chat-input input { flex: 1; padding: 6px 8px; background: #0f1420; border: 1px solid var(--line); color: var(--text); border-radius: 4px; font-size: 12px; }
+
+  /* Account */
+  .acct-card { max-width: 360px; margin: 0 auto; }
+  .acct-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #1a2030; }
+  .acct-row .val { font-family: Consolas, monospace; font-size: 12px; color: var(--muted); }
+  .acct-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .acct-actions button { flex: 1; padding: 8px; font-size: 12px; }
+
+  /* status pill */
+  #menuStatus { position: fixed; top: 10px; right: 10px; z-index: 60; padding: 6px 10px; border-radius: 6px; background: #0f1420; border: 1px solid var(--line); font-size: 12px; color: var(--muted); pointer-events: none; }
+  #menuStatus.online { color: #4ade80; border-color: #4ade80; }
+  #menuStatus.offline { color: #f87171; border-color: #f87171; }
 </style>
 </head>
 <body>
@@ -40,26 +89,126 @@ if (location.protocol === 'http:' && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(
   <h1>Midnight Club 3: DUB Edition Remix</h1>
   <span class="status" id="status">Starting</span>
 </header>
+<div id="menuStatus" class="offline">Offline</div>
+
 <main>
   <section class="card" id="setup">
     <h2>Play in your browser</h2>
-    <p id="intro">Pick your original Xbox disc image of Midnight Club 3: DUB Edition Remix (USA). It is copied once into
-      this browser's private storage and stays on this computer. Next time the game starts straight away.</p>
-    <div class="row">
-      <button id="pick">Choose disc image</button>
-      <button id="play" hidden>Play</button>
-      <button id="forget" class="secondary" hidden>Use a different disc</button>
-    </div>
-    <div id="copy" hidden><p id="copytext">Copying</p><progress id="bar" max="1" value="0"></progress></div>
+    <p id="intro">Loading Midnight Club 3: DUB Edition Remix from mc3.top. The disc image is copied once into this
+      browser's private storage and stays on this computer.</p>
+    <div id="copy" hidden><p id="copytext">Copying disc image</p><progress id="bar" max="1" value="0"></progress></div>
     <p id="error" class="error" hidden></p>
     <div class="keys">Keyboard: <kbd>W</kbd>/<kbd>S</kbd> gas and brake, <kbd>A</kbd>/<kbd>D</kbd> steer, <kbd>Space</kbd> A,
       <kbd>Backspace</kbd> B, <kbd>Q</kbd>/<kbd>E</kbd> X and Y, <kbd>Enter</kbd> Start, <kbd>Esc</kbd> Back, arrows for
-      menus. A gamepad works directly.</div>
-    <input type="file" id="file" accept=".iso" hidden>
+      menus. A gamepad works directly. <kbd>F1</kbd> opens Settings / Vehicle / Network.</div>
   </section>
   <div id="screen"><canvas id="canvas" width="720" height="480"></canvas><canvas id="gpu" width="640" height="480" hidden></canvas></div>
 </main>
+
+<!-- ---------- F1 Menu Overlay ---------- -->
+<div id="menu">
+  <div class="menu-wrap">
+    <div class="menu-bar">
+      <button class="menu-tab active" data-tab="settings">Settings</button>
+      <button class="menu-tab" data-tab="vehicle">Vehicle</button>
+      <button class="menu-tab" data-tab="lobby">Network</button>
+    </div>
+    <div class="menu-pane active" id="pane-settings">
+      <h3>Display &amp; Resolution</h3>
+      <div class="setting"><label>Render percent</label><span class="val" id="s-render_percent">100</span></div>
+      <div class="setting"><label>Scene width</label><span class="val" id="s-scene_width">0</span></div>
+      <div class="setting"><label>Scene height</label><span class="val" id="s-scene_height">0</span></div>
+      <div class="setting"><label>Force 1080p</label><span class="val" id="s-force_1080p">false</span></div>
+      <div class="setting"><label>Force widescreen</label><span class="val" id="s-force_widescreen">false</span></div>
+      <div class="setting"><label>60 FPS</label><span class="val" id="s-sixty_fps">true</span></div>
+      <div class="setting"><label>Show FPS</label><span class="val" id="s-show_fps">false</span></div>
+      <h3>Quality &amp; Effects</h3>
+      <div class="setting"><label>Anisotropic</label><span class="val" id="s-aniso">0</span></div>
+      <div class="setting"><label>Texture detail</label><span class="val" id="s-texture_detail">1</span></div>
+      <div class="setting"><label>Offscreen scale</label><span class="val" id="s-offscreen_scale">2</span></div>
+      <div class="setting"><label>FXAA</label><span class="val" id="s-aa">1</span></div>
+      <div class="setting"><label>AA strength</label><span class="val" id="s-aa_strength">1</span></div>
+      <div class="setting"><label>Sharpen (CAS)</label><span class="val" id="s-sharpen">0.35</span></div>
+      <div class="setting"><label>Motion blur</label><span class="val" id="s-motion_blur">1</span></div>
+      <div class="setting"><label>Glow</label><span class="val" id="s-glow">1</span></div>
+      <div class="setting"><label>Headlights</label><span class="val" id="s-headlights">1</span></div>
+      <div class="setting"><label>Neon</label><span class="val" id="s-neon">2</span></div>
+      <div class="setting"><label>LOD</label><span class="val" id="s-lod">1</span></div>
+      <div class="setting"><label>FOV scale</label><span class="val" id="s-fov_scale">1</span></div>
+      <h3>Enhanced Car Paint</h3>
+      <div class="setting"><label>Car paint</label><span class="val" id="s-car_paint">false</span></div>
+      <div class="setting"><label>Relight</label><span class="val" id="s-car_relight">1</span></div>
+      <div class="setting"><label>Specular</label><span class="val" id="s-car_specular">1</span></div>
+      <div class="setting"><label>Roughness</label><span class="val" id="s-car_roughness">0.3</span></div>
+      <div class="setting"><label>Reflection</label><span class="val" id="s-car_reflection">1</span></div>
+      <h3>Picture</h3>
+      <div class="setting"><label>Post process</label><span class="val" id="s-post">true</span></div>
+      <div class="setting"><label>Brightness</label><span class="val" id="s-brightness">0</span></div>
+      <div class="setting"><label>Contrast</label><span class="val" id="s-contrast">1</span></div>
+      <div class="setting"><label>Saturation</label><span class="val" id="s-saturation">1</span></div>
+      <div class="setting"><label>Vibrance</label><span class="val" id="s-vibrance">0</span></div>
+      <div class="setting"><label>Gamma</label><span class="val" id="s-gamma">1</span></div>
+      <h3>Input</h3>
+      <div class="setting"><label>Deadzone inner</label><span class="val" id="s-deadzone_inner">0.15</span></div>
+      <div class="setting"><label>Deadzone outer</label><span class="val" id="s-deadzone_outer">0.95</span></div>
+      <div class="row"><button class="accent-btn" onclick="preset('preset_perf')">Performance</button><button class="accent-btn" onclick="preset('preset_bal')">Balanced</button><button class="accent-btn" onclick="preset('preset_high')">High</button></div>
+      <div class="row"><button class="accent-btn" onclick="resetPicture()">Reset picture</button><button class="accent-btn secondary" onclick="resetDeadzone()">Reset deadzone</button></div>
+      <div class="row" style="margin-top:14px"><button class="accent-btn secondary" onclick="saveSettings()">Save settings</button></div>
+      <p id="settingsStatus" class="error" hidden></p>
+    </div>
+    <div class="menu-pane" id="pane-vehicle">
+      <h3>Vehicle Tuning</h3>
+      <div class="setting"><label>Profiles enabled</label><span class="val" id="v-prof_enabled">true</span></div>
+      <div class="setting"><label>Global editing</label><span class="val" id="v-prof_global">false</span></div>
+      <div class="setting"><label>Garage extended</label><span class="val" id="v-garage_extended">true</span></div>
+      <div class="setting"><label>Wheel limit</label><span class="val" id="v-wheel_limit">1.6</span></div>
+      <div class="setting"><label>Ride front</label><span class="val" id="v-ride_front">0</span></div>
+      <div class="setting"><label>Ride rear</label><span class="val" id="v-ride_rear">0</span></div>
+      <div class="setting"><label>Camber front</label><span class="val" id="v-camber_front">0</span></div>
+      <div class="setting"><label>Camber rear</label><span class="val" id="v-camber_rear">0</span></div>
+      <div class="setting"><label>Spring front</label><span class="val" id="v-spring_front">1</span></div>
+      <div class="setting"><label>Spring rear</label><span class="val" id="v-spring_rear">1</span></div>
+      <div class="setting"><label>Damper front</label><span class="val" id="v-damper_front">1</span></div>
+      <div class="setting"><label>Damper rear</label><span class="val" id="v-damper_rear">1</span></div>
+      <div class="setting"><label>Brake front</label><span class="val" id="v-brake_front">1</span></div>
+      <div class="setting"><label>Brake rear</label><span class="val" id="v-brake_rear">1</span></div>
+      <div class="setting"><label>Grip front</label><span class="val" id="v-grip_front">1</span></div>
+      <div class="setting"><label>Grip rear</label><span class="val" id="v-grip_rear">1</span></div>
+      <div class="setting"><label>Engine power</label><span class="val" id="v-engine_power">1</span></div>
+      <div class="row"><button class="accent-btn" onclick="copyGlobal()">Copy global to car</button><button class="accent-btn" onclick="useGlobal()">Use global for car</button></div>
+      <div class="row" style="margin-top:14px"><button class="accent-btn secondary" onclick="resetTuning()">Reset tuning</button></div>
+      <p id="vehicleStatus" class="error" hidden></p>
+    </div>
+    <div class="menu-pane" id="pane-lobby">
+      <h3>Network / Online Lobbies</h3>
+      <div class="acct-card">
+        <div class="acct-row"><label>Account</label><span class="val" id="acct-id">—</span></div>
+        <div class="acct-row"><label>Status</label><span class="val" id="acct-status">Not signed in</span></div>
+        <div class="acct-actions">
+          <button class="accent-btn" onclick="accountSignIn()">Sign in</button>
+          <button class="accent-btn secondary" onclick="accountSignOut()">Sign out</button>
+        </div>
+      </div>
+      <div style="margin-top:14px">
+        <h3>Lobbies</h3>
+        <div class="room-list" id="roomList">
+          <div class="room"><span class="name">Loading…</span><span class="meta">—</span></div>
+        </div>
+        <div class="row" style="margin-top:8px"><button class="accent-btn" onclick="lobbyRefresh()">Refresh</button><button class="accent-btn secondary" onclick="lobbyCreate()">Create room</button></div>
+      </div>
+      <div style="margin-top:14px">
+        <h3>Chat</h3>
+        <div class="chat-box" id="chatBox"></div>
+        <div class="chat-input"><input id="chatInput" placeholder="Type a message…"><button class="accent-btn" onclick="chatSend()">Send</button></div>
+      </div>
+      <p id="lobbyStatus" class="error" hidden></p>
+    </div>
+  </div>
+</div>
+
 <script src="gpu.js"></script>
+<script src="/static/relay-client.js"></script>
+<script src="/static/account-ui.js"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -87,7 +236,6 @@ async function storedDisc() {
   } catch { return null; }
 }
 
-// stream the picked image into OPFS, with progress; the game reads it from there (WASMFS /opfs/disc.iso)
 async function copyDisc(file) {
   return copyStream(file.stream(), file.size);
 }
@@ -115,45 +263,381 @@ async function copyStream(stream, size) {
   $('copy').hidden = true; $('pick').disabled = false;
 }
 
-async function refresh() {
+// auto-download the disc image from the server (mc3.top serves /disc.iso) into OPFS on first visit
+async function ensureDisc() {
   const have = await storedDisc();
-  $('play').hidden = !have; $('forget').hidden = !have;
-  $('pick').hidden = !!have;
-  if (have) $('intro').textContent = `Your disc image is stored in this browser (${(have.size / 2 ** 30).toFixed(2)} GB).`;
-  status(have ? 'Ready' : 'No disc yet');
+  if (have) {
+    $('intro').textContent = `Disc image ready in browser storage (${(have.size / 2 ** 30).toFixed(2)} GB).`;
+    status('Ready');
+    return true;
+  }
+  // check for split-disc manifest (Cloudflare Worker serves parts due to 25 MiB file limit)
+  let parts = null, size = 0, version = '';
+  try {
+    const r = await fetch('disc.iso.json', { cache: 'no-cache' });
+    if (r.ok) { const m = await r.json(); parts = m.parts; size = m.size; version = m.version; }
+  } catch {}
+  $('copy').hidden = false;
+  try {
+    const root = await navigator.storage.getDirectory();
+    try { await navigator.storage.persist?.(); } catch {}
+    const handle = await root.getFileHandle(DISC, { create: true });
+    const out = await handle.createWritable();
+    let done = 0, last = 0;
+    if (parts) {
+      const cache = await caches.open('mc3-disc');
+      const key = new Request('disc-' + version + '.iso');
+      const hit = await cache.match(key);
+      if (hit) {
+        const body = await hit.arrayBuffer();
+        await out.write(new Uint8Array(body));
+        done = body.byteLength;
+      } else {
+        for (const name of parts) {
+          const pr = await fetch(name);
+          if (!pr.ok) throw new Error(name + ': ' + pr.status);
+          const bytes = new Uint8Array(await pr.arrayBuffer());
+          await out.write(bytes);
+          done += bytes.byteLength;
+          if (performance.now() - last > 150) {
+            last = performance.now();
+            $('bar').value = done / size;
+            $('copytext').textContent = `Copying disc image: ${(done / 2 ** 30).toFixed(2)} of ${(size / 2 ** 30).toFixed(2)} GB`;
+          }
+        }
+        await cache.put(key, new Response(new Uint8Array(done), { headers: { 'Content-Type': 'application/octet-stream' } }));
+      }
+    } else {
+      const r = await fetch('/disc.iso', { cache: 'no-cache' });
+      if (!r.ok) throw new Error('disc image not available on this site (' + r.status + ')');
+      size = Number(r.headers.get('Content-Length') || 0);
+      const reader = r.body.getReader();
+      for (;;) {
+        const { value, done: end } = await reader.read();
+        if (end) break;
+        await out.write(value);
+        done += value.byteLength;
+        if (size && performance.now() - last > 150) {
+          last = performance.now();
+          $('bar').value = done / size;
+          $('copytext').textContent = `Copying disc image: ${(done / 2 ** 30).toFixed(2)} of ${(size / 2 ** 30).toFixed(2)} GB`;
+        }
+      }
+    }
+    await out.close();
+    $('copy').hidden = true;
+    $('intro').textContent = `Disc image ready in browser storage (${(done / 2 ** 30).toFixed(2)} GB).`;
+    status('Ready');
+    return true;
+  } catch (e) {
+    $('copy').hidden = true;
+    fail('Could not load the game disc: ' + e.message);
+    return false;
+  }
 }
 
-$('pick').onclick = () => { if (!hasStorage || !crossOriginIsolated) return; $('file').click(); };
-$('file').onchange = async () => {
-  const file = $('file').files[0];
-  if (!file) return;
-  $('error').hidden = true;
-  try { await copyDisc(file); await refresh(); start(); }
-  catch (e) { fail('Could not store the disc: ' + e.message); $('pick').disabled = false; }
-};
 $('forget').onclick = async () => {
   const root = await navigator.storage.getDirectory();
   try { await root.removeEntry(DISC); } catch {}
-  refresh();
+  location.reload();
 };
-$('play').onclick = () => start();
+
+// ---------- F1 Menu ----------
+let menuOpen = false, menuTab = 1;  // 1=Settings, 2=Vehicle, 3=Lobby
+const menu = $('menu');
+const panes = { settings: $('pane-settings'), vehicle: $('pane-vehicle'), lobby: $('pane-lobby') };
+const tabs = Array.from(menu.querySelectorAll('.menu-tab'));
+
+function showMenu(open) {
+  menuOpen = open;
+  if (open) {
+    menu.classList.add('open');
+    try { Module._web_set_menu(1, menuTab); } catch (_) {}
+    refreshSettingsUI();
+    refreshLobbyUI();
+  } else {
+    menu.classList.remove('open');
+    try { Module._web_set_menu(0, 0); } catch (_) {}
+  }
+}
+
+tabs.forEach(tab => {
+  tab.onclick = () => {
+    tabs.forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    menuTab = tab.dataset.tab === 'settings' ? 1 : tab.dataset.tab === 'vehicle' ? 2 : 3;
+    Object.values(panes).forEach(p => p.classList.remove('active'));
+    panes[tab.dataset.tab].classList.add('active');
+    try { Module._web_set_menu(1, menuTab); } catch (_) {}
+    if (tab.dataset.tab === 'lobby') refreshLobbyUI();
+  };
+});
+
+addEventListener('keydown', e => {
+  if (!started) return;
+  if (e.code === 'F1') { e.preventDefault(); showMenu(!menuOpen); }
+  if (menuOpen) { e.preventDefault(); return; }
+  keys.add(e.code); taps.set(e.code, performance.now());
+});
+addEventListener('keyup', e => { if (!menuOpen) keys.delete(e.code); });
+
+// ---------- Settings UI ----------
+const settingEls = {};
+Object.keys(panes).forEach(() => {});
+function refreshSettingsUI() {
+  if (!Module || !Module._web_get_settings_json) return;
+  const json = Module._web_get_settings_json();
+  if (!json) return;
+  let s;
+  try { s = JSON.parse(json); } catch { return; }
+  const set = (id, val) => { const el = $(id); if (el) el.textContent = val; };
+  set('#s-render_percent', s.render_percent ?? 0);
+  set('#s-scene_width', s.scene_width ?? 0);
+  set('#s-scene_height', s.scene_height ?? 0);
+  set('#s-force_1080p', s.force_1080p ?? false);
+  set('#s-force_widescreen', s.force_widescreen ?? false);
+  set('#s-sixty_fps', s.sixty_fps ?? false);
+  set('#s-show_fps', s.show_fps ?? false);
+  set('#s-aniso', s.aniso ?? 0);
+  set('#s-texture_detail', s.texture_detail ?? 1);
+  set('#s-offscreen_scale', s.offscreen_scale ?? 2);
+  set('#s-aa', s.aa ?? 1);
+  set('#s-aa_strength', s.aa_strength ?? 1);
+  set('#s-sharpen', s.sharpen ?? 0.35);
+  set('#s-motion_blur', s.motion_blur ?? 1);
+  set('#s-glow', s.glow ?? 1);
+  set('#s-headlights', s.headlights ?? 1);
+  set('#s-neon', s.neon ?? 2);
+  set('#s-lod', s.lod ?? 1);
+  set('#s-fov_scale', s.fov_scale ?? 1);
+  set('#s-car_paint', s.car_paint ?? false);
+  set('#s-car_relight', s.car_relight ?? 1);
+  set('#s-car_specular', s.car_specular ?? 1);
+  set('#s-car_roughness', s.car_roughness ?? 0.3);
+  set('#s-car_reflection', s.car_reflection ?? 1);
+  set('#s-post', s.post ?? true);
+  set('#s-brightness', s.brightness ?? 0);
+  set('#s-contrast', s.contrast ?? 1);
+  set('#s-saturation', s.saturation ?? 1);
+  set('#s-vibrance', s.vibrance ?? 0);
+  set('#s-gamma', s.gamma ?? 1);
+  set('#s-deadzone_inner', s.deadzone_inner ?? 0.15);
+  set('#s-deadzone_outer', s.deadzone_outer ?? 0.95);
+  set('#v-prof_enabled', s.prof_enabled ?? false);
+  set('#v-prof_global', s.prof_global ?? false);
+  set('#v-garage_extended', s.garage_extended ?? false);
+  set('#v-wheel_limit', s.wheel_limit ?? 1.6);
+  set('#v-ride_front', s.ride_front ?? 0);
+  set('#v-ride_rear', s.ride_rear ?? 0);
+  set('#v-camber_front', s.camber_front ?? 0);
+  set('#v-camber_rear', s.camber_rear ?? 0);
+  set('#v-spring_front', s.spring_front ?? 1);
+  set('#v-spring_rear', s.spring_rear ?? 1);
+  set('#v-damper_front', s.damper_front ?? 1);
+  set('#v-damper_rear', s.damper_rear ?? 1);
+  set('#v-brake_front', s.brake_front ?? 1);
+  set('#v-brake_rear', s.brake_rear ?? 1);
+  set('#v-grip_front', s.grip_front ?? 1);
+  set('#v-grip_rear', s.grip_rear ?? 1);
+  set('#v-engine_power', s.engine_power ?? 1);
+  $('acct-id').textContent = s.econ_ready ? s.econ_money : '—';
+  $('acct-status').textContent = s.econ_status ?? 'Career not loaded';
+}
+
+function setSetting(key, val) {
+  if (!Module || !Module._web_set_setting) return;
+  Module._web_set_setting(key, val);
+  const err = $('settingsStatus');
+  err.hidden = true;
+}
+window.preset = (act) => {
+  if (!Module || !Module._web_action) return;
+  Module._web_action(act, 0, 0);
+  refreshSettingsUI();
+};
+window.resetPicture = () => { if (Module._web_action) Module._web_action('reset_picture', 0, 0); refreshSettingsUI(); };
+window.resetDeadzone = () => { if (Module._web_action) Module._web_action('reset_deadzone', 0, 0); refreshSettingsUI(); };
+window.resetTuning = () => { if (Module._web_action) Module._web_action('reset_tuning', 0, 0); refreshSettingsUI(); };
+window.saveSettings = () => { if (Module._web_action) Module._web_action('save', 0, 0); refreshSettingsUI(); };
+window.copyGlobal = () => { if (Module._web_action) Module._web_action('prof_copy_global', 0, 0); refreshSettingsUI(); };
+window.useGlobal = () => { if (Module._web_action) Module._web_action('prof_use_global', 0, 0); refreshSettingsUI(); };
+
+// ---------- Accounts ----------
+let account = null;
+let acctClient = null;
+const acctStatus = $('acct-status');
+const acctId = $('acct-id');
+
+function accountSignedIn() { return !!account; }
+window.accountSignIn = async () => {
+  if (!window.MC3Account) { $('lobbyStatus').textContent = 'Account UI not loaded'; $('lobbyStatus').hidden = false; return; }
+  const username = prompt('Player name (3–20 chars):');
+  if (!username) return;
+  const password = prompt('Password (8+ chars):');
+  if (!password) return;
+  try {
+    if (!acctClient) {
+      acctClient = new window.MC3Account.Client({
+        apiBase: location.origin,
+        fetch: window.fetch.bind(window),
+        storage: window.localStorage,
+        crypto: window.crypto,
+        onSession: (session) => { account = session; },
+        onChange: () => {},
+      });
+    }
+    account = await acctClient.authenticate('login', username, password, false, '');
+    acctId.textContent = account.user.id;
+    acctStatus.textContent = 'Signed in as ' + account.user.username;
+    acctStatus.className = 'val online';
+    $('menuStatus').textContent = 'Online';
+    $('menuStatus').className = 'online';
+    relayConnect({ token: account.session.token, user: account.user, relayUrl: 'wss://mc3.top/ws' });
+  } catch (e) { $('lobbyStatus').textContent = 'Sign in failed: ' + e.message; $('lobbyStatus').hidden = false; }
+};
+window.accountSignOut = async () => {
+  if (acctClient) { try { await acctClient.logout(); } catch (_) {} acctClient = null; }
+  account = null;
+  relayDisconnect();
+  acctId.textContent = '—';
+  acctStatus.textContent = 'Not signed in';
+  acctStatus.className = 'val';
+  $('menuStatus').textContent = 'Offline';
+  $('menuStatus').className = 'offline';
+};
+
+// ---------- Lobby / Relay ----------
+let relay = null;
+const roomList = $('roomList');
+const chatBox = $('chatBox');
+const chatInput = $('chatInput');
+let lobbyRooms = [];
+
+function relayConnect(session) {
+  if (!window.MC3Relay) { $('lobbyStatus').textContent = 'Relay client not loaded'; $('lobbyStatus').hidden = false; return; }
+  relayDisconnect();
+  relay = new window.MC3Relay.Client({
+    url: session.relayUrl || 'wss://mc3.top/ws',
+    socketFactory: (url) => new WebSocket(url),
+    onReady: (user) => {
+      $('lobbyStatus').hidden = true;
+      $('menuStatus').textContent = 'Online';
+      $('menuStatus').className = 'online';
+      lobbyList();
+    },
+    onMessage: (msg) => {
+      if (msg.type === 'gameList') { lobbyRooms = msg.games; renderRooms(); }
+      else if (msg.type === 'chat') { chatAdd(msg.from, msg.text); }
+      else if (msg.type === 'player_joined') { chatAdd('System', msg.username + ' joined'); }
+      else if (msg.type === 'player_left') { chatAdd('System', msg.username + ' left'); }
+      else if (msg.type === 'error') { $('lobbyStatus').textContent = msg.error; $('lobbyStatus').hidden = false; }
+    },
+    onDisconnect: () => {
+      $('menuStatus').textContent = 'Offline';
+      $('menuStatus').className = 'offline';
+    }
+  });
+  relay.setSession({ token: session.token, user: session.user });
+}
+function relayDisconnect() {
+  if (relay) { relay.disconnect(); relay = null; }
+  lobbyRooms = [];
+  renderRooms();
+}
+function lobbyRefresh() { if (relay && relay.ready) relay.send({ type: 'list' }); }
+function lobbyList() { if (relay && relay.ready) relay.send({ type: 'list' }); }
+function lobbyCreate() {
+  if (!relay || !relay.ready) { $('lobbyStatus').textContent = 'Not connected to relay'; $('lobbyStatus').hidden = false; return; }
+  const name = prompt('Room name:', 'MC3 Room');
+  if (!name) return;
+  relay.send({ type: 'create_game', name });
+}
+function renderRooms() {
+  roomList.innerHTML = '';
+  if (!lobbyRooms.length) { roomList.innerHTML = '<div class="room"><span class="name">No lobbies</span><span class="meta">—</span></div>'; return; }
+  for (const g of lobbyRooms) {
+    const div = document.createElement('div');
+    div.className = 'room';
+    div.innerHTML = `<span class="name">${escapeHtml(g.name)}</span><span class="meta">${g.player_count}/${g.max_players} ${g.status}</span><button onclick="joinRoom('${escapeHtml(g.id)}')">Join</button>`;
+    roomList.appendChild(div);
+  }
+}
+window.joinRoom = (id) => {
+  if (!relay || !relay.ready) return;
+  relay.send({ type: 'join_game', id });
+  showMenu(false);
+};
+function chatAdd(from, text) {
+  const div = document.createElement('div');
+  div.className = 'chat-msg';
+  div.innerHTML = `<span class="from">${escapeHtml(from)}:</span> ${escapeHtml(text)}`;
+  chatBox.appendChild(div);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+window.chatSend = () => {
+  const text = chatInput.value.trim();
+  if (!text || !relay || !relay.ready) return;
+  relay.send({ type: 'chat', text });
+  chatInput.value = '';
+};
+chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') chatSend(); });
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function refreshLobbyUI() {
+  if (!menuOpen) return;
+  if (relay && relay.ready) lobbyList();
+}
 
 // ---------- the game ----------
-let started = false, gpuMode = false;
+let started = false, gpuMode = false, audioCtx = null, audioNode = null;
 async function start() {
   if (started || !crossOriginIsolated) return;
   started = true;
-  // WebGPU draws the game when the browser has it (?cpu=1: the CPU picture instead, the fallback without WebGPU)
   if (!params.has('cpu')) {
     const problem = await MC3Gpu.init($('gpu'));
     if (problem) console.warn('webgpu: ' + problem + ', using the CPU picture');
     else { gpuMode = true; $('canvas').hidden = true; $('gpu').hidden = false; }
   }
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const code = `
+      class Mc3AudioProcessor extends AudioWorkletProcessor {
+        constructor() { super(); }
+        process(inputs, outputs, parameters) {
+          const output = outputs[0];
+          const frameCount = output[0].length;
+          if (typeof Module !== 'undefined' && Module._web_audio_render) {
+            const bytes = frameCount * 2 * 4;
+            const ptr = Module._malloc(bytes);
+            if (ptr) {
+              Module._web_audio_render(ptr, frameCount);
+              const outBuf = new Float32Array(Module.HEAPF32.buffer, ptr, frameCount * 2);
+              for (let i = 0; i < frameCount; i++) {
+                output[0][i] = outBuf[i * 2];
+                output[1][i] = outBuf[i * 2 + 1];
+              }
+              Module._free(ptr);
+            } else {
+              for (let channel = 0; channel < output.length; channel++) output[channel].fill(0);
+            }
+          } else {
+            for (let channel = 0; channel < output.length; channel++) output[channel].fill(0);
+          }
+          return true;
+        }
+      }
+      registerProcessor('mc3-audio', Mc3AudioProcessor);
+    `;
+    const blob = new Blob([code], { type: 'application/javascript' });
+    const url = URL.createObjectURL(blob);
+    await audioCtx.audioWorklet.addModule(url);
+    audioNode = new AudioWorkletNode(audioCtx, 'mc3-audio');
+    audioNode.connect(audioCtx.destination);
+    await audioCtx.resume();
+  } catch (e) { console.warn('Web Audio setup failed:', e); }
   $('setup').style.display = 'none';
   $('screen').style.display = 'block';
   status('Loading the game');
   window.Module = {
-    // ?env=KEY=VALUE,KEY=VALUE passes test settings to the game (DUAL, LIMIT, ...)
     arguments: ['/opfs/' + DISC, '--env', 'REF=' + (params.get('ref') || (gpuMode ? '0' : '2'))].concat(gpuMode ? ['--env', 'GPU=1'] : [],
       (params.get('env') || '').split(',').filter(Boolean).flatMap(kv => ['--env', kv])),
     print: t => console.log(t),
@@ -176,9 +660,6 @@ async function start() {
   }).catch(e => fail('The game code could not be downloaded: ' + e.message));
 }
 
-// mc3.top serves the game code in parts (25 MiB per file at most, tools/web/stage_site.py): join them here, kept in
-// the browser's Cache API by version so a return visit starts without downloading it again. Locally (serve.py) there is
-// one mc3.wasm and Emscripten fetches it itself.
 async function loadWasm() {
   const r = await fetch('mc3.wasm.json', { cache: 'no-cache' });
   if (!r.ok) return null;
@@ -202,11 +683,8 @@ async function loadWasm() {
   return out;
 }
 
-// frames: the game copies each frame drawn into a buffer; web_frame() -> {seq, w, h, rgba ptr}
 const canvas = $('canvas'), ctx2d = canvas.getContext('2d');
 let lastSeq = -1, image = null, shown = 0, fpsAt = performance.now();
-// a hidden page gets no animation frames, but the game waits for the page each frame (and online play must not
-// stall): while hidden, a message loop runs the frames instead, at most every 16 ms
 const wake = new MessageChannel();
 let lastHidden = 0;
 wake.port1.onmessage = () => {
@@ -215,7 +693,6 @@ wake.port1.onmessage = () => {
   wake.port2.postMessage(0);
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden && started) wake.port2.postMessage(0); });
-// a covered window gets no animation frames either while still "visible": a timer stands in when none came for 32 ms
 let lastTick = 0;
 setInterval(() => { if (started && !document.hidden && performance.now() - lastTick > 32) tick(); }, 8);
 function frame() {
@@ -246,7 +723,6 @@ function tick() {
   if (performance.now() - fpsAt > 1000) { status(`Running, ${shown} frames/s drawn`); shown = 0; fpsAt = performance.now(); }
 }
 
-// testing: the CPU picture's last frame as a data URL (with ?ref=1, also in WebGPU compare mode)
 window.cpuSnapshot = () => {
   const M = window.Module;
   if (!M || !M._web_frame || !M._web_frame_lock) return null;
@@ -260,10 +736,9 @@ window.cpuSnapshot = () => {
   return c.toDataURL('image/jpeg', 0.7);
 };
 
-// input: player 1's pad (input::Pad, tools/web/web_stubs.cpp)
-const keys = new Set(), taps = new Map();  // a tap counts as held for 250 ms: the game reads input once per frame
-addEventListener('keydown', e => { if (!started) return; keys.add(e.code); taps.set(e.code, performance.now()); e.preventDefault(); });
-addEventListener('keyup', e => keys.delete(e.code));
+const keys = new Set(), taps = new Map();
+addEventListener('keydown', e => { if (!started) return; if (menuOpen) return; keys.add(e.code); taps.set(e.code, performance.now()); e.preventDefault(); });
+addEventListener('keyup', e => { if (!menuOpen) keys.delete(e.code); });
 addEventListener('blur', () => keys.clear());
 const B = { up: 1, down: 2, left: 4, right: 8, start: 16, back: 32, ls: 64, rs: 128 };
 let analogPtr = 0;
@@ -303,17 +778,9 @@ function pad() {
   M._web_set_pad(1, buttons, analogPtr, lx, ly, rx, ry);
 }
 
-// testing only: tools/web/serve.py --dev-disc streams a disc image from this computer (no file picker)
 (async () => {
-  await refresh();
-  if (!new URLSearchParams(location.search).has('devdisc')) return;
-  if (!await storedDisc()) {
-    const r = await fetch('/dev-disc');
-    if (!r.ok) return fail('No /dev-disc: start serve.py with --dev-disc');
-    await copyStream(r.body, Number(r.headers.get('Content-Length')));
-    await refresh();
-  }
-  start();  // automated tests: straight into the game
+  if (!(await ensureDisc())) return;
+  start();
 })();
 </script>
 </body>

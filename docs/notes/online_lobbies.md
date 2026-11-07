@@ -46,9 +46,11 @@ Lobby ("relay: in the Main Lobby (1 here)"), showed the window over the game's C
 
 ## Next
 
+- **Browser build: DONE** (step 6 complete). The F1 Network menu in `tools/web/play.html` connects to
+  `wss://mc3.top/ws` via `MC3Relay.Client`, supports account sign-in/sign-out via `MC3Account.Client`, lobby listing,
+  room create/join, and in-game chat. Sign in at `https://mc3.top/play/`.
 - A race between two machines through the built-in link (two instances on one PC first, then two PCs).
 - Sign in with the mc3.top account from the window (a guest using a registered name is shown as "name (guest)"), so
   points and the creator badge follow the player.
 - Lobby chat and the online count on the main menu; free roam (Cruise) with other players, as Underground 2 Revived
   does; a server-side queue when full.
-- The same lobby flow in the browser build (docs/notes/browser_port_plan.md step 6).

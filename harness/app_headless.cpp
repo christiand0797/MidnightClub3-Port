@@ -1,4 +1,4 @@
-// the host side without a window: settings at their defaults, the run folder as the exe folder
+// the host side without a native Win32 window: the run folder as the exe folder
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -9,17 +9,24 @@
 
 namespace app {
 
+#ifndef XBE_WEB
 Settings& Get() {
     static Settings s;
     return s;
 }
 void Load() {}
 void Save() {}
-void ApplyDisplay() {}
 Mode Desktop() { return {1280, 720}; }
 Mode Output() { return Desktop(); }
+Mode RenderResolution() { return Output(); }
+Mode ActualRenderResolution() { return Output(); }
+void ReportRenderResolution(Mode) {}
 float RenderScale(uint32_t) { return 1.0f; }
 bool Widescreen() { return true; }
+#endif
+
+void ApplyDisplay() {}
+void ReportGraphicsFailure(const char*) {}
 
 std::filesystem::path ExeDir() {
     // the browser build's file system may have no absolute working folder (Node on Windows): stay relative

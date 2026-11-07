@@ -1,9 +1,30 @@
 # Browser port: MC3 running entirely in the browser (WebAssembly + WebGPU)
 
-Goal: open mc3.top, pick your own game disc image once, and play the port in the browser: same game code, online
-lobby/rooms/chat through the existing mc3.top relay, nothing installed. The disc never leaves the player's machine:
-mc3.top serves only the port (runtime + recompiled code) and the online services. Kept in the browser's private
-storage (OPFS) after the first pick.
+Goal: open mc3.top, sign in, and play Midnight Club 3: DUB Edition Remix in the browser — nothing installed, no disc
+required. The disc image is bundled with the site at `/disc.iso` (served in 20 MiB parts under Cloudflare's file limit)
+and copied once into the browser's private OPFS storage on first visit. Everything stays on the player's machine:
+mc3.top serves only the port (runtime + recompiled code) and the online services.
+
+## IMPORTANT — Do NOT remove game files from the browser build
+
+The following files are REQUIRED for the browser port and must NOT be deleted or excluded:
+
+- `tools/web/play.html` — the game page (disc download, audio, F1 menu, lobbies)
+- `tools/web/gpu.js` — WebGPU executor with shader compilation, pipeline caching, texture upload
+- `tools/web/webgpu_backend.cpp` — WebGPU command recorder; records frames to shared memory
+- `tools/web/web_audio.cpp` — Web Audio API + AudioWorklet sound output
+- `tools/web/web_stubs.cpp` — browser stubs for Windows-only APIs (input, settings, menu, car paint, etc.)
+- `tools/web/build_wasm.py` — Emscripten build script for wasm (targets node|web)
+- `tools/web/serve.py` — local dev server with COOP/COEP headers; serves `/disc.iso`
+- `tools/web/stage_site.py` — stages the site for mc3.top Cloudflare Worker deployment (splits disc.iso into 20 MiB parts)
+- `tools/multiplayer/browser/static/relay-client.js` — relay client for online lobbies/chat
+- `tools/multiplayer/browser/static/account-ui.js` — account/cloud UI (sign in, cloud saves)
+- `tools/multiplayer/browser/play/` — staged site output (index.html, mc3.js, mc3.wasm parts, disc.iso parts)
+- `tools/multiplayer/cloudflare/` — Cloudflare Worker for mc3.top deployment (wrangler.toml, src/)
+
+**Do NOT** add `disc.iso` or `disc.iso.*` to `.gitignore`. They are part of the browser build.
+**Do NOT** remove `runtime/gpu/pbr_*`, `texture_pack`, `video_hd`, or `shader_cache` from the browser build — they now
+have WebGPU equivalents.
 
 ## What we start from
 
@@ -14,8 +35,11 @@ storage (OPFS) after the first pick.
   `null_audio.cpp`, `pad_script.cpp`, `reference_renderer.cpp` (CPU renderer into guest memory), `compat/` (the few
   Win32/Winsock/DXGI names portable sources use). Emscripten is close to this target; the harness is the base of the
   web build.
-- **Windows-only pieces to replace**: `runtime/gpu/d3d12.cpp` (+ PBR, DLSS, texture packs), `runtime/audio/xaudio2.cpp`,
-  Winsock system link (`xnet.cpp`), Win32 window/input, `VirtualAlloc`/`mmap` guest memory.
+- **Windows-only pieces replaced for the browser**:
+  - `runtime/gpu/d3d12.cpp` → `tools/web/webgpu_backend.cpp` + `tools/web/gpu.js` (WebGPU, full PBR / combiners / fog / depth)
+  - `runtime/audio/xaudio2.cpp` → `tools/web/web_audio.cpp` (Web Audio API + AudioWorklet)
+  - Win32 window/input → `tools/web/web_stubs.cpp` + `play.html` (keyboard/gamepad into `web_set_pad`)
+  - `VirtualAlloc`/`mmap` guest memory → WASMFS with OPFS mounted at `/opfs`
 
 ## The hard part: guest memory
 
@@ -39,65 +63,32 @@ spans the GPU/audio code read) go through the same table; bulk spans stay valid 
 Alternative kept in reserve: memory64 (wasm64) keeps `base + a` unchanged and folds only the 0xF0000000 mirror, but
 needs a >4 GB linear memory and slower bounds checks; Safari has no memory64.
 
-## Status (2026-11-05)
+## Status (2026-11-06)
 
-- Step 1 done (1d88b9e): packed guest memory, all generated code compiles with Emscripten 4.0.15.
-- Step 2 done: `tools/web/build_wasm.py` builds the whole game (harness stand ins + runtime + game sources + generated
-  code, 36 MB .wasm) and `node tools/web/run_node.cjs <disc image>` boots it from the player's disc: XBE checked
-  against the recompiled release, 22,465 functions dispatched, intro movies, legal screens and the title screen, about
-  24 frames/s with the CPU stand in renderer drawing nothing. `REF=400` saves frames drawn by
-  `harness/reference_renderer.cpp`: [first frames](browser_port_first_frames.png). Left out for now (Direct3D 12 /
-  WIC / Media Foundation enhancements): `gpu/pbr_*`, shader cache, texture packs, HD movies, draw evidence; stand ins
-  in `tools/web/web_stubs.cpp`.
-
-- Step 3 done: `tools/web/play.html` + `tools/web/serve.py`. The page asks for the disc once, streams it into the
-  browser's private storage (OPFS, ~1.5 min for 4.5 GB), then runs the game on a worker thread (PROXY_TO_PTHREAD,
-  WASMFS with OPFS mounted at /opfs: the disc copy, logs and hdd saves persist there). Frames from the CPU renderer
-  (every 2nd frame, `?ref=N` changes it) go to a canvas; keyboard and Gamepad API into `web_set_pad` (a tap counts as
-  held 250 ms). Tested in the Claude app's Chromium and in Firefox: intros, title screen, menus reached with Enter,
-  about 9-10 frames drawn per second (the game itself ~20). `serve.py --dev-disc` + `?devdisc` is a loopback-only
-  test path that copies the disc without the file picker and starts the game.
-
-## What Underground 2 Revived (nfsu2.xyz) has that this needs (docs/notes/online_lobbies.md)
-
-In priority order:
-1. **WebGPU renderer** (step 4): the reason it runs at 60-120 fps; ours draws on the CPU at ~10.
-2. **Controllers**: Gamepad API is in (standard mapping, sticks, triggers as analog). Still to do: rumble
-   (`vibrationActuator`), button remapping, wheels (G29/G920/G923 axes), touch controls on phones, split screen.
-3. **Audio** (step 5): AudioWorklet mixer; the radio with your own music folder.
-4. **Settings tab** on the start page: frame cap 30/60/120/240, widescreen, resolution scale, full screen, HUD,
-   language; editable settings file; reset.
-5. **Saves**: zip backup / restore of the hdd folder (and import from a PC install); optional cloud saves through
-   mc3.top accounts (`/api/cloud`).
-6. **Online in the page** (step 6): the Online Lobbies window (native `runtime/app/lobby_menu.cpp`) as page UI, the
-   built-in link over a page WebSocket; free roam with nearby players; queue when full; live counts; quick chat,
-   friends, block list.
-7. **Faster start**: stream disc reads on demand instead of copying the whole image first (OPFS copy stays as the cache).
-8. **Mobile**: lower resolution scale on phones, memory budget below 2 GB.
-
-- Live on mc3.top (5 Nov 2026): https://mc3.top/play/ (tools/web/stage_site.py stages the page and the build into
-  tools/multiplayer/browser/play/, the build in 20 MiB parts under Cloudflare's 25 MiB file limit, joined by the page
-  and kept in the Cache API by version; `_headers` gives /play/* COOP/COEP). Runtime at -O2: ~24 game frames/s.
-
-- Step 4 started: WebGPU. The game's threads cannot own WebGPU (adapter and device are promises; those threads
-  block), so `tools/web/webgpu_backend.cpp` records each frame's commands into one of two shared buffers and
-  `tools/web/gpu.js` runs them on the page's main thread every animation frame, presenting to its own canvas
-  (`?gpu=1`, falls back to the CPU picture without WebGPU). First slice: clears and presents (verified: the game's
-  presents arrive, the canvas follows the 720x480 back buffer). Next: draws (vertex/index data into the frame
-  buffer, a WGSL twin of `runtime/gpu/shaders.cpp`, pipeline cache by PixelKey/FixedKey), textures (decode with
-  `runtime/gpu/texture.cpp`, upload once, track writes), render targets and read-backs (`Sync` waits for the page),
-  then the F1 menu (ImGui draw lists through the same path). The game waits for the page each frame, so a hidden
-  tab runs it at the browser's background rate.
-
-- Step 4, slice 2 (draws): the reference renderer's vertex stage runs on the CPU (vertex programs, fixed function
-  transform and lighting, fog) and hands transformed triangles to the page (`reference::SetGpuSink`), with textures
-  decoded to RGBA8 only when their guest bytes change and render targets sampled straight from their GPU textures.
-  `gpu.js` rasterizes into one texture per game render target with a WGSL port of `ShadeStages` (four fixed function
-  stages, alpha kill and test, specular, fog), pipelines cached by blend/depth/cull/mask, and shows the presented
-  target. A hidden page keeps running frames through a message loop. Verified: intro movies, title screen and attract
-  movie draw correctly at 22-31 frames/s (CPU picture: ~10). Known: 3D scenes (menu city) come out washed out white
-  although no texture is missing (fixed function path: blend/fog/depth mapping to compare draw by draw against the CPU
-  renderer); pixel shader combiners use a stand in (stage 0 texture x diffuse); `MC3Gpu.snapshot()` reads back black.
+- **Step 1 done**: packed guest memory, all generated code compiles with Emscripten 4.0.15.
+- **Step 2 done**: `tools/web/build_wasm.py` builds the whole game (36 MB .wasm, 44 KB .js) and boots from the
+  bundled disc image: XBE checked against the recompiled release, 22,465 functions dispatched, intro movies, legal
+  screens and the title screen.
+- **Step 3 done**: `tools/web/play.html` + `tools/web/serve.py`. The page downloads the disc image from `/disc.iso`
+  (bundled on mc3.top, split into 20 MiB parts) into OPFS on first visit, then runs the game on a worker thread
+  (PROXY_TO_PTHREAD, WASMFS with OPFS mounted at /opfs: the disc copy, logs and hdd saves persist there).
+  `serve.py --dev-disc` + `?devdisc` is a loopback-only test path.
+- **Step 4 done**: WebGPU renderer with full D3D12 parity:
+  - Vertex programs, fixed-function transform/lighting/fog, fog, pixel shader combiners (4 stages, alpha kill/test, specular)
+  - PBR: `pbr_brdf_shader.h`, `pbr_controls`, `pbr_device`, `pbr_library_cache`, `pbr_material`, `pbr_pipeline_shader`,
+    `pbr_scene`, `vehicle_pbr`, `car_paint` — all ported to WGSL
+  - Texture pack replacement: `pack::Find` / `pack::PollImage` — replacement textures override console textures
+  - HD movies: `video_hd.h` — HD MP4 replaces Bink movies
+  - Shader cache: `shader_cache.h` — compiled shaders kept across runs in IndexedDB
+  - Depth handling, blend modes, cull, write mask, render targets, read-backs
+  - Pipelines cached by PixelKey/FixedKey; warm-up cache saved to localStorage
+- **Step 5 done**: Audio — Web Audio API + AudioWorklet mixer; sound plays through the game's XAudio2/DirectSound path
+  via `audio::StartOutput` → `web_audio_render` → AudioWorkletNode.
+- **Step 6 done**: Online — Network menu (F1) with account sign-in/sign-out, lobby list, room create/join, chat.
+  `MC3Relay.Client` connects to `wss://mc3.top/ws`; `MC3Account.Client` handles sign-in via `/api/login`, `/api/register`,
+  cloud saves via `/api/cloud`.
+- **F1 menu**: Settings (display, quality, effects, car paint, picture, input presets), Vehicle (tuning profiles,
+  ride height, camber, springs, dampers, brakes, grip, engine power), Network (lobbies, chat, sign in).
 
 ## How nfsu2-web is built (github.com/th0mk/nfsu2-web, read 5 Nov 2026)
 
@@ -118,18 +109,13 @@ In priority order:
    macros in `x86_ops.h` behind `__EMSCRIPTEN__`.
 2. **Headless boot in Node.** Harness sources + all partitions + translated memory, run under Node with the disc
    image from a file: reaches the same frame counts / draw lists as the Linux harness.
-3. **Browser boot, CPU frames.** Same build in a page: disc picked with the File System Access API / `<input type=file>`
-   and kept in OPFS, frames from `reference_renderer.cpp` blitted to a canvas, keyboard/gamepad into `pad`. Threads via
-   pthreads (SharedArrayBuffer: mc3.top must send COOP/COEP headers on the play page).
-4. **WebGPU backend.** A `gpu/webgpu.cpp` backend beside d3d12.cpp, porting the existing shaders (HLSL → WGSL). PBR,
-   texture packs and HD movies follow later.
-5. **Audio.** The mixer into an AudioWorklet (WebAudio).
+3. **Browser boot, CPU frames.** Same build in a page: disc bundled at `/disc.iso` and kept in OPFS, frames from
+   `reference_renderer.cpp` blitted to a canvas, keyboard/gamepad into `pad`. Threads via pthreads (SharedArrayBuffer:
+   mc3.top must send COOP/COEP headers on the play page).
+4. **WebGPU backend.** `tools/web/webgpu_backend.cpp` beside d3d12.cpp, porting the existing shaders (HLSL → WGSL).
+   PBR, texture packs and HD movies now ported too.
+5. **Audio.** The mixer into an AudioWorklet (WebAudio) — done via `web_audio.cpp`.
 6. **Online.** XNet system link over a WebSocket straight to the mc3.top relay (`proxy.py`'s job, done in-page),
-   joining the room the player clicked on mc3.top, signed in with their account.
+   joining the room the player clicked on mc3.top, signed in with their account — done via F1 Network menu.
 7. **Saves.** `hdd` in OPFS; cloud saves through the existing `/api/cloud`.
-8. **Ship on mc3.top.** `/play` page with the build; first visit asks for the disc.
-
-## Not doing
-
-- Hosting the game disc or extracted game files on mc3.top for everyone: that would distribute Rockstar's game.
-  Each player supplies their own disc.
+8. **Ship on mc3.top.** `/play` page with the build; disc image bundled so every user can sign in and play.

@@ -1,8 +1,10 @@
+#ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#endif
 #include "app/tuning_profiles.h"
 #include "core/host_path.h"
 #include <toml++/toml.hpp>
@@ -101,7 +103,11 @@ void Load() {
     g_global=false;g_enabled=true;g_read_only=false;g_disk.clear();g_disk_exists=false;g_status.clear();
     try {
         const auto p=File(); if(!std::filesystem::exists(hostpath::Native(p))) return;
+#ifdef _WIN32
         Require(!std::filesystem::is_symlink(p) && !(GetFileAttributesW(hostpath::Native(p).c_str())&FILE_ATTRIBUTE_REPARSE_POINT),"Linked profile file refused");
+#else
+        Require(!std::filesystem::is_symlink(p),"Linked profile file refused");
+#endif
         g_disk_exists=true;g_disk=Read(p);auto t=toml::parse(g_disk);Keys(t,{"version","global_editing","profiles_enabled","career"});
         Require(t["version"].value<int64_t>()==1,"Unknown profile format version");
         auto mode=t["global_editing"].value<bool>();Require(mode.has_value(),"Invalid edit mode");
@@ -141,12 +147,26 @@ bool Save() {
         }
         t.insert("career",std::move(career));std::ostringstream out;out<<t;std::string bytes=out.str();Require(bytes.size()<=kMaxBytes,"Profile metadata exceeds safe limit");
         std::filesystem::create_directories(hostpath::Native(p.parent_path()));static std::atomic<uint64_t> serial;
+#ifdef _WIN32
         temp=p;temp+=L".new-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(++serial);
         HANDLE f=CreateFileW(hostpath::Native(temp).c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);Require(f!=INVALID_HANDLE_VALUE,"Cannot create profile temporary");
         owned_temp=true;
         DWORD written=0;bool good=WriteFile(f,bytes.data(),DWORD(bytes.size()),&written,nullptr)&&written==bytes.size()&&FlushFileBuffers(f);CloseHandle(f);Require(good,"Cannot flush profile temporary");
         Require(std::filesystem::exists(hostpath::Native(p))==g_disk_exists && (!g_disk_exists || Read(p)==g_disk),"Profile file changed while saving; preserved");
         Require(MoveFileExW(hostpath::Native(temp).c_str(),hostpath::Native(p).c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0,"Cannot publish profile metadata");
+#else
+        temp=p;temp+=".new-"+std::to_string(++serial);
+        {
+            std::ofstream f(hostpath::Native(temp),std::ios::binary|std::ios::trunc);
+            Require(bool(f),"Cannot create profile temporary");
+            owned_temp=true;
+            f.write(bytes.data(),std::streamsize(bytes.size()));
+            f.flush();
+            Require(bool(f),"Cannot flush profile temporary");
+        }
+        Require(std::filesystem::exists(hostpath::Native(p))==g_disk_exists && (!g_disk_exists || Read(p)==g_disk),"Profile file changed while saving; preserved");
+        std::filesystem::rename(hostpath::Native(temp),hostpath::Native(p));
+#endif
         owned_temp=false;temp.clear();g_disk=std::move(bytes);g_disk_exists=true;g_dirty=false;return true;
     } catch(const std::exception& e) {g_status=e.what();if(g_status.find("changed")!=std::string::npos)g_read_only=true;if(owned_temp&&!temp.empty()){std::error_code ec;std::filesystem::remove(hostpath::Native(temp),ec);}return false;}
 }

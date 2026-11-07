@@ -43,6 +43,7 @@ struct ShaderChoice {
     bool quad = false;
     bool fixed_transform = false;  // fixed function on untransformed vertices: the shader reads matrices and lights
     bool sprite = false;           // a program's points drawn as point sprites (SpriteHlsl)
+    bool car_paint = false;        // enhanced car paint (gpu/car_paint.h), set by the backend
     FixedKey fk;
 };
 ShaderChoice ClassifyShaders(const State& s, const Assembled& a, uint32_t count);
